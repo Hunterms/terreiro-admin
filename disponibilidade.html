@@ -489,24 +489,39 @@ function renderGiras() {
   const cont = $('#giras-container');
   if(!cont) return;
   const hoje = new Date().toISOString().slice(0,10);
-  // Só giras públicas (publico !== false e tipo não é interno)
-  const internas = ['gira_fechada','trabalho_interno','mutirao','reuniao','obrigacao_coletiva','ensaio_curimba'];
-  const giras = APP.eventos
-    .filter(e => e.data >= hoje && !e.arquivado && e.publico !== false && !internas.includes(e.tipo))
+  // Todas as atividades futuras (giras + trabalhos + festas + mutirões)
+  const atividades = APP.eventos
+    .filter(e => e.data >= hoje && !e.arquivado)
     .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora))
-    .slice(0,30);
+    .slice(0,50);
+
+  // Helper: tipo visual + label legível
+  const tipoLabel = ev => {
+    const t = ev.tipo;
+    if(!t || t === 'gira_aberta') return { label:'Gira aberta', cor:'var(--green)', bg:'var(--green-bg)' };
+    if(t === 'gira_fechada') return { label:'Gira fechada', cor:'var(--blue)', bg:'rgba(52,152,219,0.1)' };
+    if(t === 'festa') return { label:'Festa', cor:'#9b59b6', bg:'rgba(155,89,182,0.1)' };
+    if(t === 'trabalho_interno') return { label:'Trabalho interno', cor:'var(--gold)', bg:'var(--gold-bg)' };
+    if(t === 'mutirao') return { label:'Mutirão', cor:'var(--gold)', bg:'var(--gold-bg)' };
+    if(t === 'reuniao') return { label:'Reunião', cor:'var(--text2)', bg:'var(--glass2)' };
+    if(t === 'obrigacao_coletiva') return { label:'Obrigação coletiva', cor:'#9b59b6', bg:'rgba(155,89,182,0.1)' };
+    if(t === 'ensaio_curimba') return { label:'Ensaio de curimba', cor:'var(--red)', bg:'var(--red-bg)' };
+    return { label:'Atividade', cor:'var(--text2)', bg:'var(--glass2)' };
+  };
 
   cont.innerHTML = `
     <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Próximas giras abertas</h2>
-      ${giras.length === 0 ? '<div class="empty">Nenhuma gira programada por enquanto.</div>' : giras.map(e => `
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Próximas atividades</h2>
+      ${atividades.length === 0 ? '<div class="empty">Nenhuma atividade programada por enquanto.</div>' : atividades.map(e => {
+        const tipo = tipoLabel(e);
+        return `
         <div class="list-item">
-          <div class="li-date">
+          <div class="li-date" style="background:${tipo.bg};color:${tipo.cor}">
             <div class="d">${(e.data||'').slice(8,10)}</div>
             <div>${new Date((e.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
           </div>
           <div>
-            <div class="li-name">${e.nome||e.titulo||'Gira'}</div>
+            <div class="li-name">${e.nome||e.titulo||'Atividade'} <span class="chip" style="background:${tipo.bg};color:${tipo.cor};border:1px solid ${tipo.cor};font-size:10px;margin-left:6px">${tipo.label}</span></div>
             <div class="li-meta">
               <span>${fmtData(e.data)}</span>
               ${e.hora?`<span>${e.hora}</span>`:''}
@@ -515,7 +530,8 @@ function renderGiras() {
             ${e.descricao?`<div class="li-meta" style="margin-top:6px;color:var(--text2)">${e.descricao}</div>`:''}
           </div>
         </div>
-      `).join('')}
+        `;
+      }).join('')}
     </div>
   `;
 }
