@@ -1105,7 +1105,7 @@ async function seedFuncoes() {
     // Escalas operacionais (as 3 que o Pai quer rastrear)
     { nome:'Limpeza antes da gira', descricao:'Preparação do espaço antes do trabalho', cor:'#f39c12', entra_em_escala:true, restrito_a_filhos:null },
     { nome:'Limpeza depois da gira', descricao:'Organização do espaço após o trabalho', cor:'#f39c12', entra_em_escala:true, restrito_a_filhos:null },
-    { nome:'Lojinha', descricao:'Plantão na lojinha (grupo restrito)', cor:'#d4a843', entra_em_escala:true, restrito_a_filhos:[] }
+    { nome:'Lojinha', descricao:'Dupla na lojinha durante a gira (grupo restrito)', cor:'#d4a843', entra_em_escala:true, restrito_a_filhos:[] }
   ];
   try {
     for(const f of iniciais) {
@@ -1470,7 +1470,6 @@ function renderEscalas(c) {
 
     <div class="tabs">
       <button class="${escTab==='gira'?'active':''}" onclick="window._app.setEscTab('gira')">Por gira</button>
-      <button class="${escTab==='lojinha'?'active':''}" onclick="window._app.setEscTab('lojinha')">Lojinha</button>
       <button class="${escTab==='analise'?'active':''}" onclick="window._app.setEscTab('analise')">Análise</button>
     </div>
 
@@ -1478,8 +1477,8 @@ function renderEscalas(c) {
   `;
 
   if(escTab === 'gira') renderEscalasGira();
-  else if(escTab === 'lojinha') renderEscalasLojinha();
-  else renderEscalasAnalise();
+  else if(escTab === 'analise') renderEscalasAnalise();
+  else { escTab = 'gira'; renderEscalasGira(); }
 }
 
 function setEscTab(t) { escTab = t; renderRoute(); }
@@ -1496,7 +1495,7 @@ function renderEscalasAnalise() {
   // Conta alocações por filho, por função no período
   const escalasNoPeriodo = S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data <= hoje.toISOString().slice(0,10));
   const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
-  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
 
   // Map: filho_id → { total, porFuncao: { funcao_id: count } }
   const stats = {};
@@ -1657,6 +1656,7 @@ function renderEscalasGira() {
 function qtdParaFuncao(fn) {
   const n = (fn.nome||'').toLowerCase();
   if(n.includes('antes') || n.includes('depois')) return 4;
+  if(n.includes('lojinha')) return 2;
   return 1;
 }
 
@@ -1676,7 +1676,7 @@ async function gerarEscalasEmLote(eventos) {
     ? `Gerar ${elegiveis.length} escala${elegiveis.length===1?'':'s'}? <strong>${festas} festa${festas===1?'':'s'}</strong> ${festas===1?'será ignorada':'serão ignoradas'} (fase 2).<br>Limpezas antes/depois vão com 4 pessoas cada. Distribuição justa cruzando o mês inteiro.`
     : `Gerar ${elegiveis.length} escala${elegiveis.length===1?'':'s'}? Limpezas antes/depois vão com 4 pessoas cada. Distribuição justa ao longo do mês.`;
   confirmar(msg, async () => {
-    const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+    const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
     const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
     // Ordena por data pra distribuir cumulativamente
     const ordenados = [...elegiveis].sort((a,b) => a.data.localeCompare(b.data));
@@ -1964,8 +1964,8 @@ function openLojinhaEscalaForm(periodoId, inicio, fim, escId='') {
 function openEscalaForm(evId, escId='') {
   const ev = S.eventos.find(x=>x.id===evId);
   const esc = escId ? S.escalas.find(x=>x.id===escId) : null;
-  // Lojinha tem tela própria — excluir da escala de gira
-  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+  // Todas as funções de escala entram aqui (incluindo Lojinha = dupla durante gira)
+  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
   const filhosAtivos = S.filhos.filter(f => !f.status || f.status==='ativo');
 
   // pega mes do evento pra checar disponibilidade
