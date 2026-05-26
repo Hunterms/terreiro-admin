@@ -723,111 +723,139 @@ const LUAS_CHEIAS = [
 ];
 
 // Auto-gera cards de kanban para tarefas recorrentes por função.
-// Roda no dashboard. Se já existe um card com mesma origem_ref, pula.
+// Guard contra execução concorrente (listener pode trigger durante o await)
+let _autoGerandoLock = false;
+
+// Roda no dashboard. Faz sweep cleanup global + cria cards faltantes.
 async function autoGerarTarefasFuncoes() {
   if(S.role !== 'admin') return;
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const hojeStr = hoje.toISOString().slice(0,10);
-  const lim = new Date(hoje); lim.setDate(hoje.getDate() + 60);
-  const limStr = lim.toISOString().slice(0,10);
+  if(_autoGerandoLock) return;
+  _autoGerandoLock = true;
 
-  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && (f.tarefa_antes_gira || f.tarefa_lua_cheia));
-  if(funcoesAtivas.length === 0) return;
+  try {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const hojeStr = hoje.toISOString().slice(0,10);
+    const lim = new Date(hoje); lim.setDate(hoje.getDate() + 60);
+    const limStr = lim.toISOString().slice(0,10);
+    const proximaLuaGlobal = LUAS_CHEIAS.find(d => d >= hojeStr);
 
-  // Map refs existentes pra evitar duplicata
-  const refsExistentes = new Set(S.kanban.map(k => k.origem_ref).filter(Boolean));
+    // ─── SWEEP CLEANUP (global) ────────────────────────────────────────────
+    // Arquiva qualquer card auto-gerado que esteja "fora de regra":
+    //  - funcao_lua_cheia que não é a próxima lua, OU cuja função foi
+    //    deletada/desativada/arquivada
+    //  - funcao_antes_gira cujo evento foi deletado/arquivado, ou cuja
+    //    função foi deletada/desativada/arquivada
+    let arquivadosLegado = 0;
+    const idsArquivadosNessaCorrida = new Set();
+    for(const k of S.kanban) {
+      if(k.arquivado) continue;
+      if(!k.origem || !k.origem_ref) continue;
+      let deveArquivar = false;
 
-  const novos = [];
-  for(const fn of funcoesAtivas) {
-    // Quem é responsável: filhos com essa função (postos OU restrito_a_filhos)
-    const responsaveis = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0
-      ? fn.restrito_a_filhos
-      : S.filhos.filter(x => (x.postos||[]).includes(fn.id) && (!x.status || x.status==='ativo')).map(x => x.id);
+      if(k.origem === 'funcao_lua_cheia') {
+        const parts = k.origem_ref.split('__');
+        if(parts.length === 3 && parts[0] === 'fn_lua') {
+          const funcaoId = parts[1];
+          const dataLua = parts[2];
+          const fn = S.funcoes.find(f => f.id === funcaoId);
+          if(!fn || fn.arquivada || !fn.tarefa_lua_cheia) deveArquivar = true;
+          else if(dataLua !== proximaLuaGlobal) deveArquivar = true;
+        }
+      } else if(k.origem === 'funcao_antes_gira') {
+        const parts = k.origem_ref.split('__');
+        if(parts.length === 3 && parts[0] === 'fn_gira') {
+          const funcaoId = parts[1];
+          const eventoId = parts[2];
+          const fn = S.funcoes.find(f => f.id === funcaoId);
+          const ev = S.eventos.find(e => e.id === eventoId);
+          if(!fn || fn.arquivada || !fn.tarefa_antes_gira) deveArquivar = true;
+          else if(!ev || ev.arquivado) deveArquivar = true;
+        }
+      }
 
-    if(fn.tarefa_antes_gira) {
-      const girasAbertas = S.eventos.filter(e =>
-        e.data >= hojeStr && e.data <= limStr && !e.arquivado &&
-        (e.tipo === 'gira_aberta' || (!e.tipo && e.publico !== false))
-      );
-      for(const ev of girasAbertas) {
-        const ref = `fn_gira__${fn.id}__${ev.id}`;
-        if(refsExistentes.has(ref)) continue;
-        const tituloEv = ev.nome || ev.titulo || 'gira';
-        const dataBr = fmt.dataBr(ev.data);
-        novos.push({
-          titulo: `${fn.nome} — preparar pra ${tituloEv} (${dataBr})`,
-          descricao: `Tarefa recorrente da função "${fn.nome}" antes de toda gira aberta. Fazer antes do dia ${dataBr}.`,
-          status: 'todo',
-          motivo_bloqueio: null,
-          responsaveis,
-          prazo: ev.data,
-          prioridade: 'media',
-          origem: 'funcao_antes_gira',
-          origem_ref: ref,
-          arquivado: false,
-          criadoPor: 'auto'
-        });
+      if(deveArquivar) {
+        try {
+          await updateDoc(doc(dbPvd,'adm_kanban',k.id), { arquivado: true, atualizadoEm: serverTimestamp() });
+          idsArquivadosNessaCorrida.add(k.id);
+          arquivadosLegado++;
+        } catch(e) { console.warn('Erro arquivando card legado', e); }
       }
     }
 
-    if(fn.tarefa_lua_cheia) {
-      // Só a PRÓXIMA lua cheia (mensal rolling) pra não floodar o kanban.
-      // Quando essa for marcada done ou passar, a próxima vez que o auto-gerador
-      // rodar vai criar a seguinte automaticamente.
-      const proximaLua = LUAS_CHEIAS.find(d => d >= hojeStr);
+    // ─── CRIAÇÃO ───────────────────────────────────────────────────────────
+    const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && (f.tarefa_antes_gira || f.tarefa_lua_cheia));
 
-      // CLEANUP: arquiva cards de lua_cheia dessa função que NÃO são a próxima
-      // (legado de quando o sistema gerava todas as luas dos próximos 60 dias)
-      const refPrefix = `fn_lua__${fn.id}__`;
-      const refCorrente = proximaLua ? `${refPrefix}${proximaLua}` : null;
-      const cardsLegado = S.kanban.filter(k =>
-        k.origem === 'funcao_lua_cheia' &&
-        k.origem_ref &&
-        k.origem_ref.startsWith(refPrefix) &&
-        k.origem_ref !== refCorrente &&
-        k.prazo >= hojeStr &&
-        !k.arquivado
-      );
-      for(const c of cardsLegado) {
-        try {
-          await updateDoc(doc(dbPvd,'adm_kanban',c.id), { arquivado: true, atualizadoEm: serverTimestamp() });
-        } catch(e) { console.warn('Erro arquivando card lua_cheia legado', e); }
+    // Refs ainda ativas no kanban (exclui o que acabamos de arquivar)
+    const refsExistentes = new Set(
+      S.kanban
+        .filter(k => !k.arquivado && !idsArquivadosNessaCorrida.has(k.id))
+        .map(k => k.origem_ref)
+        .filter(Boolean)
+    );
+
+    const novos = [];
+    for(const fn of funcoesAtivas) {
+      const responsaveis = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0
+        ? fn.restrito_a_filhos
+        : S.filhos.filter(x => (x.postos||[]).includes(fn.id) && (!x.status || x.status==='ativo')).map(x => x.id);
+
+      if(fn.tarefa_antes_gira) {
+        const girasAbertas = S.eventos.filter(e =>
+          e.data >= hojeStr && e.data <= limStr && !e.arquivado &&
+          (e.tipo === 'gira_aberta' || (!e.tipo && e.publico !== false))
+        );
+        for(const ev of girasAbertas) {
+          const ref = `fn_gira__${fn.id}__${ev.id}`;
+          if(refsExistentes.has(ref)) continue;
+          refsExistentes.add(ref); // anti-duplicação dentro da mesma corrida
+          const tituloEv = ev.nome || ev.titulo || 'gira';
+          const dataBr = fmt.dataBr(ev.data);
+          novos.push({
+            titulo: `${fn.nome} — preparar pra ${tituloEv} (${dataBr})`,
+            descricao: `Tarefa recorrente da função "${fn.nome}" antes de toda gira aberta. Fazer antes do dia ${dataBr}.`,
+            status: 'todo', motivo_bloqueio: null, responsaveis,
+            prazo: ev.data, prioridade: 'media',
+            origem: 'funcao_antes_gira', origem_ref: ref,
+            arquivado: false, criadoPor: 'auto'
+          });
+        }
       }
 
-      if(proximaLua) {
-        const ref = `fn_lua__${fn.id}__${proximaLua}`;
+      if(fn.tarefa_lua_cheia && proximaLuaGlobal) {
+        const ref = `fn_lua__${fn.id}__${proximaLuaGlobal}`;
         if(!refsExistentes.has(ref)) {
-          const luaBr = fmt.dataBr(proximaLua);
+          refsExistentes.add(ref);
+          const luaBr = fmt.dataBr(proximaLuaGlobal);
           novos.push({
             titulo: `${fn.nome} — entrega de lua cheia (${luaBr})`,
             descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${luaBr}.`,
-            status: 'todo',
-            motivo_bloqueio: null,
-            responsaveis,
-            prazo: proximaLua,
-            prioridade: 'media',
-            origem: 'funcao_lua_cheia',
-            origem_ref: ref,
-            arquivado: false,
-            criadoPor: 'auto'
+            status: 'todo', motivo_bloqueio: null, responsaveis,
+            prazo: proximaLuaGlobal, prioridade: 'media',
+            origem: 'funcao_lua_cheia', origem_ref: ref,
+            arquivado: false, criadoPor: 'auto'
           });
         }
       }
     }
-  }
 
-  // Cria os cards
-  for(const card of novos) {
-    try {
-      await addDoc(collection(dbPvd,'adm_kanban'), {
-        ...card,
-        criadoEm: serverTimestamp(),
-        atualizadoEm: serverTimestamp()
-      });
-    } catch(e) { console.error('Erro auto-gerando card:', e); }
-  }
-  if(novos.length > 0) {
-    setTimeout(() => toast(`${novos.length} tarefa${novos.length===1?'':'s'} recorrente${novos.length===1?'':'s'} adicionada${novos.length===1?'':'s'} no kanban`,'ok'), 600);
+    for(const card of novos) {
+      try {
+        await addDoc(collection(dbPvd,'adm_kanban'), {
+          ...card,
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp()
+        });
+      } catch(e) { console.error('Erro auto-gerando card:', e); }
+    }
+
+    if(novos.length > 0 || arquivadosLegado > 0) {
+      const partes = [];
+      if(novos.length > 0) partes.push(`${novos.length} criada${novos.length===1?'':'s'}`);
+      if(arquivadosLegado > 0) partes.push(`${arquivadosLegado} antiga${arquivadosLegado===1?'':'s'} limpa${arquivadosLegado===1?'':'s'}`);
+      setTimeout(() => toast(`Kanban: ${partes.join(' · ')}`,'ok'), 600);
+    }
+  } finally {
+    _autoGerandoLock = false;
   }
 }
 
