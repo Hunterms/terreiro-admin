@@ -1474,7 +1474,8 @@ function renderEscalasGira() {
   const futuros = S.eventos
     .filter(e => e.data >= hoje && !e.arquivado)
     .slice(0,30);
-  const semEscala = futuros.filter(ev => !S.escalas.some(es => es.evento_id === ev.id));
+  // semEscala pra auto-gerar: exclui festas (ficam pra v2)
+  const semEscala = futuros.filter(ev => !S.escalas.some(es => es.evento_id === ev.id) && !ehFesta(ev));
 
   body.innerHTML = `
     ${semEscala.length > 0 ? `
@@ -1517,18 +1518,44 @@ function renderEscalasGira() {
 }
 
 // Gera escalas automáticas em lote (sem abrir modal)
+// Helper: quantos filhos escalar pra uma função específica
+function qtdParaFuncao(fn) {
+  const n = (fn.nome||'').toLowerCase();
+  if(n.includes('antes') || n.includes('depois')) return 4;
+  return 1;
+}
+
+// Festas ficam pra v2 — pulamos
+function ehFesta(ev) {
+  return (ev.nome||ev.titulo||'').toLowerCase().includes('festa') || ev.tipo === 'festa';
+}
+
 async function gerarEscalasEmLote(eventos) {
-  confirmar(`Gerar ${eventos.length} escala${eventos.length===1?'':'s'} automaticamente? Você poderá editar cada uma depois.`, async () => {
+  const elegiveis = eventos.filter(ev => !ehFesta(ev));
+  const festas = eventos.length - elegiveis.length;
+  if(elegiveis.length === 0) {
+    toast(`Nenhuma escala pra gerar — todas as ${festas} são festas (fase 2)`,'err');
+    return;
+  }
+  const msg = festas
+    ? `Gerar ${elegiveis.length} escala${elegiveis.length===1?'':'s'}? <strong>${festas} festa${festas===1?'':'s'}</strong> ${festas===1?'será ignorada':'serão ignoradas'} (fase 2).<br>Limpezas antes/depois vão com 4 pessoas cada. Distribuição justa cruzando o mês inteiro.`
+    : `Gerar ${elegiveis.length} escala${elegiveis.length===1?'':'s'}? Limpezas antes/depois vão com 4 pessoas cada. Distribuição justa ao longo do mês.`;
+  confirmar(msg, async () => {
     const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
     const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+    // Ordena por data pra distribuir cumulativamente
+    const ordenados = [...elegiveis].sort((a,b) => a.data.localeCompare(b.data));
+    const alocacoesPendentes = []; // alocações criadas nessa batch, alimentam contagem da próxima
     let geradas = 0, erros = 0;
-    for(const ev of eventos) {
+    for(const ev of ordenados) {
       try {
-        const sug = gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos);
+        const sug = gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, alocacoesPendentes);
         const alocacoes = [];
         Object.keys(sug).forEach(funcaoId => {
           sug[funcaoId].forEach(filhoId => {
             alocacoes.push({ funcao_id: funcaoId, filho_id: filhoId, status: 'escalado', notificado: false });
+            // Marca pra contagem cumulativa nas próximas iterações
+            alocacoesPendentes.push({ data: ev.data, filho_id: filhoId, funcao_id: funcaoId });
           });
         });
         if(alocacoes.length === 0) continue;
@@ -1547,22 +1574,35 @@ async function gerarEscalasEmLote(eventos) {
         geradas++;
       } catch(e) { console.error(e); erros++; }
     }
-    toast(`${geradas} escala${geradas===1?'':'s'} gerada${geradas===1?'':'s'}${erros?` · ${erros} com erro`:''}. Revise antes de divulgar.`, geradas?'ok':'err');
+    toast(`${geradas} escala${geradas===1?'':'s'} gerada${geradas===1?'':'s'}${erros?` · ${erros} com erro`:''}${festas?` · ${festas} festa${festas===1?'':'s'} ignorada${festas===1?'':'s'}`:''}. Revise antes de divulgar.`, geradas?'ok':'err');
   });
 }
 
 // Versão batch da sugestão (sem closure de modal)
-function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, qtdPorFuncao=1) {
+// `pendentes`: alocações já criadas em escalas dessa mesma batch — contam pra contagem
+function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
   const mesEv = (ev.data||'').slice(0,7);
   const indispMap = {};
   S.disponibilidade.filter(d => d.mes === mesEv).forEach(d => { indispMap[d.filho_id] = d; });
 
+  // Contagem das últimas 8 semanas + alocações pendentes da batch atual
   const dataLim = new Date(ev.data+'T00:00:00');
   dataLim.setDate(dataLim.getDate() - 56);
   const limStr = dataLim.toISOString().slice(0,10);
   const contagem = {};
+  const contagemFn = {}; // por (filho, função) pra fairness por função
   S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data < ev.data)
-    .forEach(es => (es.alocacoes||[]).forEach(a => { contagem[a.filho_id] = (contagem[a.filho_id]||0) + 1; }));
+    .forEach(es => (es.alocacoes||[]).forEach(a => {
+      contagem[a.filho_id] = (contagem[a.filho_id]||0) + 1;
+      const k = `${a.filho_id}__${a.funcao_id}`;
+      contagemFn[k] = (contagemFn[k]||0) + 1;
+    }));
+  // Soma pendentes
+  pendentes.filter(p => p.data >= limStr && p.data < ev.data).forEach(p => {
+    contagem[p.filho_id] = (contagem[p.filho_id]||0) + 1;
+    const k = `${p.filho_id}__${p.funcao_id}`;
+    contagemFn[k] = (contagemFn[k]||0) + 1;
+  });
 
   const tipoEsp = fn => {
     const n = (fn.nome||'').toLowerCase();
@@ -1574,6 +1614,7 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, qtdPorFuncao=1) {
   const usados = new Set();
   const sug = {};
   funcoesAtivas.forEach(fn => {
+    const qtd = qtdParaFuncao(fn);
     let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
       ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
       : filhosAtivos;
@@ -1586,8 +1627,14 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, qtdPorFuncao=1) {
     });
     const tipoSp = tipoEsp(fn);
     elegiveis.sort((a,b) => {
+      // 1. Menos vezes nessa função específica (fairness por função)
+      const cafn_a = contagemFn[`${a.id}__${fn.id}`] || 0;
+      const cafn_b = contagemFn[`${b.id}__${fn.id}`] || 0;
+      if(cafn_a !== cafn_b) return cafn_a - cafn_b;
+      // 2. Menos vezes em qualquer função (rodízio geral)
       const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
       if(ca !== cb) return ca - cb;
+      // 3. Regra espacial
       if(tipoSp === 'perto') {
         const pa = a.mora_perto?1:0, pb = b.mora_perto?1:0;
         if(pa !== pb) return pb - pa;
@@ -1599,7 +1646,7 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, qtdPorFuncao=1) {
     });
     const escolhidos = [];
     for(const f of elegiveis) {
-      if(escolhidos.length >= qtdPorFuncao) break;
+      if(escolhidos.length >= qtd) break;
       if(usados.has(f.id)) continue;
       escolhidos.push(f.id);
       usados.add(f.id);
@@ -1818,17 +1865,24 @@ function openEscalaForm(evId, escId='') {
     return null;
   }
 
+  // Contagem por (filho, função) pra fairness por função
+  const contagemFn = {};
+  S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data < ev.data)
+    .forEach(es => (es.alocacoes||[]).forEach(a => {
+      const k = `${a.filho_id}__${a.funcao_id}`;
+      contagemFn[k] = (contagemFn[k]||0) + 1;
+    }));
+
   // Gerador automático: pra cada função, escolhe N candidatos
-  // Critério: rodízio justo (menos escalado) + regra espacial + random tiebreaker
-  function gerarSugestao(qtdPorFuncao=1) {
+  // Critério: menos vezes nessa função + rodízio geral + regra espacial + random
+  function gerarSugestao() {
     const usados = new Set();
     const sug = {};
     funcoesAtivas.forEach(fn => {
-      // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
+      const qtd = qtdParaFuncao(fn);
       let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
         ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
         : filhosAtivos;
-      // Remove indisponíveis
       elegiveis = elegiveis.filter(f => {
         const d = indispMap[f.id];
         if(!d) return true;
@@ -1837,8 +1891,10 @@ function openEscalaForm(evId, escId='') {
         return true;
       });
       const tipoSp = tipoEspacial(fn);
-      // Ordena: menos escalado primeiro, depois regra espacial, depois random
       elegiveis.sort((a,b) => {
+        const cafn_a = contagemFn[`${a.id}__${fn.id}`] || 0;
+        const cafn_b = contagemFn[`${b.id}__${fn.id}`] || 0;
+        if(cafn_a !== cafn_b) return cafn_a - cafn_b;
         const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
         if(ca !== cb) return ca - cb;
         if(tipoSp === 'perto') {
@@ -1850,10 +1906,9 @@ function openEscalaForm(evId, escId='') {
         }
         return Math.random() - 0.5;
       });
-      // Evita escalar o mesmo filho em múltiplas funções da mesma escala
       const escolhidos = [];
       for(const f of elegiveis) {
-        if(escolhidos.length >= qtdPorFuncao) break;
+        if(escolhidos.length >= qtd) break;
         if(usados.has(f.id)) continue;
         escolhidos.push(f.id);
         usados.add(f.id);
@@ -1863,9 +1918,12 @@ function openEscalaForm(evId, escId='') {
     return sug;
   }
 
-  // Se está criando nova escala, já pré-sugere automático
-  if(!esc) {
-    const sugestao = gerarSugestao(1);
+  // Bloqueia geração se for festa
+  const eventoEhFesta = ehFesta(ev);
+
+  // Se está criando nova escala (e não é festa), já pré-sugere automático
+  if(!esc && !eventoEhFesta) {
+    const sugestao = gerarSugestao();
     Object.keys(sugestao).forEach(fId => alocPreenchidas[fId] = sugestao[fId]);
   }
 
@@ -1873,6 +1931,7 @@ function openEscalaForm(evId, escId='') {
     <div class="modal-h"><h3>${esc?'Editar escala':'Criar escala'} — ${ev.nome||ev.titulo}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
+      ${eventoEhFesta ? '<div style="background:rgba(155,89,182,0.1);border:1px solid rgba(155,89,182,0.3);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--purple)">🎉 <strong>Festa</strong> — escalas de festa têm dinâmica diferente e ficam pra v2. Você ainda pode escalar manualmente abaixo, mas o auto-gerar está desativado.</div>' : ''}
       ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
         const idDispLog = `e-${fn.id}`;
         // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
@@ -1884,10 +1943,12 @@ function openEscalaForm(evId, escId='') {
         if(tipoSp === 'perto') elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
         else if(tipoSp === 'longe') elegiveis = [...elegiveis].sort((a,b) => (a.mora_perto?1:0) - (b.mora_perto?1:0));
         const restrita = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0;
+        const qtdAlvo = qtdParaFuncao(fn);
+        const dicaQtd = qtdAlvo > 1 ? `<span style="font-size:11px;color:var(--text3);margin-left:6px">(${qtdAlvo} pessoas)</span>` : '';
         const dicaSp = tipoSp === 'perto' ? '<span style="font-size:11px;color:var(--text3);margin-left:6px">🏠 prefira mora perto</span>' : (tipoSp === 'longe' ? '<span style="font-size:11px;color:var(--text3);margin-left:6px">🏃 prefira mora longe</span>' : '');
         return `
         <div class="fi-group">
-          <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}${dicaSp}</label>
+          <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}${dicaQtd}${dicaSp}</label>
           <div class="chips" id="${idDispLog}">
             ${elegiveis.length===0 ? '<span style="color:var(--text3);font-size:12px">Nenhum filho elegível pra essa função</span>' : elegiveis.map(f => {
               const sel = (alocPreenchidas[fn.id]||[]).includes(f.id);
@@ -1920,8 +1981,8 @@ function openEscalaForm(evId, escId='') {
 
   // botão "Gerar automático" — regera e remarca chips
   $('#es-auto').onclick = () => {
-    const sugestao = gerarSugestao(1);
-    // limpa todas as marcações e remarca pelas sugestões
+    if(eventoEhFesta) { toast('Festas ficam pra v2 — escale manual','err'); return; }
+    const sugestao = gerarSugestao();
     funcoesAtivas.forEach(fn => {
       $$(`#e-${fn.id} [data-fid]`).forEach(b => {
         const filhoId = b.dataset.fid;
@@ -1930,7 +1991,7 @@ function openEscalaForm(evId, escId='') {
         b.classList.toggle('chip-gold', ehSugerido);
       });
     });
-    toast('Escala regerada automaticamente · ajuste se quiser','ok');
+    toast('Escala regerada · ajuste se quiser','ok');
   };
 
   $('#es-save').onclick = async () => {
