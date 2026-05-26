@@ -407,6 +407,7 @@ const appCand = initializeApp(cfgCandieiro, 'candieiro');
 const dbPvd = getFirestore(appPvd);
 const dbCand = getFirestore(appCand);
 const authPvd = getAuth(appPvd);
+const authCand = getAuth(appCand);
 
 // ── STATE ──────────────────────────────────────────────────────────────────
 const S = {
@@ -523,7 +524,20 @@ $('#login-form').addEventListener('submit', async e => {
   btn.disabled = true;
   btn.textContent = 'Entrando...';
   try {
+    // Login primário: terreiro-pvd
     await signInWithEmailAndPassword(authPvd, email, pwd);
+    // Login secundário: terreiro-candieiro (mesmas credenciais)
+    // Se falhar, mostra warning mas não bloqueia — pode ser que usuário ainda
+    // não tenha criado conta no project candieiro. Sem auth lá, escritas em
+    // `eventos` vão falhar.
+    try {
+      await signInWithEmailAndPassword(authCand, email, pwd);
+    } catch(eCand) {
+      console.warn('Não autenticou no terreiro-candieiro:', eCand.code, eCand.message);
+      setTimeout(() => {
+        toast('⚠️ Sem acesso ao project terreiro-candieiro — eventos não poderão ser criados. Crie o mesmo usuário lá.', 'err');
+      }, 800);
+    }
   } catch(e) {
     err.textContent = e.code === 'auth/invalid-credential' ? 'Email ou senha incorretos' : (e.message || 'Erro ao entrar');
     err.style.display = 'block';
@@ -536,6 +550,7 @@ $('#login-form').addEventListener('submit', async e => {
 $('#btn-logout').addEventListener('click', async () => {
   S.unsubs.forEach(u=>u && u());
   S.unsubs = [];
+  try { await signOut(authCand); } catch(e) {}
   await signOut(authPvd);
 });
 
