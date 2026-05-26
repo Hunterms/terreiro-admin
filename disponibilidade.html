@@ -132,6 +132,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       <div class="tabs">
         <button id="tab-disp" class="active" onclick="setTab('disp')">Minha disponibilidade</button>
         <button id="tab-esc" onclick="setTab('esc')">Minhas escalas</button>
+        <button id="tab-rega" onclick="setTab('rega')">Rega</button>
         <button id="tab-giras" onclick="setTab('giras')">Próximas giras</button>
         <button id="tab-avisos" onclick="setTab('avisos')">Avisos</button>
       </div>
@@ -146,6 +147,10 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
       <div id="view-esc" style="display:none">
         <div id="escalas-container"></div>
+      </div>
+
+      <div id="view-rega" style="display:none">
+        <div id="rega-container"></div>
       </div>
 
       <div id="view-giras" style="display:none">
@@ -205,8 +210,21 @@ let APP = {
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   eventos: [],
-  avisos: []
+  avisos: [],
+  regaCompromisso: null, // { dias_semana: [] }
+  regaTodos: []  // todos os compromissos pra mostrar quem rega cada dia
 };
+
+// Data efetiva de uma alocação (limpeza depois = dia seguinte)
+function dataEfetivaAloc(es, aloc, funcoes) {
+  const fn = funcoes.find(f => f.id === aloc?.funcao_id);
+  if(fn && (fn.nome||'').toLowerCase().includes('depois')) {
+    const d = new Date(es.data+'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0,10);
+  }
+  return es.data;
+}
 
 (async function boot() {
   try {
@@ -280,10 +298,18 @@ async function selecionarFilho(id) {
       .sort((a,b) => (b.publicadoEm?.seconds||0) - (a.publicadoEm?.seconds||0));
   } catch(e) { console.warn('Erro avisos', e); APP.avisos = []; }
 
+  // Carrega compromisso de rega do filho + todos os outros pra mostrar visão geral
+  try {
+    const regaSnap = await getDocs(collection(dbPvd,'adm_rega_compromissos'));
+    APP.regaTodos = regaSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    APP.regaCompromisso = APP.regaTodos.find(r => r.filho_id === id) || { filho_id:id, dias_semana:[] };
+  } catch(e) { console.warn('Erro rega', e); APP.regaTodos = []; APP.regaCompromisso = { filho_id:id, dias_semana:[] }; }
+
   renderDisp();
   renderEsc();
   renderGiras();
   renderAvisos();
+  renderRega();
 }
 
 function proxMeses(qtd) {
@@ -411,16 +437,22 @@ function renderEsc() {
     const aloc = es.alocacoes.find(a => a.filho_id === f.id);
     const fn = APP.funcoes.find(fn => fn.id === aloc?.funcao_id);
     const nome = ev?.nome || ev?.titulo || (es.tipo === 'lojinha' ? 'Plantão da lojinha' : 'Evento');
-    const data = es.tipo === 'lojinha' ? `${fmtCurto(es.data)} – ${fmtCurto(es.data_fim)}` : fmtData(es.data);
+    const dataReal = es.tipo === 'lojinha' ? es.data : dataEfetivaAloc(es, aloc, APP.funcoes);
+    const ehDepois = dataReal !== es.data && es.tipo !== 'lojinha';
+    const dataLabel = es.tipo === 'lojinha' ? `${fmtCurto(es.data)} – ${fmtCurto(es.data_fim)}` : fmtData(dataReal);
     return `
       <div class="list-item">
         <div class="li-date">
-          <div class="d">${(es.data||'').slice(8,10)}</div>
-          <div>${new Date((es.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+          <div class="d">${(dataReal||'').slice(8,10)}</div>
+          <div>${new Date((dataReal||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
         </div>
         <div>
           <div class="li-name">${nome} ${fn?`<span style="color:var(--gold)">· ${fn.nome}</span>`:''}</div>
-          <div class="li-meta"><span>${data}</span>${ev?.hora?`<span>${ev.hora}</span>`:''}</div>
+          <div class="li-meta">
+            <span>${dataLabel}</span>
+            ${ev?.hora && !ehDepois?`<span>${ev.hora}</span>`:''}
+            ${ehDepois?`<span style="color:var(--gold);font-weight:600">dia seguinte à gira</span>`:''}
+          </div>
         </div>
       </div>
     `;
@@ -499,8 +531,78 @@ function renderAvisos() {
   `;
 }
 
+function renderRega() {
+  const cont = $('#rega-container');
+  if(!cont) return;
+  const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const diasCurto = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const meusDias = APP.regaCompromisso?.dias_semana || [];
+
+  // Quem rega cada dia (visão geral)
+  const filhosPorDia = idx => {
+    return APP.regaTodos
+      .filter(r => (r.dias_semana||[]).includes(idx))
+      .map(r => r.filho_nome || (APP.filhos.find(f => f.id === r.filho_id)?.nome) || '—');
+  };
+
+  cont.innerHTML = `
+    <div class="help">
+      Marque os dias da semana que <strong>você se compromete</strong> a regar a casa.<br>
+      Você pode marcar quantos quiser (ou nenhum). É voluntário — sem culpa.
+    </div>
+
+    <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>Meus dias</h2>
+      <div class="chips" id="rega-dias" style="margin-bottom:16px">
+        ${diasLabel.map((lbl,i) => `
+          <button type="button" class="chip ${meusDias.includes(i)?'sel':''}" data-d="${i}" style="${meusDias.includes(i)?'background:var(--green-bg);color:var(--green);border-color:var(--green-bd)':''}" onclick="this.classList.toggle('sel'); if(this.classList.contains('sel')){this.style.cssText='background:var(--green-bg);color:var(--green);border-color:var(--green-bd)'}else{this.style.cssText=''}">${lbl}</button>
+        `).join('')}
+      </div>
+      <button class="btn btn-primary btn-block" onclick="window._app.salvarRega()">Salvar meus dias</button>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Visão geral — quem rega cada dia</h2>
+      <div style="display:grid;grid-template-columns:1fr;gap:8px">
+        ${diasCurto.map((d,i) => {
+          const filhos = filhosPorDia(i);
+          const eu = meusDias.includes(i);
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${eu?'rgba(46,204,113,0.08)':'var(--glass2)'};border:1px solid ${eu?'var(--green-bd)':'var(--border)'};border-radius:8px">
+              <div style="font-weight:700;width:50px;color:${eu?'var(--green)':'var(--text2)'};font-size:13px">${diasLabel[i]}</div>
+              <div style="flex:1;font-size:13.5px">${filhos.length === 0 ? '<span style="color:var(--text3);font-style:italic">— ninguém assinou —</span>' : filhos.map(n=>n.split(' ')[0]).join(' · ')}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+async function salvarRega() {
+  if(!APP.filhoAtual) return;
+  const dias = $$('#rega-dias .chip.sel').map(b => parseInt(b.dataset.d));
+  try {
+    await setDoc(doc(dbPvd,'adm_rega_compromissos', APP.filhoAtual.id), {
+      filho_id: APP.filhoAtual.id,
+      filho_nome: APP.filhoAtual.nome,
+      dias_semana: dias,
+      atualizadoEm: serverTimestamp()
+    }, { merge: true });
+    APP.regaCompromisso = { filho_id:APP.filhoAtual.id, dias_semana:dias };
+    // Atualiza local em regaTodos pra a visão geral refletir imediatamente
+    const idx = APP.regaTodos.findIndex(r => r.filho_id === APP.filhoAtual.id);
+    if(idx >= 0) APP.regaTodos[idx] = { ...APP.regaTodos[idx], dias_semana:dias };
+    else APP.regaTodos.push({ filho_id:APP.filhoAtual.id, filho_nome:APP.filhoAtual.nome, dias_semana:dias });
+    renderRega();
+    toast('Compromisso salvo. Obrigado!');
+  } catch(e) {
+    toast('Erro: '+e.message,'err');
+  }
+}
+
 function setTab(t) {
-  ['disp','esc','giras','avisos'].forEach(k => {
+  ['disp','esc','rega','giras','avisos'].forEach(k => {
     const b = $(`#tab-${k}`);
     const v = $(`#view-${k}`);
     if(b) b.classList.toggle('active', k === t);
@@ -509,7 +611,7 @@ function setTab(t) {
 }
 
 window.setTab = setTab;
-window._app = { salvar };
+window._app = { salvar, salvarRega };
 </script>
 </body>
 </html>

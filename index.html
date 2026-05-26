@@ -290,6 +290,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><polyline points="9 14 11 16 15 12"/></svg>
         Disponibilidade
       </button>
+      <button data-route="rega">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
+        Rega
+      </button>
 
       <div class="section-label">Operação</div>
       <button data-route="kanban">
@@ -419,6 +423,7 @@ const S = {
   atendimentos: [],
   consulentes: [],
   solicitacoes: [],
+  regas: [],
   route: 'dashboard',
   unsubs: []
 };
@@ -426,6 +431,19 @@ const S = {
 // ── UTIL ───────────────────────────────────────────────────────────────────
 const $ = (q,r=document) => r.querySelector(q);
 const $$ = (q,r=document) => Array.from(r.querySelectorAll(q));
+
+// Data efetiva de uma alocação: "Limpeza depois" da gira é no dia seguinte.
+function dataEfetivaAloc(es, aloc) {
+  if(!es || !aloc) return es?.data || null;
+  const fn = S.funcoes.find(f => f.id === aloc.funcao_id);
+  if(fn && (fn.nome||'').toLowerCase().includes('depois')) {
+    const d = new Date(es.data+'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0,10);
+  }
+  return es.data;
+}
+
 const fmt = {
   data: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—',
   dataLong: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—',
@@ -606,6 +624,12 @@ function attachListeners() {
     if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
   }));
 
+  // Compromissos de rega
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_rega_compromissos'), snap => {
+    S.regas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['rega','dashboard'].includes(S.route)) renderRoute();
+  }));
+
   // Atendimentos (só admin)
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
@@ -644,6 +668,7 @@ function renderRoute() {
     case 'funcoes':       return renderFuncoes(c);
     case 'kanban':        return renderKanban(c);
     case 'controle-disp': return renderControleDisp(c);
+    case 'rega':          return renderRega(c);
     case 'calendario':    return renderCalendario(c);
     case 'escalas':       return renderEscalas(c);
     case 'agenda':        return renderAgenda(c);
@@ -1445,11 +1470,25 @@ function setEscTab(t) { escTab = t; renderRoute(); }
 
 function renderEscalasGira() {
   const body = $('#esc-body');
+  const hoje = new Date().toISOString().slice(0,10);
   const futuros = S.eventos
-    .filter(e => e.data >= new Date().toISOString().slice(0,10) && !e.arquivado)
-    .slice(0,20);
+    .filter(e => e.data >= hoje && !e.arquivado)
+    .slice(0,30);
+  const semEscala = futuros.filter(ev => !S.escalas.some(es => es.evento_id === ev.id));
 
   body.innerHTML = `
+    ${semEscala.length > 0 ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--gold-bg)">
+        <div class="card-h">
+          <div class="card-title">🪄 Auto-gerar escalas</div>
+          <div style="font-size:13px;color:var(--text3)">${semEscala.length} eventos sem escala</div>
+        </div>
+        <p style="font-size:13.5px;color:var(--text2);line-height:1.5;margin-bottom:14px">
+          Cria escalas automáticas pros eventos sem escala dos próximos 30 dias, respeitando rodízio + mora perto/longe por função. Você revisa cada uma depois.
+        </p>
+        <button class="btn btn-primary" id="ge-batch">Gerar ${semEscala.length} escala${semEscala.length===1?'':'s'} pendente${semEscala.length===1?'':'s'}</button>
+      </div>
+    `:''}
     <div class="card">
       <div class="card-h"><div class="card-title">Próximos eventos</div></div>
       ${futuros.length === 0 ? '<div class="empty"><div class="empty-s">Nenhum evento futuro. Crie eventos no calendário primeiro.</div></div>' : futuros.map(ev => {
@@ -1473,6 +1512,101 @@ function renderEscalasGira() {
       }).join('')}
     </div>
   `;
+
+  if(semEscala.length > 0) $('#ge-batch').onclick = () => gerarEscalasEmLote(semEscala);
+}
+
+// Gera escalas automáticas em lote (sem abrir modal)
+async function gerarEscalasEmLote(eventos) {
+  confirmar(`Gerar ${eventos.length} escala${eventos.length===1?'':'s'} automaticamente? Você poderá editar cada uma depois.`, async () => {
+    const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+    const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+    let geradas = 0, erros = 0;
+    for(const ev of eventos) {
+      try {
+        const sug = gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos);
+        const alocacoes = [];
+        Object.keys(sug).forEach(funcaoId => {
+          sug[funcaoId].forEach(filhoId => {
+            alocacoes.push({ funcao_id: funcaoId, filho_id: filhoId, status: 'escalado', notificado: false });
+          });
+        });
+        if(alocacoes.length === 0) continue;
+        await addDoc(collection(dbPvd,'adm_escalas'), {
+          tipo: 'gira',
+          evento_id: ev.id,
+          periodo: null,
+          data: ev.data,
+          data_fim: null,
+          alocacoes,
+          status_geral: 'rascunho',
+          geradoPor: 'automatico',
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp()
+        });
+        geradas++;
+      } catch(e) { console.error(e); erros++; }
+    }
+    toast(`${geradas} escala${geradas===1?'':'s'} gerada${geradas===1?'':'s'}${erros?` · ${erros} com erro`:''}. Revise antes de divulgar.`, geradas?'ok':'err');
+  });
+}
+
+// Versão batch da sugestão (sem closure de modal)
+function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, qtdPorFuncao=1) {
+  const mesEv = (ev.data||'').slice(0,7);
+  const indispMap = {};
+  S.disponibilidade.filter(d => d.mes === mesEv).forEach(d => { indispMap[d.filho_id] = d; });
+
+  const dataLim = new Date(ev.data+'T00:00:00');
+  dataLim.setDate(dataLim.getDate() - 56);
+  const limStr = dataLim.toISOString().slice(0,10);
+  const contagem = {};
+  S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data < ev.data)
+    .forEach(es => (es.alocacoes||[]).forEach(a => { contagem[a.filho_id] = (contagem[a.filho_id]||0) + 1; }));
+
+  const tipoEsp = fn => {
+    const n = (fn.nome||'').toLowerCase();
+    if(n.includes('antes')) return 'longe';
+    if(n.includes('depois')) return 'perto';
+    return null;
+  };
+
+  const usados = new Set();
+  const sug = {};
+  funcoesAtivas.forEach(fn => {
+    let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
+      ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
+      : filhosAtivos;
+    elegiveis = elegiveis.filter(f => {
+      const d = indispMap[f.id];
+      if(!d) return true;
+      if(d.datas_indisponivel?.includes(ev.data)) return false;
+      if(d.funcoes_indisponivel?.includes(fn.id)) return false;
+      return true;
+    });
+    const tipoSp = tipoEsp(fn);
+    elegiveis.sort((a,b) => {
+      const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
+      if(ca !== cb) return ca - cb;
+      if(tipoSp === 'perto') {
+        const pa = a.mora_perto?1:0, pb = b.mora_perto?1:0;
+        if(pa !== pb) return pb - pa;
+      } else if(tipoSp === 'longe') {
+        const pa = a.mora_perto?0:1, pb = b.mora_perto?0:1;
+        if(pa !== pb) return pb - pa;
+      }
+      return Math.random() - 0.5;
+    });
+    const escolhidos = [];
+    for(const f of elegiveis) {
+      if(escolhidos.length >= qtdPorFuncao) break;
+      if(usados.has(f.id)) continue;
+      escolhidos.push(f.id);
+      usados.add(f.id);
+    }
+    sug[fn.id] = escolhidos;
+  });
+  return sug;
 }
 
 function renderEscalasLojinha() {
@@ -2386,6 +2520,97 @@ function renderControleDisp(c) {
   };
 }
 
+// ── REGA (rodízio voluntário diário) ──────────────────────────────────────
+function renderRega(c) {
+  const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const diasCurto = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const hojeIdx = new Date().getDay();
+  const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+
+  // Map: filho_id → array de dias
+  const compromissos = {};
+  S.regas.forEach(r => { compromissos[r.filho_id] = r.dias_semana || []; });
+
+  const filhosPorDia = idx => filhosAtivos.filter(f => (compromissos[f.id]||[]).includes(idx));
+  const filhosSemCompromisso = filhosAtivos.filter(f => !compromissos[f.id] || compromissos[f.id].length === 0);
+  const filhosComCompromisso = filhosAtivos.filter(f => compromissos[f.id] && compromissos[f.id].length > 0);
+  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/disponibilidade.html';
+
+  const hojeRega = filhosPorDia(hojeIdx);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Rega</div>
+        <div class="page-sub">Rodízio voluntário · cada filho assina os dias que se compromete a regar</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="disponibilidade.html" target="_blank">↗ Página pública (filho marca lá)</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;border-color:${hojeRega.length?'var(--green-bd)':'var(--amber-bg)'}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="chip ${hojeRega.length?'chip-green':'chip-amber'}">HOJE · ${diasLabel[hojeIdx]}</span>
+      </div>
+      ${hojeRega.length === 0 ? `
+        <div style="font-size:15px;color:var(--amber);font-weight:600">Ninguém assinou pra regar hoje 😬</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:6px">Talvez peça no grupo, ou copie o link da página pública pra galera assinar dias.</div>
+      ` : `
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Quem rega hoje:</div>
+        <div class="chips">${hojeRega.map(f => `<span class="chip chip-green">${f.nome.split(' ')[0]}</span>`).join('')}</div>
+      `}
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><div class="card-title">Semana toda</div></div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+        ${diasCurto.map((d,i) => {
+          const filhos = filhosPorDia(i);
+          const ehHoje = i === hojeIdx;
+          return `
+            <div style="padding:10px;border:1px solid ${ehHoje?'var(--red)':'var(--border)'};border-radius:8px;background:${ehHoje?'var(--red-bg)':'var(--glass2)'}">
+              <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:${ehHoje?'var(--red)':'var(--text3)'};margin-bottom:8px">${d.toUpperCase()}${ehHoje?' · HOJE':''}</div>
+              ${filhos.length === 0 ? '<div style="font-size:12px;color:var(--text3);font-style:italic">— ninguém —</div>' : filhos.map(f => `<div style="font-size:13px;margin-bottom:3px">${f.nome.split(' ')[0]}</div>`).join('')}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-h"><div class="card-title">Quem assinou (${filhosComCompromisso.length})</div></div>
+        ${filhosComCompromisso.length === 0 ? '<div class="empty"><div class="empty-s">Ninguém ainda</div></div>' : filhosComCompromisso.map(f => {
+          const dias = (compromissos[f.id]||[]).sort((a,b)=>a-b);
+          return `
+            <div class="list-item">
+              <div class="li-avatar">${fmt.initials(f.nome)}</div>
+              <div class="li-main">
+                <div class="li-name">${f.nome}</div>
+                <div class="li-meta"><span>${dias.map(d=>diasCurto[d]).join(' · ')}</span></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-h"><div class="card-title">Ainda não assinaram (${filhosSemCompromisso.length})</div></div>
+        ${filhosSemCompromisso.length === 0 ? '<div class="empty"><div class="empty-s">Todos os filhos ativos já assinaram</div></div>' : `
+          ${filhosSemCompromisso.map(f => `
+            <div class="list-item">
+              <div class="li-avatar" style="background:var(--glass2);color:var(--text3)">${fmt.initials(f.nome)}</div>
+              <div class="li-main"><div class="li-name">${f.nome}</div></div>
+            </div>
+          `).join('')}
+          <button class="btn btn-primary" style="margin-top:10px;width:100%" onclick="navigator.clipboard.writeText('Salve! Cadastre os dias que você pode regar a casa: ${linkPublico}').then(()=>window._app && window._app.toast && window._app.toast('Mensagem copiada','ok'))">Copiar mensagem pro grupo</button>
+        `}
+      </div>
+    </div>
+  `;
+}
+
 // ── SOLICITAÇÕES (pedidos vindos do agendar.html público) ──────────────────
 function atualizarBadgeSolicitacoes() {
   const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').length;
@@ -2622,13 +2847,22 @@ async function renderConfigAgendamento(c) {
 function renderMeuDashboard(c) {
   const f = S.filhoDoc;
   const hoje = new Date().toISOString().slice(0,10);
+  // Ordena pela data efetiva (limpeza depois conta como +1 dia)
   const minhasEscalas = S.escalas
-    .filter(es => es.data >= hoje && (es.alocacoes||[]).some(a => a.filho_id === f.id))
-    .sort((a,b) => a.data.localeCompare(b.data));
-  const proxima = minhasEscalas[0];
+    .filter(es => (es.alocacoes||[]).some(a => a.filho_id === f.id))
+    .map(es => {
+      const aloc = es.alocacoes.find(a => a.filho_id === f.id);
+      return { es, aloc, dataReal: dataEfetivaAloc(es, aloc) };
+    })
+    .filter(x => x.dataReal >= hoje)
+    .sort((a,b) => a.dataReal.localeCompare(b.dataReal));
+  const prox = minhasEscalas[0];
+  const proxima = prox?.es;
   const proxEvento = proxima ? S.eventos.find(e => e.id === proxima.evento_id) : null;
-  const minhaFuncaoProx = proxima ? (proxima.alocacoes.find(a=>a.filho_id===f.id)?.funcao_id) : null;
+  const minhaFuncaoProx = prox?.aloc?.funcao_id;
   const nomeFuncao = minhaFuncaoProx ? S.funcoes.find(fn=>fn.id===minhaFuncaoProx)?.nome : '';
+  const dataReal = prox?.dataReal;
+  const ehDepois = dataReal && dataReal !== proxima?.data;
 
   const avisosAtivos = S.avisos.filter(a=>!a.arquivado).slice(0,3);
   const meusCards = S.kanban.filter(k => !k.arquivado && k.status!=='done' && (k.responsaveis||[]).includes(f.id));
@@ -2637,7 +2871,7 @@ function renderMeuDashboard(c) {
     <div class="page-head">
       <div>
         <div class="page-title">Olá, ${f.nome.split(' ')[0]}</div>
-        <div class="page-sub">${proxima ? `Próxima escala: ${nomeFuncao} em ${proxEvento?.nome||''} (${fmt.data(proxima.data)})` : 'Sem escalas próximas'}</div>
+        <div class="page-sub">${proxima ? `Próxima: ${nomeFuncao} em ${proxEvento?.nome||''} (${fmt.data(dataReal)})` : 'Sem escalas próximas'}</div>
       </div>
     </div>
 
@@ -2645,7 +2879,7 @@ function renderMeuDashboard(c) {
       <div class="card" style="margin-bottom:18px;border-color:var(--gold);box-shadow:0 0 24px rgba(212,168,67,0.08)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="chip chip-gold">PRÓXIMA ESCALA</span></div>
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">${proxEvento?.nome||'Evento'}</div>
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">${fmt.dataLong(proxima.data)} · ${proxEvento?.hora||'—'}</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">${fmt.dataLong(dataReal)} ${ehDepois?'<span style="color:var(--gold)">(dia seguinte à gira)</span>':`· ${proxEvento?.hora||'—'}`}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <span class="chip chip-gold">Função: ${nomeFuncao}</span>
           <span class="chip">${proxEvento?.local||'Terreiro'}</span>
@@ -2693,12 +2927,17 @@ function renderMinhasEscalas(c) {
     const ev = S.eventos.find(e=>e.id===es.evento_id);
     const aloc = es.alocacoes.find(a=>a.filho_id===f.id);
     const fn = S.funcoes.find(fn=>fn.id===aloc?.funcao_id);
+    const dataReal = dataEfetivaAloc(es, aloc);
+    const ehDepois = dataReal !== es.data;
     return `
       <div class="list-item">
-        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(es.data||'').slice(8,10)}</div>
+        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(dataReal||'').slice(8,10)}</div>
         <div class="li-main">
           <div class="li-name">${ev?.nome||'Evento'} — <span style="color:var(--gold)">${fn?.nome||'—'}</span></div>
-          <div class="li-meta"><span>${fmt.dataLong(es.data)} · ${ev?.hora||'—'}</span><span class="chip">${aloc?.status||'escalado'}</span></div>
+          <div class="li-meta">
+            <span>${fmt.dataLong(dataReal)} ${ehDepois?'<span style="color:var(--text3)">(dia seguinte à gira)</span>':`· ${ev?.hora||'—'}`}</span>
+            <span class="chip">${aloc?.status||'escalado'}</span>
+          </div>
         </div>
       </div>
     `;
@@ -2839,6 +3078,7 @@ function renderAvisosFilho(c) {
 
 // ── EXPOSE ─────────────────────────────────────────────────────────────────
 window._app = {
+  toast,
   navigate,
   openFilhoForm,
   openFuncaoForm,
