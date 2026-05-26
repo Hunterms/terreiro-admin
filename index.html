@@ -769,23 +769,27 @@ async function autoGerarTarefasFuncoes() {
     }
 
     if(fn.tarefa_lua_cheia) {
-      const luas = LUAS_CHEIAS.filter(d => d >= hojeStr && d <= limStr);
-      for(const luaData of luas) {
-        const ref = `fn_lua__${fn.id}__${luaData}`;
-        if(refsExistentes.has(ref)) continue;
-        novos.push({
-          titulo: `${fn.nome} — entrega de lua cheia (${luaData})`,
-          descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${luaData}.`,
-          status: 'todo',
-          motivo_bloqueio: null,
-          responsaveis,
-          prazo: luaData,
-          prioridade: 'media',
-          origem: 'funcao_lua_cheia',
-          origem_ref: ref,
-          arquivado: false,
-          criadoPor: 'auto'
-        });
+      // Só a PRÓXIMA lua cheia (mensal rolling) pra não floodar o kanban.
+      // Quando essa for marcada done ou passar, a próxima vez que o auto-gerador
+      // rodar vai criar a seguinte automaticamente.
+      const proximaLua = LUAS_CHEIAS.find(d => d >= hojeStr);
+      if(proximaLua) {
+        const ref = `fn_lua__${fn.id}__${proximaLua}`;
+        if(!refsExistentes.has(ref)) {
+          novos.push({
+            titulo: `${fn.nome} — entrega de lua cheia (${proximaLua})`,
+            descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${proximaLua}.`,
+            status: 'todo',
+            motivo_bloqueio: null,
+            responsaveis,
+            prazo: proximaLua,
+            prioridade: 'media',
+            origem: 'funcao_lua_cheia',
+            origem_ref: ref,
+            arquivado: false,
+            criadoPor: 'auto'
+          });
+        }
       }
     }
   }
