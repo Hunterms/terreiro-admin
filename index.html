@@ -1367,6 +1367,19 @@ function renderKanban(c) {
   const cols = { todo:[], doing:[], blocked:[], done:[] };
   ativos.forEach(k => { (cols[k.status]||cols.todo).push(k); });
 
+  // Ordena cada coluna: mais urgente / mais antigo primeiro (em cima)
+  // Cards com prazo → ordenados por prazo ASC (mais próximo primeiro)
+  // Cards sem prazo → por criadoEm ASC (mais antigo primeiro)
+  const sortKanban = arr => arr.sort((a,b) => {
+    const pa = a.prazo || '9999-12-31';
+    const pb = b.prazo || '9999-12-31';
+    if(pa !== pb) return pa.localeCompare(pb);
+    const ca = a.criadoEm?.seconds || 0;
+    const cb = b.criadoEm?.seconds || 0;
+    return ca - cb;
+  });
+  ['todo','doing','blocked','done'].forEach(k => sortKanban(cols[k]));
+
   // Conta cards auto-gerados antigos pra mostrar no botão de limpeza
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const hojeStr = hoje.toISOString().slice(0,10);
