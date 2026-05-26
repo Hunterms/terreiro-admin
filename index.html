@@ -1673,19 +1673,14 @@ function openEscalaForm(evId, escId='') {
     alocPreenchidas[a.funcao_id].push(a.filho_id);
   });
 
-  // Domingo: preferência geral pra quem mora perto (gira da manhã)
-  const ehDomingo = ev.data ? new Date(ev.data+'T00:00:00').getDay() === 0 : false;
-
   // Detecta regra espacial pela função:
   // - "antes" no nome → prefere mora_longe (eles chegam cedo, não precisam voltar)
   // - "depois" no nome → prefere mora_perto (não pegam BR à noite)
-  // - domingo (geral) → prefere mora_perto
   // - resto → sem preferência espacial
   function tipoEspacial(fn) {
     const n = (fn.nome||'').toLowerCase();
     if(n.includes('antes')) return 'longe';
     if(n.includes('depois')) return 'perto';
-    if(ehDomingo) return 'perto';
     return null;
   }
 
@@ -1744,7 +1739,6 @@ function openEscalaForm(evId, escId='') {
     <div class="modal-h"><h3>${esc?'Editar escala':'Criar escala'} — ${ev.nome||ev.titulo}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
-      ${ehDomingo ? '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--green)">🏠 Gira de domingo — preferência pra quem mora perto pra não desgastar quem mora longe.</div>' : ''}
       ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
         const idDispLog = `e-${fn.id}`;
         // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
