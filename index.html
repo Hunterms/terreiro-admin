@@ -1440,8 +1440,9 @@ function openEventoForm(id=null, dataInicial=null) {
   };
 }
 
-// ── ESCALAS (tabs: Gira + Lojinha) ─────────────────────────────────────────
+// ── ESCALAS (tabs: Gira + Lojinha + Análise) ──────────────────────────────
 let escTab = 'gira';
+let analisePeriodo = 'mes'; // 'mes' | 'bi' | 'tri'
 
 function renderEscalas(c) {
   c.innerHTML = `
@@ -1455,18 +1456,137 @@ function renderEscalas(c) {
     <div class="tabs">
       <button class="${escTab==='gira'?'active':''}" onclick="window._app.setEscTab('gira')">Por gira</button>
       <button class="${escTab==='lojinha'?'active':''}" onclick="window._app.setEscTab('lojinha')">Lojinha</button>
+      <button class="${escTab==='analise'?'active':''}" onclick="window._app.setEscTab('analise')">Análise</button>
     </div>
 
     <div id="esc-body"></div>
-
-    <p style="color:var(--text3);font-size:12px;text-align:center;margin-top:20px">v0.1: criação manual. Gerador automático com rodízio justo vem depois.</p>
   `;
 
   if(escTab === 'gira') renderEscalasGira();
-  else renderEscalasLojinha();
+  else if(escTab === 'lojinha') renderEscalasLojinha();
+  else renderEscalasAnalise();
 }
 
 function setEscTab(t) { escTab = t; renderRoute(); }
+function setAnalisePeriodo(p) { analisePeriodo = p; renderRoute(); }
+
+function renderEscalasAnalise() {
+  const body = $('#esc-body');
+  const dias = analisePeriodo === 'mes' ? 30 : (analisePeriodo === 'bi' ? 60 : 90);
+  const labelPeriodo = analisePeriodo === 'mes' ? 'últimos 30 dias' : (analisePeriodo === 'bi' ? 'últimos 60 dias' : 'últimos 90 dias');
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const lim = new Date(hoje); lim.setDate(hoje.getDate() - dias);
+  const limStr = lim.toISOString().slice(0,10);
+
+  // Conta alocações por filho, por função no período
+  const escalasNoPeriodo = S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data <= hoje.toISOString().slice(0,10));
+  const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+
+  // Map: filho_id → { total, porFuncao: { funcao_id: count } }
+  const stats = {};
+  filhosAtivos.forEach(f => { stats[f.id] = { total: 0, porFuncao: {} }; });
+  escalasNoPeriodo.forEach(es => {
+    (es.alocacoes||[]).forEach(a => {
+      if(!stats[a.filho_id]) stats[a.filho_id] = { total: 0, porFuncao: {} };
+      stats[a.filho_id].total++;
+      stats[a.filho_id].porFuncao[a.funcao_id] = (stats[a.filho_id].porFuncao[a.funcao_id]||0) + 1;
+    });
+  });
+
+  // Estatísticas globais
+  const totais = filhosAtivos.map(f => stats[f.id]?.total || 0);
+  const totalGeral = totais.reduce((s,n)=>s+n, 0);
+  const media = filhosAtivos.length ? totalGeral / filhosAtivos.length : 0;
+  const maxAloc = Math.max(...totais, 1);
+
+  // Limiares de desequilíbrio (50% acima ou abaixo da média)
+  const tetoSobrecarga = media * 1.5;
+  const pisoSubcarga = media * 0.5;
+
+  // Ordena por mais escalado primeiro
+  const filhosOrd = [...filhosAtivos].sort((a,b) => (stats[b.id]?.total||0) - (stats[a.id]?.total||0));
+
+  const sobrecarregados = filhosOrd.filter(f => (stats[f.id]?.total||0) > tetoSobrecarga && (stats[f.id]?.total||0) > 1);
+  const subcarregados = filhosOrd.filter(f => (stats[f.id]?.total||0) < pisoSubcarga && totalGeral > 0);
+
+  body.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h">
+        <div class="card-title">Análise de equilíbrio</div>
+        <div class="chips">
+          <button type="button" class="chip ${analisePeriodo==='mes'?'chip-gold':''}" onclick="window._app.setAnalisePeriodo('mes')">Mensal</button>
+          <button type="button" class="chip ${analisePeriodo==='bi'?'chip-gold':''}" onclick="window._app.setAnalisePeriodo('bi')">Bimestral</button>
+          <button type="button" class="chip ${analisePeriodo==='tri'?'chip-gold':''}" onclick="window._app.setAnalisePeriodo('tri')">Trimestral</button>
+        </div>
+      </div>
+      <div class="grid grid-3">
+        <div class="metric" style="--clr:var(--blue)"><div class="ml">Período</div><div class="mv" style="font-size:18px">${labelPeriodo}</div></div>
+        <div class="metric" style="--clr:var(--gold)"><div class="ml">Total de alocações</div><div class="mv">${totalGeral}</div><div class="mh">${escalasNoPeriodo.length} escalas publicadas</div></div>
+        <div class="metric" style="--clr:var(--green)"><div class="ml">Média por filho</div><div class="mv">${media.toFixed(1)}</div><div class="mh">de ${filhosAtivos.length} ativos</div></div>
+      </div>
+    </div>
+
+    ${sobrecarregados.length > 0 || subcarregados.length > 0 ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--amber-bg)">
+        <div class="card-h"><div class="card-title" style="color:var(--amber)">⚠️ Alertas de equilíbrio</div></div>
+        ${sobrecarregados.length > 0 ? `
+          <div style="margin-bottom:10px">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:6px">Sobrecarregados (> ${tetoSobrecarga.toFixed(1)} alocações)</div>
+            ${sobrecarregados.map(f => `<div style="display:flex;justify-content:space-between;padding:7px 12px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:6px;margin-bottom:4px;font-size:13px"><span><strong>${f.nome}</strong></span><span style="color:var(--red);font-weight:700">${stats[f.id].total}× · ${((stats[f.id].total/media-1)*100).toFixed(0)}% acima da média</span></div>`).join('')}
+          </div>
+        ` : ''}
+        ${subcarregados.length > 0 ? `
+          <div>
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:6px">Subutilizados (< ${pisoSubcarga.toFixed(1)} alocações)</div>
+            ${subcarregados.map(f => `<div style="display:flex;justify-content:space-between;padding:7px 12px;background:var(--glass2);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;font-size:13px"><span><strong>${f.nome}</strong></span><span style="color:var(--text3)">${stats[f.id].total}× ${stats[f.id].total === 0 ? '· nunca escalado' : ''}</span></div>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    ` : (totalGeral > 0 ? `<div class="card" style="margin-bottom:14px;border-color:var(--green-bd)"><div style="font-size:14px;color:var(--green)">✓ Distribuição equilibrada nesse período. Nenhum filho fora da faixa esperada.</div></div>` : '')}
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-title">Por filho · ${labelPeriodo}</div>
+      </div>
+      ${filhosOrd.length === 0 ? '<div class="empty"><div class="empty-s">Nenhum filho ativo</div></div>' : `
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);text-align:left">
+                <th style="padding:10px 8px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600">Filho</th>
+                <th style="padding:10px 8px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;text-align:right">Total</th>
+                ${funcoesAtivas.map(fn => `<th style="padding:10px 8px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;text-align:right">${fn.nome.split(' ').slice(0,2).join(' ')}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filhosOrd.map(f => {
+                const s = stats[f.id] || { total: 0, porFuncao: {} };
+                const ehSobre = s.total > tetoSobrecarga && s.total > 1;
+                const ehSub = s.total < pisoSubcarga && totalGeral > 0;
+                const corLinha = ehSobre ? 'var(--red-bg)' : (ehSub ? 'rgba(243,156,18,0.04)' : 'transparent');
+                return `
+                  <tr style="border-bottom:1px solid var(--border);background:${corLinha}">
+                    <td style="padding:10px 8px;font-weight:500">${f.nome}${f.mora_perto ? ' <span class="chip chip-green" style="font-size:9px;padding:1px 6px;margin-left:4px">perto</span>' : ''}</td>
+                    <td style="padding:10px 8px;text-align:right;font-weight:700;${ehSobre?'color:var(--red)':(ehSub?'color:var(--amber)':'')}">${s.total}</td>
+                    ${funcoesAtivas.map(fn => {
+                      const n = s.porFuncao[fn.id] || 0;
+                      return `<td style="padding:10px 8px;text-align:right;color:${n>0?'var(--text)':'var(--text3)'}">${n}</td>`;
+                    }).join('')}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+
+    <p style="color:var(--text3);font-size:11.5px;text-align:center;margin-top:14px">
+      Sobrecarregado = mais de 50% acima da média do período · subutilizado = menos de 50% da média
+    </p>
+  `;
+}
 
 function renderEscalasGira() {
   const body = $('#esc-body');
@@ -3191,6 +3311,7 @@ window._app = {
   openEventoForm,
   openEscalaForm,
   setEscTab,
+  setAnalisePeriodo,
   openLojinhaEscalaForm,
   openAtendimentoForm,
   openConsulenteForm,
