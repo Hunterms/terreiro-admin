@@ -430,6 +430,7 @@ const S = {
   solicitacoes: [],
   regas: [],
   despensa: [],
+  cfgEscalas: { janela_semanas: 8 },
   route: 'dashboard',
   unsubs: []
 };
@@ -657,6 +658,12 @@ function attachListeners() {
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_despensa'), snap => {
     S.despensa = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['despensa','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Config das escalas (janela histórica do balanceamento)
+  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
+    if(snap.exists()) S.cfgEscalas = { janela_semanas: 8, ...snap.data() };
+    if(S.route === 'escalas') renderRoute();
   }));
 
   // Atendimentos (só admin)
@@ -1866,7 +1873,26 @@ function renderEscalasAnalise() {
   const sobrecarregados = filhosOrd.filter(f => (stats[f.id]?.total||0) > tetoSobrecarga && (stats[f.id]?.total||0) > 1);
   const subcarregados = filhosOrd.filter(f => (stats[f.id]?.total||0) < pisoSubcarga && totalGeral > 0);
 
+  const janelaAtual = S.cfgEscalas?.janela_semanas || 8;
   body.innerHTML = `
+    <div class="card" style="margin-bottom:14px;border-color:var(--gold-bg)">
+      <div class="card-h">
+        <div class="card-title">⚖️ Janela do gerador de escalas</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:13.5px;color:var(--text2);flex:1;min-width:240px">
+          O gerador olha as últimas <strong style="color:var(--gold)">${janelaAtual} semanas</strong> de escalas pra balancear (quem foi escalado menos vezes vai primeiro).
+        </div>
+        <select class="fi" id="janela-sel" style="width:auto">
+          <option value="4" ${janelaAtual===4?'selected':''}>4 semanas (1 mês)</option>
+          <option value="8" ${janelaAtual===8?'selected':''}>8 semanas (2 meses) · padrão</option>
+          <option value="12" ${janelaAtual===12?'selected':''}>12 semanas (3 meses)</option>
+          <option value="24" ${janelaAtual===24?'selected':''}>24 semanas (6 meses)</option>
+          <option value="52" ${janelaAtual===52?'selected':''}>52 semanas (1 ano)</option>
+        </select>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:14px">
       <div class="card-h">
         <div class="card-title">Análise de equilíbrio</div>
@@ -1942,6 +1968,23 @@ function renderEscalasAnalise() {
       Sobrecarregado = mais de 50% acima da média do período · subutilizado = menos de 50% da média
     </p>
   `;
+
+  // Bind do select de janela
+  const selJanela = $('#janela-sel');
+  if(selJanela) {
+    selJanela.onchange = async (e) => {
+      const novo = parseInt(e.target.value) || 8;
+      try {
+        await setDoc(doc(dbPvd,'adm_config','escalas'), {
+          janela_semanas: novo,
+          atualizadoEm: serverTimestamp()
+        }, { merge: true });
+        S.cfgEscalas = { ...S.cfgEscalas, janela_semanas: novo };
+        toast(`Janela do gerador agora é ${novo} semanas`,'ok');
+        renderRoute();
+      } catch(e) { toast('Erro: '+e.message,'err'); }
+    };
+  }
 }
 
 function renderEscalasGira() {
@@ -2082,9 +2125,10 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
   const indispMap = {};
   S.disponibilidade.filter(d => d.mes === mesEv).forEach(d => { indispMap[d.filho_id] = d; });
 
-  // Contagem das últimas 8 semanas + alocações pendentes da batch atual
+  // Contagem da janela histórica (configurável em adm_config/escalas) + alocações pendentes da batch atual
+  const janelaSemanas = S.cfgEscalas?.janela_semanas || 8;
   const dataLim = new Date(ev.data+'T00:00:00');
-  dataLim.setDate(dataLim.getDate() - 56);
+  dataLim.setDate(dataLim.getDate() - janelaSemanas * 7);
   const limStr = dataLim.toISOString().slice(0,10);
   const contagem = {};
   const contagemFn = {}; // por (filho, função) pra fairness por função
@@ -2339,9 +2383,10 @@ function openEscalaForm(evId, escId='') {
     indispMap[d.filho_id] = d;
   });
 
-  // Contagem de quantas vezes cada filho foi escalado nas últimas 8 semanas (rodízio justo)
+  // Contagem da janela histórica (configurável) — rodízio justo
+  const janelaSemanas = S.cfgEscalas?.janela_semanas || 8;
   const dataLim = new Date(ev.data+'T00:00:00');
-  dataLim.setDate(dataLim.getDate() - 56);
+  dataLim.setDate(dataLim.getDate() - janelaSemanas * 7);
   const limStr = dataLim.toISOString().slice(0,10);
   const contagem = {};
   S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data < ev.data)
@@ -2470,7 +2515,12 @@ function openEscalaForm(evId, escId='') {
                 : (destaca ? (tipoSp === 'perto' ? 'Mora perto · prioridade pra essa função' : 'Mora longe · prioridade pra essa função') : '');
               const cssClass = sel ? 'chip-gold' : (destaca ? 'chip-green' : '');
               const emoji = destaca ? (tipoSp === 'perto' ? '🏠 ' : '🏃 ') : '';
-              return `<button type="button" class="chip ${cssClass}" title="${titleMsg}" style="${disabled?'opacity:.35;cursor:not-allowed':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${emoji}${f.nome.split(' ')[0]}</button>`;
+              // Contagem na janela histórica — total geral e por função
+              const cntTotal = contagem[f.id] || 0;
+              const cntFn = contagemFn[`${f.id}__${fn.id}`] || 0;
+              const tituloFinal = titleMsg + (cntTotal>0?` · escalado ${cntTotal}× no total (${cntFn}× nessa função) nas últimas ${janelaSemanas} sem`:` · nunca escalado nas últimas ${janelaSemanas} sem`);
+              const sufixo = cntFn > 0 ? ` <span style="opacity:.6;font-size:10px">${cntFn}×</span>` : '';
+              return `<button type="button" class="chip ${cssClass}" title="${tituloFinal}" style="${disabled?'opacity:.35;cursor:not-allowed':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${emoji}${f.nome.split(' ')[0]}${sufixo}</button>`;
             }).join('')}
           </div>
         </div>
