@@ -923,6 +923,7 @@ function renderFilhos(c) {
             <div class="li-meta">
               ${(f.status||'ativo')==='ativo' ? '<span class="chip chip-green">ativo</span>' : (f.status==='afastado' ? '<span class="chip">afastado</span>' : '<span class="chip chip-blue">visitante</span>')}
               ${f.mora_perto ? '<span class="chip chip-green">mora perto</span>' : ''}
+              ${f.e_padrinho ? '<span class="chip chip-purple">padrinho/madrinha</span>' : ''}
               ${postos.map(p=>`<span class="chip chip-gold">${p.nome}</span>`).join('')}
               ${padrinho ? `<span class="chip chip-purple">apadrinhado por ${padrinho.nome.split(' ')[0]}</span>` : ''}
               ${f.tel ? `<span>📱 ${f.tel}</span>` : ''}
@@ -988,10 +989,21 @@ function openFilhoForm(id=null) {
           }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhuma função cadastrada. Crie em Funções.</span>'}
         </div>
       </div>
-      <div class="fi-group"><label>Padrinho/madrinha</label>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-padrinho-flag" ${f?.e_padrinho?'checked':''}/>
+          Esse filho é padrinho/madrinha
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Marque só pros filhos que assumem o papel de padrinho. Eles aparecerão como opção pra apadrinhar outros.</div>
+      </div>
+      <div class="fi-group"><label>Padrinho/madrinha (de quem é apadrinhado)</label>
         <select class="fi" id="ff-padrinho">
           <option value="">— Sem padrinho —</option>
-          ${S.filhos.filter(x=>x.id!==id).map(x=>`<option value="${x.id}" ${f?.padrinho_id===x.id?'selected':''}>${x.nome}</option>`).join('')}
+          ${(() => {
+            const padrinhosDispo = S.filhos.filter(x => x.id !== id && x.e_padrinho);
+            if(padrinhosDispo.length === 0) return '<option value="" disabled>Nenhum padrinho cadastrado — marque "É padrinho" em outro filho primeiro</option>';
+            return padrinhosDispo.map(x=>`<option value="${x.id}" ${f?.padrinho_id===x.id?'selected':''}>${x.nome}</option>`).join('');
+          })()}
         </select>
       </div>
       <div class="fi-group"><label>Email (auth — opcional, pra logar)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
@@ -1023,6 +1035,7 @@ function openFilhoForm(id=null) {
       prazo: $('#ff-prazo').value,
       prazoObs: '',
       postos,
+      e_padrinho: $('#ff-padrinho-flag').checked,
       padrinho_id: $('#ff-padrinho').value || null,
       auth_email: $('#ff-email').value.trim() || null,
       mora_perto: $('#ff-perto').checked,
