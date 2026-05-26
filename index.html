@@ -2926,13 +2926,19 @@ function renderRega(c) {
       const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
       const passado = dStr < hojeStr;
       const reserva = porDia[dStr];
+      const confirmado = reserva?.realizado;
       const ehHoje = dStr === hojeStr;
-      let bg = passado ? 'transparent' : (reserva ? 'var(--green-bg)' : 'rgba(243,156,18,0.08)');
-      let bd = ehHoje ? 'var(--red)' : (reserva ? 'var(--green-bd)' : 'var(--border)');
-      let col = passado ? 'var(--text3)' : (reserva ? 'var(--green)' : 'var(--amber)');
-      const nome = reserva ? (reserva.filho_nome||'').split(' ')[0] : '';
+      // Verde forte = confirmado, verde claro = reservado, âmbar = sem cobertura
+      let bg, bd, col;
+      if(confirmado) { bg='rgba(46,204,113,0.22)'; bd='var(--green)'; col='var(--green)'; }
+      else if(reserva) { bg='var(--green-bg)'; bd='var(--green-bd)'; col='var(--green)'; }
+      else { bg = passado ? 'transparent' : 'rgba(243,156,18,0.08)'; bd = 'var(--border)'; col = passado ? 'var(--text3)' : 'var(--amber)'; }
+      if(ehHoje) bd = 'var(--red)';
+      const nome = reserva ? (reserva.realizado_por_nome||reserva.filho_nome||'').split(' ')[0] : '';
+      const tip = confirmado ? `✓ ${reserva.realizado_por_nome||reserva.filho_nome} confirmou` : (reserva ? `Reservado por ${reserva.filho_nome}` : (passado?'':'Sem cobertura'));
       cells += `
-        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado?'.3':'1'};padding:4px" title="${reserva?'Reservado por '+reserva.filho_nome:(passado?'':'Disponível')}">
+        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado&&!confirmado?'.3':'1'};padding:4px;position:relative" title="${tip}">
+          ${confirmado ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:9px;height:9px;position:absolute;top:3px;right:3px"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
           <div style="font-weight:700">${d}</div>
           ${nome ? `<div style="font-size:9px;font-weight:600;line-height:1;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px">${nome}</div>` : ''}
         </div>
@@ -2975,19 +2981,55 @@ function renderRega(c) {
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:14px;border-color:${reservaHoje?'var(--green-bd)':'var(--amber-bg)'}">
+    <div class="card" style="margin-bottom:14px;border-color:${reservaHoje?(reservaHoje.realizado?'var(--green)':'var(--green-bd)'):'var(--amber-bg)'}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="chip ${reservaHoje?'chip-green':'chip-amber'}">HOJE · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
+        <span class="chip ${reservaHoje?(reservaHoje.realizado?'chip-green':'chip-green'):'chip-amber'}">HOJE · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
+        ${reservaHoje?.realizado ? '<span class="chip chip-green">✓ CONFIRMADO</span>' : (reservaHoje?'<span class="chip chip-amber">PENDENTE DE CONFIRMAÇÃO</span>':'')}
       </div>
-      ${reservaHoje ? `
+      ${reservaHoje && reservaHoje.realizado ? `
+        <div style="font-size:18px;font-weight:700;color:var(--green)">${reservaHoje.realizado_por_nome || reservaHoje.filho_nome} regou hoje 🌱</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Confirmado pelo QR code ${reservaHoje.realizadoEm ? '· ' + fmt.rel(reservaHoje.realizadoEm) : ''}</div>
+      ` : reservaHoje ? `
         <div style="font-size:18px;font-weight:700;color:var(--green)">${reservaHoje.filho_nome}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:4px">vai regar hoje 🌱</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:4px">Reservou — ainda não confirmou que regou (esperando QR no terreiro)</div>
       ` : `
         <div style="font-size:15px;color:var(--amber);font-weight:600">Sem cobertura pra hoje 😬</div>
         <div style="font-size:13px;color:var(--text2);margin-top:6px">Nenhum filho assumiu este dia. Manda a página pra galera ou peça no grupo.</div>
         <button class="btn btn-primary" style="margin-top:10px" onclick="navigator.clipboard.writeText('Salve! Faltam dias na escala de rega da casa: ${linkPublico}').then(()=>window._app.toast('Mensagem copiada','ok'))">Copiar mensagem pro grupo</button>
       `}
     </div>
+
+    <details class="card" style="margin-bottom:14px;padding:0">
+      <summary style="padding:16px 22px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;user-select:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--gold);flex-shrink:0"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h7v7"/></svg>
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:700">QR code pra confirmação no terreiro</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Imprime e cola no espaço · filho escaneia depois de regar</div>
+        </div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--text3)"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div style="padding:0 22px 22px;text-align:center">
+        ${(() => {
+          const urlConf = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/confirma-rega.html';
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlConf)}&bgcolor=ffffff&color=000000&margin=10`;
+          return `
+            <div style="background:#fff;display:inline-block;padding:14px;border-radius:10px;margin-bottom:14px">
+              <img src="${qrUrl}" alt="QR confirma rega" style="display:block;width:240px;height:240px"/>
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">URL que o QR aponta:</div>
+            <div style="font-family:monospace;font-size:12px;color:var(--text);background:var(--glass2);padding:8px 12px;border-radius:6px;word-break:break-all;margin-bottom:14px">${urlConf}</div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              <a class="btn btn-sm" href="${qrUrl}" target="_blank" download="qr-rega-candieiro.png">Baixar PNG</a>
+              <button class="btn btn-sm" onclick="window.print()">Imprimir esta página</button>
+              <a class="btn btn-sm" href="confirma-rega.html" target="_blank">Testar página</a>
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-top:14px;line-height:1.5">
+              Sugestão: imprime, plastifica e cola perto das plantas. Filho escaneia com o celular, escolhe o nome, confirma. Sistema marca como ✓.
+            </div>
+          `;
+        })()}
+      </div>
+    </details>
 
     ${semCobertura.length > 0 ? `
       <div class="card" style="margin-bottom:14px;border-color:var(--amber-bg)">

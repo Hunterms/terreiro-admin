@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Confirmar rega · Terreiro do Candieiro</title>
+<meta name="robots" content="noindex"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --red:#e63329;
+  --gold:#d4a843;--gold2:#b8922a;
+  --green:#2ecc71;
+  --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --amber:#f39c12;--amber-bg:rgba(243,156,18,0.1);
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html,body{background:var(--bg);min-height:100vh}
+body{
+  font-family:var(--font);color:var(--text);min-height:100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%,rgba(46,204,113,0.08) 0%,transparent 60%),
+    radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.05) 0%,transparent 50%);
+  display:flex;align-items:center;justify-content:center;padding:24px 16px;
+}
+.container{max-width:480px;width:100%}
+
+header{text-align:center;margin-bottom:24px}
+.icon{width:72px;height:72px;color:var(--green);margin:0 auto 14px;display:block}
+h1{font-size:24px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
+.subtitle{font-size:12px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:24px}
+
+.dia-box{padding:18px;background:var(--glass2);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;text-align:center}
+.dia-data{font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:6px}
+.dia-num{font-size:42px;font-weight:800;color:var(--gold);line-height:1;margin-bottom:4px}
+.dia-mes{font-size:14px;color:var(--text2);text-transform:capitalize}
+
+.status-box{padding:14px;border-radius:10px;margin-bottom:18px;text-align:center}
+.status-pendente{background:var(--amber-bg);border:1px solid rgba(243,156,18,0.3);color:var(--amber)}
+.status-confirmado{background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green)}
+.status-titulo{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.status-nome{font-size:16px;font-weight:600}
+
+.fi-group{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+.fi-group label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.fi{padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:16px;font-family:var(--font);outline:none;width:100%}
+.fi:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(46,204,113,0.15)}
+select.fi{appearance:none;-webkit-appearance:none;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a89880' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+select.fi option{background:#1a1a1a;color:var(--text)}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px 20px;border-radius:var(--rad);border:none;font-size:16px;font-weight:700;cursor:pointer;font-family:var(--font);width:100%;letter-spacing:.02em}
+.btn-primary{background:linear-gradient(135deg,var(--green) 0%,#27ae60 100%);color:#fff}
+.btn-primary:disabled{opacity:.5;cursor:wait}
+.btn-secondary{background:transparent;border:1px solid var(--border2);color:var(--text2);margin-top:10px;font-size:14px;padding:12px}
+
+#loading,#sucesso,#erro{text-align:center;padding:40px 20px}
+.spinner{width:34px;height:34px;border:3px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.sucesso-icon{width:80px;height:80px;color:var(--green);margin:0 auto 16px;display:block}
+.sucesso-titulo{font-size:22px;font-weight:700;color:var(--green);margin-bottom:8px}
+.sucesso-msg{font-size:15px;color:var(--text2);line-height:1.5;margin-bottom:20px}
+
+.aviso{font-size:12.5px;color:var(--text3);text-align:center;margin-top:14px;padding:10px;background:var(--glass2);border-radius:8px;line-height:1.4}
+
+footer{text-align:center;margin-top:24px;color:var(--text3);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
+    <h1>Confirmar rega</h1>
+    <div class="subtitle">Terreiro do Candieiro</div>
+  </header>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    Carregando...
+  </div>
+
+  <div id="content" style="display:none">
+    <div class="card">
+      <div class="dia-box">
+        <div class="dia-data" id="dia-data">Hoje</div>
+        <div class="dia-num" id="dia-num">—</div>
+        <div class="dia-mes" id="dia-mes">—</div>
+      </div>
+
+      <div id="status-wrap"></div>
+
+      <div id="form-wrap">
+        <div class="fi-group">
+          <label>Quem é você?</label>
+          <select class="fi" id="filho-sel">
+            <option value="">— Selecione seu nome —</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btn-conf">Confirmar — eu reguei hoje 🌱</button>
+        <div class="aviso">
+          Esse QR fica no terreiro · só consegue confirmar quem está aqui presente.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sucesso" style="display:none">
+    <div class="card">
+      <svg class="sucesso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="sucesso-titulo">Rega confirmada!</div>
+      <div class="sucesso-msg" id="sucesso-msg">—</div>
+      <button class="btn btn-secondary" onclick="location.reload()">Fechar</button>
+    </div>
+  </div>
+
+  <div id="erro" style="display:none">
+    <div class="card" style="border-color:rgba(230,51,41,0.3)">
+      <div style="color:var(--red);font-weight:700;margin-bottom:8px" id="erro-titulo">Erro</div>
+      <div style="font-size:14px;color:var(--text2);line-height:1.5" id="erro-msg">—</div>
+      <button class="btn btn-secondary" onclick="location.reload()">Tentar de novo</button>
+    </div>
+  </div>
+
+  <footer>R. Angelo Vicentim 236 · Barão Geraldo, Campinas-SP</footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, query, orderBy, serverTimestamp
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+const cfg = {
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+};
+const db = getFirestore(initializeApp(cfg));
+
+const $ = q => document.querySelector(q);
+const hoje = new Date(); hoje.setHours(0,0,0,0);
+const hojeStr = hoje.toISOString().slice(0,10);
+
+let APP = { filhos: [], regaHoje: null };
+
+(async function boot() {
+  try {
+    const fSnap = await getDocs(query(collection(db,'fin_filhos'), orderBy('nome')));
+    APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .filter(f => !f.status || f.status === 'ativo');
+
+    // Doc da rega de hoje (se existir)
+    try {
+      const rSnap = await getDoc(doc(db,'adm_rega_diaria',hojeStr));
+      APP.regaHoje = rSnap.exists() ? rSnap.data() : null;
+    } catch(e) { APP.regaHoje = null; }
+
+    // Header de data
+    $('#dia-data').textContent = hoje.toLocaleDateString('pt-BR',{weekday:'long'});
+    $('#dia-num').textContent = hoje.getDate();
+    $('#dia-mes').textContent = hoje.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+
+    // Status
+    const sw = $('#status-wrap');
+    if(APP.regaHoje && APP.regaHoje.realizado) {
+      sw.innerHTML = `
+        <div class="status-box status-confirmado">
+          <div class="status-titulo">✓ Já confirmado hoje</div>
+          <div class="status-nome">${APP.regaHoje.realizado_por_nome || APP.regaHoje.filho_nome || 'alguém'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:6px">Não precisa confirmar de novo. Obrigado!</div>
+        </div>
+      `;
+      $('#form-wrap').style.display = 'none';
+    } else if(APP.regaHoje) {
+      sw.innerHTML = `
+        <div class="status-box status-pendente">
+          <div class="status-titulo">Reservado pra hoje</div>
+          <div class="status-nome">${APP.regaHoje.filho_nome}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">Confirme que regou abaixo</div>
+        </div>
+      `;
+    } else {
+      sw.innerHTML = `
+        <div class="status-box status-pendente">
+          <div class="status-titulo">Ninguém reservou hoje</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px">Se você regou, confirme abaixo que conta igual.</div>
+        </div>
+      `;
+    }
+
+    // Popula dropdown — sugere quem reservou primeiro
+    const sel = $('#filho-sel');
+    const reservadoId = APP.regaHoje?.filho_id;
+    const filhosOrd = [...APP.filhos].sort((a,b) => {
+      if(a.id === reservadoId) return -1;
+      if(b.id === reservadoId) return 1;
+      return a.nome.localeCompare(b.nome);
+    });
+    filhosOrd.forEach(f => {
+      const op = document.createElement('option');
+      op.value = f.id;
+      op.textContent = f.nome + (f.id === reservadoId ? ' (reservou hoje)' : '');
+      if(f.id === reservadoId) op.selected = true;
+      sel.appendChild(op);
+    });
+
+    $('#loading').style.display = 'none';
+    $('#content').style.display = '';
+
+    $('#btn-conf').onclick = confirmar;
+  } catch(e) {
+    console.error(e);
+    $('#loading').style.display = 'none';
+    $('#erro').style.display = '';
+    $('#erro-msg').textContent = 'Erro ao carregar: ' + e.message;
+  }
+})();
+
+async function confirmar() {
+  const filhoId = $('#filho-sel').value;
+  if(!filhoId) { alert('Selecione seu nome'); return; }
+  const filho = APP.filhos.find(f => f.id === filhoId);
+  if(!filho) return;
+
+  const btn = $('#btn-conf');
+  btn.disabled = true;
+  btn.textContent = 'Confirmando...';
+
+  try {
+    const payload = {
+      data: hojeStr,
+      realizado: true,
+      realizadoEm: serverTimestamp(),
+      realizado_por_id: filhoId,
+      realizado_por_nome: filho.nome,
+      atualizadoEm: serverTimestamp()
+    };
+    // Se não havia reserva, preenche também os campos de reserva
+    if(!APP.regaHoje) {
+      payload.filho_id = filhoId;
+      payload.filho_nome = filho.nome;
+      payload.reservadoEm = serverTimestamp();
+    }
+    await setDoc(doc(db,'adm_rega_diaria',hojeStr), payload, { merge: true });
+
+    $('#content').style.display = 'none';
+    $('#sucesso').style.display = '';
+    const msg = APP.regaHoje && APP.regaHoje.filho_id !== filhoId
+      ? `${filho.nome.split(' ')[0]}, obrigado por cobrir a rega de hoje! ${APP.regaHoje.filho_nome ? `(${APP.regaHoje.filho_nome.split(' ')[0]} tinha reservado)` : ''}`
+      : `Valeu, ${filho.nome.split(' ')[0]}! Rega de hoje confirmada. 🌱`;
+    $('#sucesso-msg').textContent = msg;
+  } catch(e) {
+    console.error(e);
+    btn.disabled = false;
+    btn.textContent = 'Confirmar — eu reguei hoje 🌱';
+    alert('Erro: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>
