@@ -1407,6 +1407,13 @@ function openEventoForm(id=null, dataInicial=null) {
           </label>
         </div>
       </div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ev-limpeza" ${e?.requer_limpeza === false ? '' : 'checked'}/>
+          Requer limpeza (antes e depois)
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Desmarque se não sujamos (sem necessidade de escalar limpeza pra esse evento).</div>
+      </div>
       <div class="fi-group"><label>Local</label><input class="fi" id="ev-local" value="${e?.local||'Terreiro'}"/></div>
       <div class="fi-group"><label>Descrição</label><textarea class="fi" id="ev-desc">${e?.descricao||''}</textarea></div>
     </div>
@@ -1428,6 +1435,7 @@ function openEventoForm(id=null, dataInicial=null) {
       hora: $('#ev-hora').value || '',
       tipo: $('#ev-tipo').value,
       publico: $('#ev-publico').checked,
+      requer_limpeza: $('#ev-limpeza').checked,
       local: $('#ev-local').value.trim(),
       descricao: $('#ev-desc').value.trim(),
       arquivado: false,
@@ -1665,6 +1673,25 @@ function ehFesta(ev) {
   return (ev.nome||ev.titulo||'').toLowerCase().includes('festa') || ev.tipo === 'festa';
 }
 
+// Filtra funções aplicáveis a um evento específico:
+// - Lojinha só em gira_aberta + festa
+// - Limpezas só se ev.requer_limpeza !== false (default true)
+function funcoesAplicaveisAoEvento(ev, funcoesAtivas) {
+  // Eventos sem tipo definido (CMS antigo) tratamos como gira aberta
+  const tipo = ev?.tipo || 'gira_aberta';
+  const ehGiraAberta = tipo === 'gira_aberta' || (ev?.publico === true && !ev?.tipo);
+  const ehFestaEv = tipo === 'festa' || ehFesta(ev);
+  const aceitaLojinha = ehGiraAberta || ehFestaEv;
+  const requerLimpeza = ev?.requer_limpeza !== false; // default true
+
+  return funcoesAtivas.filter(fn => {
+    const nome = (fn.nome||'').toLowerCase();
+    if(nome.includes('lojinha') && !aceitaLojinha) return false;
+    if(nome.includes('limpeza') && !requerLimpeza) return false;
+    return true;
+  });
+}
+
 async function gerarEscalasEmLote(eventos) {
   const elegiveis = eventos.filter(ev => !ehFesta(ev));
   const festas = eventos.length - elegiveis.length;
@@ -1684,7 +1711,8 @@ async function gerarEscalasEmLote(eventos) {
     let geradas = 0, erros = 0;
     for(const ev of ordenados) {
       try {
-        const sug = gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, alocacoesPendentes);
+        const funcoesDoEvento = funcoesAplicaveisAoEvento(ev, funcoesAtivas);
+        const sug = gerarSugestaoBatch(ev, funcoesDoEvento, filhosAtivos, alocacoesPendentes);
         const alocacoes = [];
         Object.keys(sug).forEach(funcaoId => {
           sug[funcaoId].forEach(filhoId => {
@@ -1964,8 +1992,10 @@ function openLojinhaEscalaForm(periodoId, inicio, fim, escId='') {
 function openEscalaForm(evId, escId='') {
   const ev = S.eventos.find(x=>x.id===evId);
   const esc = escId ? S.escalas.find(x=>x.id===escId) : null;
-  // Todas as funções de escala entram aqui (incluindo Lojinha = dupla durante gira)
-  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
+  // Funções aplicáveis ao tipo de evento (lojinha só em gira_aberta/festa, limpezas só se requer_limpeza !== false)
+  const todasAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
+  const funcoesAtivas = funcoesAplicaveisAoEvento(ev, todasAtivas);
+  const funcoesExcluidas = todasAtivas.filter(f => !funcoesAtivas.includes(f));
   const filhosAtivos = S.filhos.filter(f => !f.status || f.status==='ativo');
 
   // pega mes do evento pra checar disponibilidade
@@ -2074,6 +2104,7 @@ function openEscalaForm(evId, escId='') {
       <div style="color:var(--text3);font-size:13px;margin-bottom:10px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
       ${indispNesseDia.length > 0 ? `<div style="background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"><strong style="color:var(--red)">${indispNesseDia.length} filho${indispNesseDia.length===1?'':'s'} marcou indisponibilidade nesse dia:</strong> <span style="color:var(--text2)">${indispNesseDia.map(f=>f.nome.split(' ')[0]).join(', ')}</span><br><span style="color:var(--text3);font-size:12px">Eles não aparecem como sugestão e ficam desabilitados nos chips abaixo.</span></div>` : '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;color:var(--green)">✓ Nenhum filho marcou indisponibilidade nesse dia.</div>'}
       ${eventoEhFesta ? '<div style="background:rgba(155,89,182,0.1);border:1px solid rgba(155,89,182,0.3);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--purple)">🎉 <strong>Festa</strong> — escalas de festa têm dinâmica diferente e ficam pra v2. Você ainda pode escalar manualmente abaixo, mas o auto-gerar está desativado.</div>' : ''}
+      ${funcoesExcluidas.length > 0 ? `<div style="background:var(--glass2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text3)"><strong style="color:var(--text2)">Funções não aplicáveis a esse evento:</strong> ${funcoesExcluidas.map(f=>f.nome).join(', ')}<br><span style="color:var(--text3);font-size:11.5px">${(ev?.requer_limpeza===false?'Marcado como "não requer limpeza" no evento. ':'')}${funcoesExcluidas.some(f=>(f.nome||'').toLowerCase().includes('lojinha'))?'Lojinha só em gira aberta ou festa.':''}</span></div>` : ''}
       ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
         const idDispLog = `e-${fn.id}`;
         // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
