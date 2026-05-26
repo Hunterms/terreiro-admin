@@ -597,7 +597,7 @@ function attachListeners() {
   // Disponibilidade
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => {
     S.disponibilidade = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['disponibilidade','escalas'].includes(S.route)) renderRoute();
+    if(['disponibilidade','escalas','controle-disp','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Escalas
