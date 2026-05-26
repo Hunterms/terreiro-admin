@@ -452,6 +452,7 @@ function dataEfetivaAloc(es, aloc) {
 
 const fmt = {
   data: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—',
+  dataBr: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—',
   dataLong: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—',
   initials: nome => (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase(),
   rel: ts => {
@@ -752,9 +753,10 @@ async function autoGerarTarefasFuncoes() {
         const ref = `fn_gira__${fn.id}__${ev.id}`;
         if(refsExistentes.has(ref)) continue;
         const tituloEv = ev.nome || ev.titulo || 'gira';
+        const dataBr = fmt.dataBr(ev.data);
         novos.push({
-          titulo: `${fn.nome} — preparar pra ${tituloEv} (${ev.data})`,
-          descricao: `Tarefa recorrente da função "${fn.nome}" antes de toda gira aberta. Fazer antes do dia ${ev.data}.`,
+          titulo: `${fn.nome} — preparar pra ${tituloEv} (${dataBr})`,
+          descricao: `Tarefa recorrente da função "${fn.nome}" antes de toda gira aberta. Fazer antes do dia ${dataBr}.`,
           status: 'todo',
           motivo_bloqueio: null,
           responsaveis,
@@ -773,12 +775,32 @@ async function autoGerarTarefasFuncoes() {
       // Quando essa for marcada done ou passar, a próxima vez que o auto-gerador
       // rodar vai criar a seguinte automaticamente.
       const proximaLua = LUAS_CHEIAS.find(d => d >= hojeStr);
+
+      // CLEANUP: arquiva cards de lua_cheia dessa função que NÃO são a próxima
+      // (legado de quando o sistema gerava todas as luas dos próximos 60 dias)
+      const refPrefix = `fn_lua__${fn.id}__`;
+      const refCorrente = proximaLua ? `${refPrefix}${proximaLua}` : null;
+      const cardsLegado = S.kanban.filter(k =>
+        k.origem === 'funcao_lua_cheia' &&
+        k.origem_ref &&
+        k.origem_ref.startsWith(refPrefix) &&
+        k.origem_ref !== refCorrente &&
+        k.prazo >= hojeStr &&
+        !k.arquivado
+      );
+      for(const c of cardsLegado) {
+        try {
+          await updateDoc(doc(dbPvd,'adm_kanban',c.id), { arquivado: true, atualizadoEm: serverTimestamp() });
+        } catch(e) { console.warn('Erro arquivando card lua_cheia legado', e); }
+      }
+
       if(proximaLua) {
         const ref = `fn_lua__${fn.id}__${proximaLua}`;
         if(!refsExistentes.has(ref)) {
+          const luaBr = fmt.dataBr(proximaLua);
           novos.push({
-            titulo: `${fn.nome} — entrega de lua cheia (${proximaLua})`,
-            descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${proximaLua}.`,
+            titulo: `${fn.nome} — entrega de lua cheia (${luaBr})`,
+            descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${luaBr}.`,
             status: 'todo',
             motivo_bloqueio: null,
             responsaveis,
