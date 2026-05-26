@@ -711,8 +711,105 @@ function renderRoute() {
   }
 }
 
+// ── LUAS CHEIAS (datas hardcoded 2026-2028) ───────────────────────────────
+const LUAS_CHEIAS = [
+  '2026-01-03','2026-02-01','2026-03-03','2026-04-01','2026-05-01','2026-05-31',
+  '2026-06-30','2026-07-29','2026-08-28','2026-09-26','2026-10-26','2026-11-24','2026-12-24',
+  '2027-01-22','2027-02-20','2027-03-22','2027-04-21','2027-05-20','2027-06-19',
+  '2027-07-19','2027-08-17','2027-09-16','2027-10-15','2027-11-14','2027-12-14',
+  '2028-01-12','2028-02-10','2028-03-11','2028-04-09','2028-05-09','2028-06-07',
+  '2028-07-06','2028-08-05','2028-09-04','2028-10-03','2028-11-02','2028-12-02','2028-12-31'
+];
+
+// Auto-gera cards de kanban para tarefas recorrentes por função.
+// Roda no dashboard. Se já existe um card com mesma origem_ref, pula.
+async function autoGerarTarefasFuncoes() {
+  if(S.role !== 'admin') return;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hojeStr = hoje.toISOString().slice(0,10);
+  const lim = new Date(hoje); lim.setDate(hoje.getDate() + 60);
+  const limStr = lim.toISOString().slice(0,10);
+
+  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && (f.tarefa_antes_gira || f.tarefa_lua_cheia));
+  if(funcoesAtivas.length === 0) return;
+
+  // Map refs existentes pra evitar duplicata
+  const refsExistentes = new Set(S.kanban.map(k => k.origem_ref).filter(Boolean));
+
+  const novos = [];
+  for(const fn of funcoesAtivas) {
+    // Quem é responsável: filhos com essa função (postos OU restrito_a_filhos)
+    const responsaveis = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0
+      ? fn.restrito_a_filhos
+      : S.filhos.filter(x => (x.postos||[]).includes(fn.id) && (!x.status || x.status==='ativo')).map(x => x.id);
+
+    if(fn.tarefa_antes_gira) {
+      const girasAbertas = S.eventos.filter(e =>
+        e.data >= hojeStr && e.data <= limStr && !e.arquivado &&
+        (e.tipo === 'gira_aberta' || (!e.tipo && e.publico !== false))
+      );
+      for(const ev of girasAbertas) {
+        const ref = `fn_gira__${fn.id}__${ev.id}`;
+        if(refsExistentes.has(ref)) continue;
+        const tituloEv = ev.nome || ev.titulo || 'gira';
+        novos.push({
+          titulo: `${fn.nome} — preparar pra ${tituloEv} (${ev.data})`,
+          descricao: `Tarefa recorrente da função "${fn.nome}" antes de toda gira aberta. Fazer antes do dia ${ev.data}.`,
+          status: 'todo',
+          motivo_bloqueio: null,
+          responsaveis,
+          prazo: ev.data,
+          prioridade: 'media',
+          origem: 'funcao_antes_gira',
+          origem_ref: ref,
+          arquivado: false,
+          criadoPor: 'auto'
+        });
+      }
+    }
+
+    if(fn.tarefa_lua_cheia) {
+      const luas = LUAS_CHEIAS.filter(d => d >= hojeStr && d <= limStr);
+      for(const luaData of luas) {
+        const ref = `fn_lua__${fn.id}__${luaData}`;
+        if(refsExistentes.has(ref)) continue;
+        novos.push({
+          titulo: `${fn.nome} — entrega de lua cheia (${luaData})`,
+          descricao: `Tarefa recorrente da função "${fn.nome}" toda lua cheia. Próxima: ${luaData}.`,
+          status: 'todo',
+          motivo_bloqueio: null,
+          responsaveis,
+          prazo: luaData,
+          prioridade: 'media',
+          origem: 'funcao_lua_cheia',
+          origem_ref: ref,
+          arquivado: false,
+          criadoPor: 'auto'
+        });
+      }
+    }
+  }
+
+  // Cria os cards
+  for(const card of novos) {
+    try {
+      await addDoc(collection(dbPvd,'adm_kanban'), {
+        ...card,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp()
+      });
+    } catch(e) { console.error('Erro auto-gerando card:', e); }
+  }
+  if(novos.length > 0) {
+    setTimeout(() => toast(`${novos.length} tarefa${novos.length===1?'':'s'} recorrente${novos.length===1?'':'s'} adicionada${novos.length===1?'':'s'} no kanban`,'ok'), 600);
+  }
+}
+
 // ── DASHBOARD (admin) ──────────────────────────────────────────────────────
 function renderDashboard(c) {
+  // Roda auto-gerador uma vez ao abrir o dashboard
+  autoGerarTarefasFuncoes();
+
   const proxGiras = S.eventos
     .filter(e => e.data >= new Date().toISOString().slice(0,10) && !e.arquivado)
     .slice(0,5);
@@ -1059,6 +1156,20 @@ function openFuncaoForm(id=null) {
           }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhum filho ativo</span>'}
         </div>
       </div>
+
+      <div class="fi-group" style="padding-top:14px;border-top:1px solid var(--border)">
+        <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:8px;display:block">Tarefas recorrentes (auto-geram no kanban)</label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="fn-tarefa-gira" ${f?.tarefa_antes_gira?'checked':''}/>
+          Gerar tarefa antes de toda gira aberta
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin:4px 0 12px 24px">Ex: "Mãos de folha" → "Preparar folhas pra gira de X"</div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="fn-tarefa-lua" ${f?.tarefa_lua_cheia?'checked':''}/>
+          Gerar tarefa toda lua cheia
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin:4px 0 0 24px">Ex: "Mãos de folha" → "Entrega de lua cheia". Cards aparecem no kanban com responsáveis = filhos com essa função.</div>
+      </div>
     </div>
     <div class="modal-f">
       ${isEdit?`<button class="btn" onclick="window._app.toggleArquivarFuncao('${id}',true);closeModal()">${f.arquivada?'Restaurar':'Arquivar'}</button>`:''}
@@ -1083,6 +1194,8 @@ function openFuncaoForm(id=null) {
       cor: $('#fn-cor').value || null,
       entra_em_escala: $('#fn-escala').checked,
       restrito_a_filhos: restritos,
+      tarefa_antes_gira: $('#fn-tarefa-gira').checked,
+      tarefa_lua_cheia: $('#fn-tarefa-lua').checked,
       arquivada: f?.arquivada || false,
       atualizadoEm: serverTimestamp()
     };
