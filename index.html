@@ -2314,7 +2314,7 @@ function renderControleDisp(c) {
     const docsM = filhosOrd.map(f => ({ f, marcou: S.disponibilidade.some(d => d.id === `${f.id}_${m}`) }));
     const marcaram = docsM.filter(x => x.marcou).length;
     const pct = filhosOrd.length ? Math.round((marcaram/filhosOrd.length)*100) : 0;
-    const semTel = filhosOrd.filter(x => !x.f.tel).length;
+    const semTel = filhosOrd.filter(f => !f.tel).length;
 
     return `
       <div class="card" style="margin-bottom:14px">
