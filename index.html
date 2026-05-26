@@ -2892,8 +2892,35 @@ function renderRega(c) {
   `;
 }
 
-// ── LOJINHA / ESTOQUE ─────────────────────────────────────────────────────
+// ── DESPENSA DO ILÊ ───────────────────────────────────────────────────────
 let filtroDespensa = { busca:'', categoria:'todas', stockOnly:'todos' };
+
+// Lista inicial da despensa (extraída da planilha do terreiro)
+const DESPENSA_INICIAL = [["Vela Branca","Geral"],["Assapeixe","Ervas secas"],["Wagi","Pós"],["Guiné","Raízes"],["Casca de Jurema preta","Cascas"],["Olho de Cabra","Sementes"],["Areia Branca da praia","Terras e areias"],["Vela Preta","Geral"],["Artemísia","Ervas secas"],["Efum","Pós"],["Espada","Raízes"],["Casca de Jurema Branca","Cascas"],["Olha de Boi","Sementes"],["Areia Preta da Praia","Terras e areias"],["Vela Vermelha","Geral"],["Arruda","Ervas secas"],["Ossun","Pós"],["Gengibre","Raízes"],["Canela","Cascas"],["Capiá","Sementes"],["Terra do Cemitério","Terras e areias"],["Vela Amarela","Geral"],["Arueira","Ervas secas"],["Peregum","Pós"],["Açafrão","Raízes"],["Cravo","Cascas"],["Fava de aridan","Sementes"],["Terra de Rio","Terras e areias"],["Vela Azul clara","Geral"],["Arnica","Ervas secas"],["Fundanga","Pós"],["Valeriana","Raízes"],["Casca de Romã","Cascas"],["Garra de exu","Sementes"],["Terra da Mata","Terras e areias"],["Vela Azul Escura","Geral"],["Anis estrelado","Ervas secas"],["Pó de ferro","Pós"],["Casca de Cebola","Cascas"],["Orobô","Sementes"],["Conchas","Terras e areias"],["Vela Laranja","Geral"],["Anjico","Ervas secas"],["Ataré","Pós"],["Casca de Alho","Cascas"],["Obi","Sementes"],["Vela Roxa","Geral"],["Amora","Ervas secas"],["Casca de Laranja","Cascas"],["Pimenta da Costa","Sementes"],["Vela Verde","Geral"],["Alfazema","Ervas secas"],["Casma de Limão","Cascas"],["Açaí","Sementes"],["Vela Rosa","Geral"],["Alfavaca","Ervas secas"],["Casca de Jatobá","Cascas"],["Girassol","Sementes"],["Vela Marrom","Geral"],["Alecrim","Ervas secas"],["Casca de Aroeira","Cascas"],["Vela Preta Vermelha","Geral"],["Akoko","Ervas secas"],["Casca de Ovo","Cascas"],["Vela Branca e Preta","Geral"],["Agarradinho","Ervas secas"],["Vela Branca e Vermelha","Geral"],["Açoita cavalo","Ervas secas"],["Gin","Geral"],["Abre caminho","Ervas secas"],["Cachaça","Geral"],["Barba de Velho","Ervas secas"],["Vinho","Geral"],["Barbatimão","Ervas secas"],["Baianinha","Geral"],["Benjoim","Ervas secas"],["Dendê","Geral"],["Boldo","Ervas secas"],["Farinha de Milho","Geral"],["Breu","Ervas secas"],["Farinha de Mandioca","Geral"],["Buchinha","Ervas secas"],["Farinha de Milho Branco","Geral"],["Café Folha","Ervas secas"],["Canjica (milho branco)","Geral"],["Cajueiro","Ervas secas"],["Pipoca","Geral"],["Calêndula","Ervas secas"],["Mel","Geral"],["Camomila","Ervas secas"],["Melaço","Geral"],["Cana do Brejo","Ervas secas"],["Azeite de Oliva","Geral"],["Canela Pau","Ervas secas"],["Sabão da costa","Geral"],["Canela Pó","Ervas secas"],["Alcool","Geral"],["Cânfora","Ervas secas"],["Carvão","Geral"],["Capim Limão","Ervas secas"],["Pemba Branca","Geral"],["Capim Santo","Ervas secas"],["Pemba Preta","Geral"],["Carobinha","Ervas secas"],["Paieiro","Geral"],["Carqueja","Ervas secas"],["Cigarro Branco","Geral"],["Carrapicho","Ervas secas"],["Feijão Fradinho","Geral"],["Catinga de Mulata","Ervas secas"],["Arroz","Geral"],["Chapéu de Couro","Ervas secas"],["Feijão","Geral"],["Cipo Caboclo","Ervas secas"],["Óleo de Soja","Geral"],["Comigo Ninguém Pode","Ervas secas"],["Café","Geral"],["Colônia","Ervas secas"],["Açúcar","Geral"],["Cravo","Ervas secas"],["Sal","Geral"],["Cravo Pó","Ervas secas"],["Palha da costa","Geral"],["Jasmim","Ervas secas"],["Detergente","Geral"],["Jurema","Ervas secas"],["Esponja de louças","Geral"],["Jurubeba","Ervas secas"],["Desinfetante","Geral"],["Lágrima de Nossa Senhora","Ervas secas"],["Papel Higiênico","Geral"],["Laranjeira","Ervas secas"],["Água sanitária","Geral"],["Lavanda","Ervas secas"],["Sabão em pó","Geral"],["Levante","Ervas secas"],["Cheirinho","Geral"],["Limoeiro","Ervas secas"],["Alcool de Limpeza","Geral"],["Losna","Ervas secas"],["Louro","Ervas secas"],["Louro Pó","Ervas secas"],["Macaça","Ervas secas"],["Malva","Ervas secas"],["Mamona","Ervas secas"],["Manjericão","Ervas secas"],["Melissa","Ervas secas"],["Milhomens","Ervas secas"],["Mirra","Ervas secas"],["Noz-Moscada","Ervas secas"],["Noz-Moscada Pó","Ervas secas"],["Dama da Noite","Ervas secas"],["Dandá","Ervas secas"],["Danda Pó","Ervas secas"],["Desata Nó","Ervas secas"],["Emburana","Ervas secas"],["Enxofre","Ervas secas"],["Erva de Bicho","Ervas secas"],["Erva Doce","Ervas secas"],["Espada de São Jorge","Ervas secas"],["Espinheira Santa","Ervas secas"],["Eucalipto","Ervas secas"],["Folha da Costa","Ervas secas"],["Folha da Fortuna","Ervas secas"],["Folha de Fogo","Ervas secas"],["Folha de Fumo","Ervas secas"],["Girassol","Ervas secas"],["Guiné","Ervas secas"],["Hibisco","Ervas secas"],["Hortelã","Ervas secas"],["Saião","Ervas secas"],["Sálvia","Ervas secas"],["Samambaia","Ervas secas"],["Sândalo","Ervas secas"],["7 Pimentas","Ervas secas"],["Verbena","Ervas secas"],["Pata de Vaca","Ervas secas"],["Peregun","Ervas secas"],["Picão Preto","Ervas secas"],["Pitchuri","Ervas secas"],["Pimenta Jamaica","Ervas secas"],["Pimenta Macaco","Ervas secas"],["Pimenta Malagueta","Ervas secas"],["Pimenta Rosa","Ervas secas"],["Pinhão Roxo","Ervas secas"],["Pitanga","Ervas secas"],["Poejo","Ervas secas"]];
+
+async function seedDespensa() {
+  if(S.despensa.length > 0) {
+    if(!confirm(`Já existem ${S.despensa.length} itens cadastrados. Importar mesmo assim (vai criar duplicatas)?`)) return;
+  }
+  toast(`Importando ${DESPENSA_INICIAL.length} itens... aguarde`,'ok');
+  let ok = 0, erros = 0;
+  for(const [nome, categoria] of DESPENSA_INICIAL) {
+    try {
+      await addDoc(collection(dbPvd,'adm_despensa'), {
+        nome,
+        categoria,
+        unidade: 'un',
+        estoque: 0,
+        minimo: 0,
+        obs: '',
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp()
+      });
+      ok++;
+    } catch(e) { console.error(e); erros++; }
+  }
+  toast(`${ok} itens importados${erros?` · ${erros} com erro`:''}. Agora ajusta quantidades e mínimos.`,ok?'ok':'err');
+}
 
 function renderDespensa(c) {
   const categorias = [...new Set(S.despensa.map(p => p.categoria).filter(Boolean))].sort();
@@ -2955,7 +2982,10 @@ function renderDespensa(c) {
       ${lista.length === 0 ? `
         <div class="empty">
           <div class="empty-t">${S.despensa.length === 0 ? 'Despensa vazia' : 'Nenhum item bate os filtros'}</div>
-          ${S.despensa.length === 0 ? '<div class="empty-s">Comece adicionando itens da casa (velas, ervas, defumadores...)</div>' : ''}
+          ${S.despensa.length === 0 ? `
+            <div class="empty-s">Posso importar a lista do terreiro (${DESPENSA_INICIAL.length} itens · velas, ervas, pós, raízes, cascas, sementes, terras) com estoque zerado.<br>Depois você ajusta quantidades e mínimos item por item.</div>
+            <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.seedDespensa()">Importar lista do terreiro (${DESPENSA_INICIAL.length} itens)</button>
+          ` : ''}
         </div>
       ` : lista.map(p => {
         const baixo = (p.estoque||0) <= (p.minimo||0);
@@ -3571,6 +3601,7 @@ window._app = {
   openLojinhaEscalaForm,
   openItemDespensaForm,
   movimentarDespensa,
+  seedDespensa,
   openAtendimentoForm,
   openConsulenteForm,
   toggleArquivarConsulente,
