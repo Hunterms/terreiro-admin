@@ -454,6 +454,8 @@ const fmt = {
   data: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—',
   dataBr: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—',
   dataLong: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—',
+  // Converte qualquer YYYY-MM-DD num texto pra DD/MM/AAAA (pra cards antigos)
+  ptDatas: str => (str||'').replace(/(\d{4})-(\d{2})-(\d{2})/g, (_,y,m,d) => `${d}/${m}/${y}`),
   initials: nome => (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase(),
   rel: ts => {
     if(!ts) return '';
@@ -1398,6 +1400,17 @@ function renderKanban(c) {
   ativos.forEach(k => { if(k.origem_ref) refCount[k.origem_ref] = (refCount[k.origem_ref]||0) + 1; });
   const duplicatas = ativos.filter(k => k.origem_ref && refCount[k.origem_ref] > 1);
 
+  // Mini-dash: indicadores de saúde do kanban
+  const atrasados = ativos.filter(k => k.prazo && k.prazo < hojeStr && k.status !== 'done');
+  const semResponsavel = ativos.filter(k => !k.responsaveis || k.responsaveis.length === 0);
+  const proximos7dias = ativos.filter(k => k.prazo && k.prazo >= hojeStr && k.prazo <= new Date(hoje.getTime()+7*86400000).toISOString().slice(0,10) && k.status !== 'done');
+  // Done na última semana
+  const setediasAtras = new Date(hoje.getTime() - 7*86400000);
+  const doneRecente = S.kanban.filter(k => k.status === 'done' && k.movido_done_em && (k.movido_done_em.toDate ? k.movido_done_em.toDate() : new Date(k.movido_done_em)) >= setediasAtras);
+  // Done no mês corrente
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const doneMes = S.kanban.filter(k => k.status === 'done' && k.movido_done_em && (k.movido_done_em.toDate ? k.movido_done_em.toDate() : new Date(k.movido_done_em)) >= inicioMes);
+
   c.innerHTML = `
     <div class="page-head">
       <div>
@@ -1409,6 +1422,39 @@ function renderKanban(c) {
         <button class="btn btn-primary" onclick="window._app.openKanbanForm()">+ Novo card</button>
       </div>
     </div>
+
+    <div class="grid grid-4" style="margin-bottom:18px">
+      <div class="metric" style="--clr:${atrasados.length>0?'var(--red)':'var(--green)'}">
+        <div class="ml">Atrasados</div>
+        <div class="mv">${atrasados.length}</div>
+        <div class="mh">${atrasados.length===0?'tudo em dia':'prazo vencido'}</div>
+      </div>
+      <div class="metric" style="--clr:var(--amber)">
+        <div class="ml">Próx. 7 dias</div>
+        <div class="mv">${proximos7dias.length}</div>
+        <div class="mh">${cols.blocked.length} bloqueado${cols.blocked.length===1?'':'s'}</div>
+      </div>
+      <div class="metric" style="--clr:${semResponsavel.length>0?'var(--amber)':'var(--green)'}">
+        <div class="ml">Sem responsável</div>
+        <div class="mv">${semResponsavel.length}</div>
+        <div class="mh">${semResponsavel.length===0?'todos atribuídos':'precisam dono'}</div>
+      </div>
+      <div class="metric" style="--clr:var(--green)">
+        <div class="ml">Feitos na semana</div>
+        <div class="mv">${doneRecente.length}</div>
+        <div class="mh">${doneMes.length} no mês</div>
+      </div>
+    </div>
+
+    ${atrasados.length > 0 ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--red-bd)">
+        <div class="card-h"><div class="card-title" style="color:var(--red)">⏰ Cards atrasados (${atrasados.length})</div></div>
+        <div class="chips">
+          ${atrasados.slice(0,10).map(k => `<span class="chip chip-red" style="cursor:pointer" onclick="window._app.openKanbanForm('${k.id}')" title="${fmt.ptDatas(k.titulo)} · ${fmt.dataBr(k.prazo)}">${fmt.ptDatas(k.titulo).slice(0,40)}${k.titulo.length>40?'...':''}</span>`).join('')}
+          ${atrasados.length>10?`<span class="chip">+${atrasados.length-10}</span>`:''}
+        </div>
+      </div>
+    `:''}
 
     <div class="kanban" id="kanban-board">
       ${[
@@ -1442,7 +1488,7 @@ function kCardHtml(k) {
   const overdue = k.prazo && k.prazo < today && k.status !== 'done';
   return `
     <div class="kcard prio-${k.prioridade||'media'}" draggable="true" data-id="${k.id}" onclick="window._app.openKanbanForm('${k.id}')">
-      <div class="kcard-t">${k.titulo}</div>
+      <div class="kcard-t">${fmt.ptDatas(k.titulo)}</div>
       <div class="kcard-meta">
         ${resps.slice(0,2).map(r=>`<span class="chip">${r.nome.split(' ')[0]}</span>`).join('')}
         ${resps.length>2 ? `<span class="chip">+${resps.length-2}</span>` : ''}
