@@ -859,6 +859,62 @@ async function autoGerarTarefasFuncoes() {
   }
 }
 
+// Limpeza manual de cards antigos/duplicados — botão no Kanban
+async function limparKanbanAntigos() {
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hojeStr = hoje.toISOString().slice(0,10);
+  const proximaLua = LUAS_CHEIAS.find(d => d >= hojeStr);
+
+  const aArquivar = new Set();
+  const visto = new Set(); // pra deduplicar por origem_ref
+
+  for(const k of S.kanban) {
+    if(k.arquivado) continue;
+
+    // Detecta duplicata: mesmo origem_ref aparecendo várias vezes
+    if(k.origem_ref) {
+      if(visto.has(k.origem_ref)) { aArquivar.add(k.id); continue; }
+      visto.add(k.origem_ref);
+    }
+
+    // Lua cheia legado
+    if(k.origem === 'funcao_lua_cheia' && k.origem_ref) {
+      const parts = k.origem_ref.split('__');
+      if(parts.length === 3 && parts[0] === 'fn_lua') {
+        const fn = S.funcoes.find(f => f.id === parts[1]);
+        if(!fn || fn.arquivada || !fn.tarefa_lua_cheia || parts[2] !== proximaLua) {
+          aArquivar.add(k.id);
+        }
+      }
+    }
+
+    // Antes de gira legado
+    if(k.origem === 'funcao_antes_gira' && k.origem_ref) {
+      const parts = k.origem_ref.split('__');
+      if(parts.length === 3 && parts[0] === 'fn_gira') {
+        const fn = S.funcoes.find(f => f.id === parts[1]);
+        const ev = S.eventos.find(e => e.id === parts[2]);
+        if(!fn || fn.arquivada || !fn.tarefa_antes_gira || !ev || ev.arquivado) {
+          aArquivar.add(k.id);
+        }
+      }
+    }
+  }
+
+  if(aArquivar.size === 0) { toast('Nada pra limpar — kanban tá zerado','ok'); return; }
+
+  confirmar(`Arquivar ${aArquivar.size} card${aArquivar.size===1?'':'s'} antigo${aArquivar.size===1?'':'s'}/duplicado${aArquivar.size===1?'':'s'}? Eles ficam no banco mas somem do quadro.`, async () => {
+    let ok = 0, erros = 0;
+    for(const id of aArquivar) {
+      try {
+        await updateDoc(doc(dbPvd,'adm_kanban',id), { arquivado: true, atualizadoEm: serverTimestamp() });
+        ok++;
+      } catch(e) { console.error(e); erros++; }
+    }
+    toast(`${ok} arquivado${ok===1?'':'s'}${erros?` · ${erros} com erro`:''}`,ok?'ok':'err');
+  });
+}
+
 // ── DASHBOARD (admin) ──────────────────────────────────────────────────────
 function renderDashboard(c) {
   // Roda auto-gerador uma vez ao abrir o dashboard
@@ -1313,13 +1369,43 @@ function renderKanban(c) {
   const cols = { todo:[], doing:[], blocked:[], done:[] };
   ativos.forEach(k => { (cols[k.status]||cols.todo).push(k); });
 
+  // Conta cards auto-gerados antigos pra mostrar no botão de limpeza
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hojeStr = hoje.toISOString().slice(0,10);
+  const proximaLua = LUAS_CHEIAS.find(d => d >= hojeStr);
+  const candidatosLimpeza = ativos.filter(k => {
+    if(k.origem === 'funcao_lua_cheia' && k.origem_ref) {
+      const parts = k.origem_ref.split('__');
+      if(parts.length === 3 && parts[0] === 'fn_lua') {
+        const fn = S.funcoes.find(f => f.id === parts[1]);
+        if(!fn || fn.arquivada || !fn.tarefa_lua_cheia) return true;
+        if(parts[2] !== proximaLua) return true;
+      }
+    }
+    if(k.origem === 'funcao_antes_gira' && k.origem_ref) {
+      const parts = k.origem_ref.split('__');
+      if(parts.length === 3 && parts[0] === 'fn_gira') {
+        const fn = S.funcoes.find(f => f.id === parts[1]);
+        const ev = S.eventos.find(e => e.id === parts[2]);
+        if(!fn || fn.arquivada || !fn.tarefa_antes_gira) return true;
+        if(!ev || ev.arquivado) return true;
+      }
+    }
+    return false;
+  });
+  // Detecta duplicatas (mesmo origem_ref aparecendo mais de uma vez nos ativos)
+  const refCount = {};
+  ativos.forEach(k => { if(k.origem_ref) refCount[k.origem_ref] = (refCount[k.origem_ref]||0) + 1; });
+  const duplicatas = ativos.filter(k => k.origem_ref && refCount[k.origem_ref] > 1);
+
   c.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-title">Kanban</div>
-        <div class="page-sub">${ativos.length} card${ativos.length===1?'':'s'} ativo${ativos.length===1?'':'s'}</div>
+        <div class="page-sub">${ativos.length} card${ativos.length===1?'':'s'} ativo${ativos.length===1?'':'s'}${candidatosLimpeza.length>0?` · ${candidatosLimpeza.length} antigo${candidatosLimpeza.length===1?'':'s'}`:''}${duplicatas.length>0?` · ${duplicatas.length} duplicata${duplicatas.length===1?'':'s'}`:''}</div>
       </div>
       <div class="page-actions">
+        ${candidatosLimpeza.length>0 || duplicatas.length>0 ? `<button class="btn" onclick="window._app.limparKanbanAntigos()">🧹 Limpar ${candidatosLimpeza.length+duplicatas.length} antigo${(candidatosLimpeza.length+duplicatas.length)===1?'':'s'}/duplicado${(candidatosLimpeza.length+duplicatas.length)===1?'':'s'}</button>`:''}
         <button class="btn btn-primary" onclick="window._app.openKanbanForm()">+ Novo card</button>
       </div>
     </div>
@@ -3816,6 +3902,7 @@ window._app = {
   toggleArquivarFuncao,
   seedFuncoes,
   openKanbanForm,
+  limparKanbanAntigos,
   openEventoForm,
   openEscalaForm,
   setEscTab,
