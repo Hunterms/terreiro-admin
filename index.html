@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Candieiro — Admin</title>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#0d0d0d"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --red:#e63329;--red2:#c0251c;
+  --red-bg:rgba(230,51,41,0.1);--red-bd:rgba(230,51,41,0.3);
+  --gold:#d4a843;--gold2:#b8922a;
+  --gold-bg:rgba(212,168,67,0.1);
+  --green:#2ecc71;
+  --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --amber:#f39c12;--amber-bg:rgba(243,156,18,0.1);
+  --blue:#3498db;--blue-bg:rgba(52,152,219,0.1);
+  --purple:#9b59b6;--purple-bg:rgba(155,89,182,0.1);
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --font-display:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html{background:var(--bg)}
+body{font-family:var(--font);background:var(--bg);min-height:100vh;color:var(--text);background-image:radial-gradient(ellipse at 20% 50%,rgba(230,51,41,0.04) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(212,168,67,0.03) 0%,transparent 50%)}
+
+/* LOADING */
+#loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999}
+#loading h2{font-size:22px;letter-spacing:.12em;text-transform:uppercase}
+.spinner{width:30px;height:30px;border:2px solid rgba(255,255,255,0.08);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* LOGIN */
+#login-screen{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(ellipse at center,rgba(230,51,41,0.06) 0%,transparent 70%)}
+#login-screen.show{display:flex}
+.login-box{width:420px;max-width:92vw;background:rgba(255,255,255,0.04);backdrop-filter:blur(24px);border:1px solid rgba(230,51,41,0.2);border-radius:22px;padding:44px;display:flex;flex-direction:column;align-items:center;gap:24px;box-shadow:0 0 60px rgba(230,51,41,0.1),0 0 120px rgba(0,0,0,.5)}
+.login-flame{width:60px;height:60px;color:var(--red)}
+.login-title{font-size:22px;letter-spacing:.1em;text-align:center;font-weight:700}
+.login-sub{font-size:11px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+.login-fields{width:100%;display:flex;flex-direction:column;gap:14px}
+.login-field{display:flex;flex-direction:column;gap:7px}
+.login-field label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.login-field input{padding:12px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:15px;font-family:var(--font);outline:none}
+.login-field input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(230,51,41,0.15)}
+.btn-login{width:100%;padding:13px;background:linear-gradient(135deg,var(--red),var(--red2));border:none;border-radius:var(--rad);color:white;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font);letter-spacing:.04em}
+.btn-login:hover{transform:translateY(-1px)}
+.btn-login:disabled{opacity:.5;cursor:wait}
+.login-err{font-size:13px;color:var(--red);text-align:center;display:none;min-height:18px}
+
+/* SHELL */
+#app{display:none;min-height:100vh}
+#app.show{display:flex}
+aside.sidebar{width:260px;flex-shrink:0;background:rgba(0,0,0,.4);backdrop-filter:blur(12px);border-right:1px solid var(--border);padding:24px 16px;display:flex;flex-direction:column;gap:24px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:12px;padding:0 8px}
+.brand-flame{width:34px;height:34px;color:var(--red)}
+.brand-name{font-size:17px;font-weight:700;letter-spacing:.04em}
+.brand-sub{font-size:10px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+.sidebar-nav{display:flex;flex-direction:column;gap:2px}
+.sidebar-nav .section-label{font-size:10px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;padding:14px 12px 6px;font-weight:600}
+.sidebar-nav button{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:none;background:transparent;color:var(--text2);font-size:13.5px;font-weight:500;cursor:pointer;font-family:var(--font);text-align:left;width:100%;transition:all .14s}
+.sidebar-nav button:hover{background:var(--glass);color:var(--text)}
+.sidebar-nav button.active{background:var(--red-bg);color:var(--red);font-weight:600}
+.sidebar-nav button svg{width:16px;height:16px;flex-shrink:0;opacity:.8}
+.sidebar-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid var(--border)}
+.user-pill{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--glass);border-radius:8px}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-role{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em}
+.btn-logout{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:transparent;border:1px solid var(--border2);border-radius:var(--rad);color:var(--text3);font-size:12px;cursor:pointer;font-family:var(--font)}
+.btn-logout:hover{border-color:var(--red);color:var(--red)}
+.btn-logout svg{width:14px;height:14px}
+
+main{flex:1;padding:28px 32px;min-width:0;overflow-x:hidden}
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;gap:14px;flex-wrap:wrap}
+.page-title{font-size:24px;font-weight:700;letter-spacing:.02em}
+.page-sub{font-size:13px;color:var(--text3);margin-top:4px}
+.page-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .14s}
+.btn:hover{background:var(--glass2);border-color:var(--text3)}
+.btn-primary{background:linear-gradient(135deg,var(--red),var(--red2));border-color:transparent;color:white;font-weight:600}
+.btn-primary:hover{transform:translateY(-1px);background:linear-gradient(135deg,var(--red),var(--red2))}
+.btn-ghost{background:transparent}
+.btn-danger{color:var(--red);border-color:var(--red-bd)}
+.btn-danger:hover{background:var(--red-bg)}
+.btn svg{width:15px;height:15px}
+.btn-sm{padding:6px 10px;font-size:12px}
+.btn-icon{padding:7px;width:32px;height:32px;justify-content:center}
+
+/* CARD */
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:22px}
+.card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px}
+.card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card-title svg{width:16px;height:16px;opacity:.6}
+
+/* GRID */
+.grid{display:grid;gap:14px}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.grid-4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+/* METRICS */
+.metric{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:20px;position:relative;overflow:hidden}
+.metric::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--clr,var(--border))}
+.metric .ml{font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.metric .mv{font-size:26px;font-weight:700;color:var(--text)}
+.metric .mh{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* FORMS */
+.fi-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fi-group label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.fi,select.fi,textarea.fi{padding:10px 12px;background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:14px;font-family:var(--font);outline:none;width:100%}
+.fi:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(230,51,41,0.12)}
+textarea.fi{min-height:80px;resize:vertical}
+select.fi{appearance:none;-webkit-appearance:none;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a89880' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+select.fi option{background:#1a1a1a;color:var(--text)}
+.checkbox-row{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text)}
+.checkbox-row input{width:16px;height:16px;accent-color:var(--red)}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* LIST / TABLE */
+.list-item{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--rad);margin-bottom:8px;transition:all .14s}
+.list-item:hover{border-color:var(--border2);background:var(--glass2)}
+.li-avatar{width:38px;height:38px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.li-main{flex:1;min-width:0}
+.li-name{font-size:15px;font-weight:600}
+.li-meta{font-size:12px;color:var(--text3);margin-top:2px;display:flex;gap:10px;flex-wrap:wrap}
+.li-actions{display:flex;gap:4px}
+
+/* CHIPS / BADGES */
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;letter-spacing:.02em;background:var(--glass2);color:var(--text2);border:1px solid var(--border)}
+.chip-red{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+.chip-green{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.chip-gold{background:var(--gold-bg);color:var(--gold);border-color:rgba(212,168,67,0.3)}
+.chip-blue{background:var(--blue-bg);color:var(--blue);border-color:rgba(52,152,219,0.3)}
+.chip-amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(243,156,18,0.3)}
+.chip-purple{background:var(--purple-bg);color:var(--purple);border-color:rgba(155,89,182,0.3)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+
+/* MODAL */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s}
+.modal-backdrop.show{display:flex}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{width:540px;max-width:100%;max-height:90vh;overflow-y:auto;background:#181412;border:1px solid var(--border2);border-radius:var(--radlg);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.modal-lg{width:720px}
+.modal-h{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-h h3{font-size:17px;font-weight:700}
+.modal-c{padding:24px}
+.modal-f{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.btn-close{background:transparent;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center}
+.btn-close:hover{color:var(--text)}
+.btn-close svg{width:20px;height:20px}
+
+/* TOAST */
+.toast{position:fixed;top:24px;right:24px;background:#181412;border:1px solid var(--border2);border-left:3px solid var(--text2);border-radius:var(--rad);padding:14px 18px;color:var(--text);font-size:14px;z-index:2000;animation:slideIn .2s;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast.ok{border-left-color:var(--green)}
+.toast.err{border-left-color:var(--red)}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* EMPTY */
+.empty{text-align:center;padding:60px 20px;color:var(--text3)}
+.empty svg{width:48px;height:48px;opacity:.4;margin:0 auto 14px;display:block}
+.empty-t{font-size:15px;color:var(--text2);font-weight:600;margin-bottom:6px}
+.empty-s{font-size:13px}
+
+/* KANBAN */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start}
+.kcol{background:var(--glass);border:1px solid var(--border);border-radius:var(--radlg);padding:14px;min-height:300px}
+.kcol-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.kcol-title{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:7px}
+.kcol-count{font-size:11px;color:var(--text3);background:var(--glass2);padding:2px 7px;border-radius:8px;font-weight:600}
+.kcol.over{background:rgba(230,51,41,0.05);border-color:var(--red-bd)}
+.kcard{background:#181412;border:1px solid var(--border2);border-radius:var(--rad);padding:12px;margin-bottom:8px;cursor:grab;transition:all .14s}
+.kcard:hover{border-color:var(--text3);transform:translateY(-1px)}
+.kcard.dragging{opacity:.4}
+.kcard-t{font-size:13.5px;font-weight:600;line-height:1.35;margin-bottom:6px}
+.kcard-meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:11px;color:var(--text3)}
+.kcard-meta .prazo{font-weight:600}
+.kcard-meta .prazo.overdue{color:var(--red)}
+.kcol-todo .kcol-title svg{color:var(--text2)}
+.kcol-doing .kcol-title svg{color:var(--blue)}
+.kcol-blocked .kcol-title svg{color:var(--amber)}
+.kcol-done .kcol-title svg{color:var(--green)}
+.prio-baixa{border-left:3px solid var(--text3)}
+.prio-media{border-left:3px solid var(--blue)}
+.prio-alta{border-left:3px solid var(--amber)}
+.prio-urgente{border-left:3px solid var(--red)}
+
+/* CALENDAR */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-head{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:600;text-align:center;padding:6px}
+.cal-day{background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:8px;min-height:90px;display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:all .12s}
+.cal-day:hover{border-color:var(--border2);background:var(--glass2)}
+.cal-day.out{opacity:.35}
+.cal-day.today{border-color:var(--red);background:rgba(230,51,41,0.05)}
+.cal-day-n{font-size:12px;font-weight:600;color:var(--text2)}
+.cal-day.today .cal-day-n{color:var(--red)}
+.cal-evt{font-size:10.5px;padding:2px 6px;border-radius:5px;background:var(--glass2);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-evt.publico{background:var(--green-bg);color:var(--green)}
+.cal-evt.fechada{background:var(--blue-bg);color:var(--blue)}
+.cal-evt.trabalho{background:var(--gold-bg);color:var(--gold)}
+.cal-evt.festa{background:var(--purple-bg);color:var(--purple)}
+
+/* FILHO DETAIL */
+.filho-h{display:flex;align-items:center;gap:18px;margin-bottom:24px;padding:20px;background:var(--glass);border:1px solid var(--border);border-radius:var(--radlg)}
+.filho-avatar{width:64px;height:64px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:24px;flex-shrink:0}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto}
+.tabs button{padding:10px 16px;border:none;background:transparent;color:var(--text3);font-size:13.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--font)}
+.tabs button.active{color:var(--red);border-bottom-color:var(--red)}
+
+/* DISPONIBILIDADE CAL */
+.disp-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.disp-day{aspect-ratio:1;background:var(--glass);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;color:var(--text2);transition:all .12s}
+.disp-day:hover{border-color:var(--border2)}
+.disp-day.indisp{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+.disp-day.out{opacity:.25;cursor:default}
+
+@media (max-width:880px){
+  aside.sidebar{position:fixed;top:0;left:-280px;transition:left .2s;z-index:200}
+  aside.sidebar.open{left:0}
+  main{padding:18px}
+  .kanban{grid-template-columns:1fr}
+  .cal-day{min-height:60px}
+  .menu-toggle{display:inline-flex !important}
+}
+.menu-toggle{display:none;background:var(--glass);border:1px solid var(--border2);border-radius:var(--rad);padding:8px;color:var(--text);cursor:pointer}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <svg class="brand-flame" viewBox="0 0 24 24" fill="currentColor" style="width:48px;height:48px;color:var(--red)"><path d="M12 2C12 2 6 8 6 14a6 6 0 0012 0c0-6-6-12-6-12zm0 18a4 4 0 01-4-4c0-2.5 2-5 4-7 2 2 4 4.5 4 7a4 4 0 01-4 4z"/></svg>
+  <h2>Candieiro · Admin</h2>
+  <div class="spinner"></div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <svg class="login-flame" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C12 2 6 8 6 14a6 6 0 0012 0c0-6-6-12-6-12zm0 18a4 4 0 01-4-4c0-2.5 2-5 4-7 2 2 4 4.5 4 7a4 4 0 01-4 4z"/></svg>
+    <div>
+      <div class="login-title">CANDIEIRO</div>
+      <div class="login-sub">Admin do terreiro</div>
+    </div>
+    <form class="login-fields" id="login-form">
+      <div class="login-field"><label>Email</label><input type="email" id="li-email" autocomplete="username" required/></div>
+      <div class="login-field"><label>Senha</label><input type="password" id="li-pwd" autocomplete="current-password" required/></div>
+      <div class="login-err" id="li-err"></div>
+      <button class="btn-login" type="submit" id="li-btn">Entrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="brand-flame" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C12 2 6 8 6 14a6 6 0 0012 0c0-6-6-12-6-12zm0 18a4 4 0 01-4-4c0-2.5 2-5 4-7 2 2 4 4.5 4 7a4 4 0 01-4 4z"/></svg>
+      <div>
+        <div class="brand-name">Candieiro</div>
+        <div class="brand-sub">Admin</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav" id="nav-admin">
+      <button data-route="dashboard" class="active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </button>
+
+      <div class="section-label">Pessoas</div>
+      <button data-route="filhos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Filhos
+      </button>
+      <button data-route="funcoes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8 22 9 17 14 18 21 12 18 6 21 7 14 2 9 9 8 12 2"/></svg>
+        Funções
+      </button>
+
+      <div class="section-label">Operação</div>
+      <button data-route="kanban">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18"/><rect x="11" y="3" width="6" height="12"/><rect x="19" y="3" width="2" height="6"/></svg>
+        Kanban
+      </button>
+      <button data-route="calendario">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Calendário
+      </button>
+      <button data-route="escalas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Escalas
+      </button>
+
+      <div class="section-label">Atendimentos do Pai</div>
+      <button data-route="agenda">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Agenda
+      </button>
+      <button data-route="solicitacoes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Solicitações <span id="sol-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
+      </button>
+      <button data-route="consulentes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-3-3.87"/><path d="M4 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><circle cx="10" cy="7" r="4"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Consulentes
+      </button>
+      <button data-route="config-agendamento">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Config. agendamento
+      </button>
+
+      <div class="section-label">Comunicação</div>
+      <button data-route="avisos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Avisos
+      </button>
+    </nav>
+
+    <nav class="sidebar-nav" id="nav-filho" style="display:none">
+      <button data-route="meu-dashboard" class="active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l2-2 4 4 8-8 4 4"/></svg>
+        Meu painel
+      </button>
+      <button data-route="minhas-escalas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Minhas escalas
+      </button>
+      <button data-route="disponibilidade">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+        Disponibilidade
+      </button>
+      <button data-route="avisos-filho">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+        Avisos
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">—</div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">—</div>
+          <div class="user-role" id="user-role">—</div>
+        </div>
+      </div>
+      <button class="btn-logout" id="btn-logout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sair
+      </button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="route-content"></div>
+  </main>
+</div>
+
+<!-- MODAL CONTAINER -->
+<div class="modal-backdrop" id="modal-backdrop"><div class="modal" id="modal-body"></div></div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/auth/+esm";
+import {
+  getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc,
+  query, where, orderBy, serverTimestamp, getDoc, getDocs
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+// ── FIREBASE INIT (2 projects) ─────────────────────────────────────────────
+const cfgPvd = {
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+};
+const cfgCandieiro = {
+  apiKey: "AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM",
+  authDomain: "terreiro-candieiro.firebaseapp.com",
+  projectId: "terreiro-candieiro",
+  appId: "1:100068133826:web:aa6bea82298a266737a45b"
+};
+
+const appPvd = initializeApp(cfgPvd, 'pvd');
+const appCand = initializeApp(cfgCandieiro, 'candieiro');
+const dbPvd = getFirestore(appPvd);
+const dbCand = getFirestore(appCand);
+const authPvd = getAuth(appPvd);
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+const S = {
+  user: null,            // Firebase user
+  role: null,            // 'admin' | 'filho'
+  filhoDoc: null,        // doc do filho logado (se role=filho)
+  filhos: [],
+  funcoes: [],
+  kanban: [],
+  eventos: [],
+  avisos: [],
+  disponibilidade: [],
+  escalas: [],
+  atendimentos: [],
+  consulentes: [],
+  solicitacoes: [],
+  route: 'dashboard',
+  unsubs: []
+};
+
+// ── UTIL ───────────────────────────────────────────────────────────────────
+const $ = (q,r=document) => r.querySelector(q);
+const $$ = (q,r=document) => Array.from(r.querySelectorAll(q));
+const fmt = {
+  data: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—',
+  dataLong: d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—',
+  initials: nome => (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase(),
+  rel: ts => {
+    if(!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const diff = (Date.now()-d.getTime())/1000;
+    if(diff<60) return 'agora';
+    if(diff<3600) return Math.floor(diff/60)+'min';
+    if(diff<86400) return Math.floor(diff/3600)+'h';
+    if(diff<2592000) return Math.floor(diff/86400)+'d';
+    return d.toLocaleDateString('pt-BR');
+  }
+};
+function toast(msg, type='') {
+  const t = document.createElement('div');
+  t.className = 'toast '+type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),200)},2400);
+}
+function openModal(html, opts={}) {
+  const bd = $('#modal-backdrop'), bod = $('#modal-body');
+  bod.className = 'modal' + (opts.lg ? ' modal-lg' : '');
+  bod.innerHTML = html;
+  bd.classList.add('show');
+  bd.onclick = e => { if(e.target===bd) closeModal(); };
+}
+function closeModal() {
+  $('#modal-backdrop').classList.remove('show');
+  $('#modal-body').innerHTML = '';
+}
+window.closeModal = closeModal;
+function confirmar(msg, fn) {
+  openModal(`
+    <div class="modal-c">
+      <div style="font-size:15px;line-height:1.5;margin-bottom:18px">${msg}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-danger" id="conf-ok">Confirmar</button>
+      </div>
+    </div>
+  `);
+  $('#conf-ok').onclick = () => { closeModal(); fn(); };
+}
+
+// ── AUTH ───────────────────────────────────────────────────────────────────
+async function detectRole(user) {
+  // 1. Tentativa: claim no token
+  try {
+    const tok = await user.getIdTokenResult();
+    if(tok.claims.admin) return { role:'admin', filhoDoc:null };
+  } catch(e) {}
+  // 2. Fallback: procurar em fin_filhos por auth_uid
+  try {
+    const snap = await getDocs(query(collection(dbPvd,'fin_filhos'), where('auth_uid','==',user.uid)));
+    if(!snap.empty) {
+      const d = snap.docs[0];
+      return { role:'filho', filhoDoc:{ id:d.id, ...d.data() }};
+    }
+  } catch(e) {}
+  // 3. Lista hardcoded de admins iniciais (pre-claims)
+  const adminsIniciais = ['hunter','pai','candieiro','admin'];
+  if(adminsIniciais.some(s => (user.email||'').toLowerCase().includes(s))) {
+    return { role:'admin', filhoDoc:null };
+  }
+  return { role:null, filhoDoc:null };
+}
+
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = $('#li-email').value.trim();
+  const pwd = $('#li-pwd').value;
+  const err = $('#li-err'), btn = $('#li-btn');
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Entrando...';
+  try {
+    await signInWithEmailAndPassword(authPvd, email, pwd);
+  } catch(e) {
+    err.textContent = e.code === 'auth/invalid-credential' ? 'Email ou senha incorretos' : (e.message || 'Erro ao entrar');
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+  }
+});
+
+$('#btn-logout').addEventListener('click', async () => {
+  S.unsubs.forEach(u=>u && u());
+  S.unsubs = [];
+  await signOut(authPvd);
+});
+
+onAuthStateChanged(authPvd, async user => {
+  $('#loading').style.display = 'none';
+  if(!user) {
+    S.user = null; S.role = null; S.filhoDoc = null;
+    $('#app').classList.remove('show');
+    $('#login-screen').classList.add('show');
+    return;
+  }
+  const { role, filhoDoc } = await detectRole(user);
+  if(!role) {
+    toast('Usuário sem permissão de acesso','err');
+    await signOut(authPvd);
+    return;
+  }
+  S.user = user; S.role = role; S.filhoDoc = filhoDoc;
+  $('#login-screen').classList.remove('show');
+  $('#app').classList.add('show');
+  setupUserPill();
+  setupNav();
+  attachListeners();
+  navigate(role === 'admin' ? 'dashboard' : 'meu-dashboard');
+});
+
+function setupUserPill() {
+  const name = S.role === 'filho' && S.filhoDoc ? S.filhoDoc.nome : (S.user.email || 'admin');
+  $('#user-name').textContent = name;
+  $('#user-role').textContent = S.role;
+  $('#user-avatar').textContent = fmt.initials(name) || '·';
+}
+function setupNav() {
+  $('#nav-admin').style.display = S.role === 'admin' ? '' : 'none';
+  $('#nav-filho').style.display = S.role === 'filho' ? '' : 'none';
+  const navEl = S.role === 'admin' ? $('#nav-admin') : $('#nav-filho');
+  navEl.querySelectorAll('button').forEach(b => {
+    b.onclick = () => navigate(b.dataset.route);
+  });
+}
+
+// ── REALTIME LISTENERS ─────────────────────────────────────────────────────
+function attachListeners() {
+  S.unsubs.forEach(u=>u && u());
+  S.unsubs = [];
+
+  // Filhos
+  S.unsubs.push(onSnapshot(query(collection(dbPvd,'fin_filhos'), orderBy('nome')), snap => {
+    S.filhos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route) renderRoute();
+  }));
+
+  // Funções
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_funcoes'), snap => {
+    S.funcoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route) renderRoute();
+  }));
+
+  // Kanban
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_kanban'), snap => {
+    S.kanban = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route === 'kanban' || S.route === 'meu-dashboard' || S.route === 'dashboard') renderRoute();
+  }));
+
+  // Eventos (candieiro project!)
+  S.unsubs.push(onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
+    S.eventos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['calendario','dashboard','meu-dashboard','escalas'].includes(S.route)) renderRoute();
+  }));
+
+  // Avisos
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_avisos'), snap => {
+    S.avisos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['avisos','avisos-filho','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Disponibilidade
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => {
+    S.disponibilidade = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['disponibilidade','escalas'].includes(S.route)) renderRoute();
+  }));
+
+  // Escalas
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_escalas'), snap => {
+    S.escalas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Atendimentos (só admin)
+  if(S.role === 'admin') {
+    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
+      S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(['agenda','consulentes','dashboard'].includes(S.route)) renderRoute();
+    }));
+
+    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_consulentes'), snap => {
+      S.consulentes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(['agenda','consulentes'].includes(S.route)) renderRoute();
+    }));
+
+    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_solicitacoes'), snap => {
+      S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(['solicitacoes','agenda','dashboard'].includes(S.route)) renderRoute();
+    }));
+  }
+}
+
+// ── ROUTER ─────────────────────────────────────────────────────────────────
+function navigate(route) {
+  S.route = route;
+  const navEl = S.role === 'admin' ? $('#nav-admin') : $('#nav-filho');
+  navEl.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.dataset.route === route);
+  });
+  renderRoute();
+  window.scrollTo(0,0);
+}
+
+function renderRoute() {
+  const c = $('#route-content');
+  switch(S.route) {
+    case 'dashboard':     return renderDashboard(c);
+    case 'filhos':        return renderFilhos(c);
+    case 'funcoes':       return renderFuncoes(c);
+    case 'kanban':        return renderKanban(c);
+    case 'calendario':    return renderCalendario(c);
+    case 'escalas':       return renderEscalas(c);
+    case 'agenda':        return renderAgenda(c);
+    case 'solicitacoes':  return renderSolicitacoes(c);
+    case 'consulentes':   return renderConsulentes(c);
+    case 'config-agendamento': return renderConfigAgendamento(c);
+    case 'avisos':        return renderAvisos(c);
+    case 'meu-dashboard': return renderMeuDashboard(c);
+    case 'minhas-escalas':return renderMinhasEscalas(c);
+    case 'disponibilidade':return renderDisponibilidade(c);
+    case 'avisos-filho':  return renderAvisosFilho(c);
+    default: c.innerHTML = '<div class="empty"><div class="empty-t">Página não encontrada</div></div>';
+  }
+}
+
+// ── DASHBOARD (admin) ──────────────────────────────────────────────────────
+function renderDashboard(c) {
+  const proxGiras = S.eventos
+    .filter(e => e.data >= new Date().toISOString().slice(0,10) && !e.arquivado)
+    .slice(0,5);
+  const cardsTodo = S.kanban.filter(k => k.status === 'todo' && !k.arquivado);
+  const cardsDoing = S.kanban.filter(k => k.status === 'doing' && !k.arquivado);
+  const cardsBlocked = S.kanban.filter(k => k.status === 'blocked' && !k.arquivado);
+  const avisosAtivos = S.avisos.filter(a => !a.arquivado).length;
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">Olá, ${S.user.email}. ${proxGiras.length} próxim${proxGiras.length===1?'a gira':'as giras'} na agenda.</div>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:20px">
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Filhos ativos</div><div class="mv">${S.filhos.filter(f=>!f.status || f.status==='ativo').length}</div><div class="mh">de ${S.filhos.length} cadastrados</div></div>
+      <div class="metric" style="--clr:var(--blue)"><div class="ml">Próximos eventos</div><div class="mv">${proxGiras.length}</div><div class="mh">na próxima semana</div></div>
+      <div class="metric" style="--clr:var(--amber)"><div class="ml">Cards ativos</div><div class="mv">${cardsTodo.length + cardsDoing.length + cardsBlocked.length}</div><div class="mh">${cardsBlocked.length} bloqueado${cardsBlocked.length===1?'':'s'}</div></div>
+      <div class="metric" style="--clr:var(--green)"><div class="ml">Avisos ativos</div><div class="mv">${avisosAtivos}</div></div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-h"><div class="card-title">Próximos eventos</div><button class="btn btn-sm" onclick="window._app.navigate('calendario')">Ver calendário</button></div>
+        ${proxGiras.length === 0 ? '<div class="empty"><div class="empty-s">Nenhum evento agendado</div></div>' : proxGiras.map(e => `
+          ${(() => {
+            const aberta = e.publico !== false && e.tipo !== 'gira_fechada' && !['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','festa','ensaio_curimba'].includes(e.tipo);
+            return `
+          <div class="list-item" onclick="window._app.openEvento('${e.id}')" style="cursor:pointer">
+            <div class="li-avatar" style="background:${aberta?'var(--green-bg)':'var(--blue-bg)'};color:${aberta?'var(--green)':'var(--blue)'}">${(e.data||'').slice(8,10)}</div>
+            <div class="li-main">
+              <div class="li-name">${e.nome || e.titulo || 'Sem título'}</div>
+              <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}</div>
+            </div>
+          </div>`;
+          })()}
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-h"><div class="card-title">Kanban — atenção</div><button class="btn btn-sm" onclick="window._app.navigate('kanban')">Ver tudo</button></div>
+        ${cardsBlocked.length === 0 && cardsDoing.length === 0 ? '<div class="empty"><div class="empty-s">Nada bloqueado ou em andamento</div></div>' : ''}
+        ${cardsBlocked.slice(0,3).map(k=>`<div class="list-item"><div class="chip chip-amber">BLOQUEADO</div><div class="li-main"><div class="li-name">${k.titulo}</div><div class="li-meta">${k.motivo_bloqueio||''}</div></div></div>`).join('')}
+        ${cardsDoing.slice(0,3).map(k=>`<div class="list-item"><div class="chip chip-blue">EM ANDAMENTO</div><div class="li-main"><div class="li-name">${k.titulo}</div></div></div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ── FILHOS ────────────────────────────────────────────────────────────────
+let filtroFilhos = { busca:'', status:'todos', funcao:'todas' };
+
+function renderFilhos(c) {
+  const lista = S.filhos.filter(f => {
+    if(filtroFilhos.busca && !f.nome.toLowerCase().includes(filtroFilhos.busca.toLowerCase())) return false;
+    if(filtroFilhos.status !== 'todos' && (f.status||'ativo') !== filtroFilhos.status) return false;
+    if(filtroFilhos.funcao !== 'todas' && !(f.postos||[]).includes(filtroFilhos.funcao)) return false;
+    return true;
+  });
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Filhos</div>
+        <div class="page-sub">${S.filhos.length} cadastrados · ${S.filhos.filter(f=>!f.status||f.status==='ativo').length} ativos</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openFilhoForm()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Novo filho
+        </button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid grid-3">
+        <div class="fi-group" style="margin:0">
+          <label>Buscar</label>
+          <input class="fi" id="f-busca" placeholder="Nome..." value="${filtroFilhos.busca}"/>
+        </div>
+        <div class="fi-group" style="margin:0">
+          <label>Status</label>
+          <select class="fi" id="f-status">
+            <option value="todos">Todos</option>
+            <option value="ativo" ${filtroFilhos.status==='ativo'?'selected':''}>Ativos</option>
+            <option value="afastado" ${filtroFilhos.status==='afastado'?'selected':''}>Afastados</option>
+            <option value="visitante" ${filtroFilhos.status==='visitante'?'selected':''}>Visitantes</option>
+          </select>
+        </div>
+        <div class="fi-group" style="margin:0">
+          <label>Função</label>
+          <select class="fi" id="f-funcao">
+            <option value="todas">Todas</option>
+            ${S.funcoes.filter(f=>!f.arquivada).map(f=>`<option value="${f.id}" ${filtroFilhos.funcao===f.id?'selected':''}>${f.nome}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum filho encontrado</div></div>' : lista.map(f => {
+        const postos = (f.postos||[]).map(pid => S.funcoes.find(fn=>fn.id===pid)).filter(Boolean);
+        const padrinho = f.padrinho_id ? S.filhos.find(x=>x.id===f.padrinho_id) : null;
+        return `
+        <div class="list-item">
+          <div class="li-avatar">${fmt.initials(f.nome)}</div>
+          <div class="li-main">
+            <div class="li-name">${f.nome}</div>
+            <div class="li-meta">
+              ${(f.status||'ativo')==='ativo' ? '<span class="chip chip-green">ativo</span>' : (f.status==='afastado' ? '<span class="chip">afastado</span>' : '<span class="chip chip-blue">visitante</span>')}
+              ${f.mora_perto ? '<span class="chip chip-green">mora perto</span>' : ''}
+              ${postos.map(p=>`<span class="chip chip-gold">${p.nome}</span>`).join('')}
+              ${padrinho ? `<span class="chip chip-purple">apadrinhado por ${padrinho.nome.split(' ')[0]}</span>` : ''}
+              ${f.tel ? `<span>📱 ${f.tel}</span>` : ''}
+              <span>R$ ${f.valor||0}</span>
+            </div>
+          </div>
+          <div class="li-actions">
+            <button class="btn btn-sm" onclick="window._app.openFilhoForm('${f.id}')">Editar</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+
+  $('#f-busca').oninput = e => { filtroFilhos.busca = e.target.value; renderFilhos(c); };
+  $('#f-status').onchange = e => { filtroFilhos.status = e.target.value; renderFilhos(c); };
+  $('#f-funcao').onchange = e => { filtroFilhos.funcao = e.target.value; renderFilhos(c); };
+}
+
+function openFilhoForm(id=null) {
+  const f = id ? S.filhos.find(x=>x.id===id) : null;
+  const isEdit = !!f;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar filho':'Novo filho'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="ff-nome" value="${f?.nome||''}"/></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Telefone</label><input class="fi" id="ff-tel" value="${f?.tel||''}" placeholder="11999999999"/></div>
+        <div class="fi-group"><label>Status</label>
+          <select class="fi" id="ff-status">
+            <option value="ativo" ${(f?.status||'ativo')==='ativo'?'selected':''}>Ativo</option>
+            <option value="afastado" ${f?.status==='afastado'?'selected':''}>Afastado</option>
+            <option value="visitante" ${f?.status==='visitante'?'selected':''}>Visitante</option>
+          </select>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Mensalidade (R$)</label>
+          <select class="fi" id="ff-valor">
+            <option value="0" ${f?.valor===0?'selected':''}>R$ 0 (isento)</option>
+            <option value="100" ${f?.valor===100?'selected':''}>R$ 100</option>
+            <option value="150" ${f?.valor===150?'selected':''}>R$ 150</option>
+            <option value="200" ${(!f||f?.valor===200)?'selected':''}>R$ 200</option>
+            <option value="250" ${f?.valor===250?'selected':''}>R$ 250</option>
+            <option value="300" ${f?.valor===300?'selected':''}>R$ 300</option>
+          </select>
+        </div>
+        <div class="fi-group"><label>Prazo (dia)</label>
+          <select class="fi" id="ff-prazo">
+            <option value="10" ${(!f||f?.prazo==='10')?'selected':''}>Dia 10</option>
+            <option value="15" ${f?.prazo==='15'?'selected':''}>Dia 15</option>
+            <option value="20" ${f?.prazo==='20'?'selected':''}>Dia 20</option>
+            <option value="ultimo" ${f?.prazo==='ultimo'?'selected':''}>Último dia</option>
+            <option value="combinado" ${f?.prazo==='combinado'?'selected':''}>Combinado</option>
+          </select>
+        </div>
+      </div>
+      <div class="fi-group"><label>Funções (postos)</label>
+        <div class="chips" id="ff-postos">
+          ${S.funcoes.filter(fn=>!fn.arquivada).map(fn => {
+            const sel = (f?.postos||[]).includes(fn.id);
+            return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${fn.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${fn.nome}</button>`;
+          }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhuma função cadastrada. Crie em Funções.</span>'}
+        </div>
+      </div>
+      <div class="fi-group"><label>Padrinho/madrinha</label>
+        <select class="fi" id="ff-padrinho">
+          <option value="">— Sem padrinho —</option>
+          ${S.filhos.filter(x=>x.id!==id).map(x=>`<option value="${x.id}" ${f?.padrinho_id===x.id?'selected':''}>${x.nome}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fi-group"><label>Email (auth — opcional, pra logar)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-perto" ${f?.mora_perto?'checked':''}/>
+          Mora perto do ilê
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Quando marcado, esse filho é priorizado nas escalas de domingo (pra não desgastar quem mora longe).</div>
+      </div>
+      <div class="fi-group"><label>Observações</label><textarea class="fi" id="ff-obs">${f?.obs||''}</textarea></div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?`<button class="btn btn-danger" id="ff-del">Excluir</button>`:''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="ff-save">${isEdit?'Salvar':'Cadastrar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#ff-save').onclick = async () => {
+    const nome = $('#ff-nome').value.trim();
+    if(!nome) { toast('Informe o nome','err'); return; }
+    const postos = $$('#ff-postos [data-sel="true"]').map(b=>b.dataset.fid);
+    const data = {
+      nome,
+      tel: $('#ff-tel').value.replace(/\D/g,''),
+      status: $('#ff-status').value,
+      valor: parseInt($('#ff-valor').value),
+      prazo: $('#ff-prazo').value,
+      prazoObs: '',
+      postos,
+      padrinho_id: $('#ff-padrinho').value || null,
+      auth_email: $('#ff-email').value.trim() || null,
+      mora_perto: $('#ff-perto').checked,
+      obs: $('#ff-obs').value.trim(),
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(isEdit) {
+        await updateDoc(doc(dbPvd,'fin_filhos',id), data);
+        toast('Filho atualizado','ok');
+      } else {
+        data.criadoEm = serverTimestamp();
+        await addDoc(collection(dbPvd,'fin_filhos'), data);
+        toast('Filho cadastrado','ok');
+      }
+      closeModal();
+    } catch(e) {
+      toast('Erro: '+e.message,'err');
+    }
+  };
+
+  if(isEdit) $('#ff-del').onclick = () => {
+    confirmar(`Excluir <strong>${f.nome}</strong>? Esta ação não pode ser desfeita.`, async () => {
+      try { await deleteDoc(doc(dbPvd,'fin_filhos',id)); toast('Filho excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── FUNÇÕES ───────────────────────────────────────────────────────────────
+function renderFuncoes(c) {
+  const ativas = S.funcoes.filter(f=>!f.arquivada);
+  const arquivadas = S.funcoes.filter(f=>f.arquivada);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Funções</div>
+        <div class="page-sub">Cargos e funções da casa. ${ativas.length} ativas${arquivadas.length?' · '+arquivadas.length+' arquivadas':''}.</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openFuncaoForm()">+ Nova função</button>
+      </div>
+    </div>
+
+    <div>
+      ${ativas.length===0 ? `
+        <div class="empty">
+          <div class="empty-t">Nenhuma função cadastrada</div>
+          <div class="empty-s">Comece criando as funções básicas: Cambono, Curimba, Ekedi, Cozinha, Limpeza...</div>
+          <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.seedFuncoes()">Criar funções iniciais</button>
+        </div>
+      ` : ativas.map(f => {
+        const qtd = S.filhos.filter(x => (x.postos||[]).includes(f.id)).length;
+        const restrita = f.restrito_a_filhos && f.restrito_a_filhos.length > 0;
+        return `
+        <div class="list-item">
+          <div class="li-avatar" style="background:${f.cor?f.cor+'30':'var(--gold-bg)'};color:${f.cor||'var(--gold)'}">${(f.nome||'')[0]||'·'}</div>
+          <div class="li-main">
+            <div class="li-name">${f.nome}</div>
+            <div class="li-meta">
+              ${f.descricao ? `<span>${f.descricao}</span>` : ''}
+              <span>${qtd} filho${qtd!==1?'s':''} com essa função</span>
+              ${f.entra_em_escala ? '<span class="chip chip-green">entra em escala</span>' : '<span class="chip">só etiqueta</span>'}
+              ${restrita ? `<span class="chip chip-purple">restrita · ${f.restrito_a_filhos.length} elegíveis</span>` : ''}
+            </div>
+          </div>
+          <div class="li-actions">
+            <button class="btn btn-sm" onclick="window._app.openFuncaoForm('${f.id}')">Editar</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    ${arquivadas.length ? `
+      <details style="margin-top:24px">
+        <summary style="cursor:pointer;color:var(--text3);font-size:13px;padding:8px 0">${arquivadas.length} função(ões) arquivada(s)</summary>
+        <div style="margin-top:10px">
+          ${arquivadas.map(f => `
+            <div class="list-item" style="opacity:.6">
+              <div class="li-avatar">${(f.nome||'')[0]}</div>
+              <div class="li-main"><div class="li-name">${f.nome}</div><div class="li-meta"><span class="chip">arquivada</span></div></div>
+              <div class="li-actions"><button class="btn btn-sm" onclick="window._app.toggleArquivarFuncao('${f.id}',false)">Restaurar</button></div>
+            </div>
+          `).join('')}
+        </div>
+      </details>
+    ` : ''}
+  `;
+}
+
+function openFuncaoForm(id=null) {
+  const f = id ? S.funcoes.find(x=>x.id===id) : null;
+  const isEdit = !!f;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar função':'Nova função'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="fn-nome" value="${f?.nome||''}" placeholder="Cambono, Curimba, Ekedi..."/></div>
+      <div class="fi-group"><label>Descrição</label><textarea class="fi" id="fn-desc" placeholder="O que essa função faz">${f?.descricao||''}</textarea></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Cor</label>
+          <select class="fi" id="fn-cor">
+            <option value="">— Padrão (dourado) —</option>
+            <option value="#e63329" ${f?.cor==='#e63329'?'selected':''}>Vermelho</option>
+            <option value="#3498db" ${f?.cor==='#3498db'?'selected':''}>Azul</option>
+            <option value="#2ecc71" ${f?.cor==='#2ecc71'?'selected':''}>Verde</option>
+            <option value="#9b59b6" ${f?.cor==='#9b59b6'?'selected':''}>Roxo</option>
+            <option value="#f39c12" ${f?.cor==='#f39c12'?'selected':''}>Âmbar</option>
+          </select>
+        </div>
+        <div class="fi-group" style="justify-content:flex-end">
+          <label class="checkbox-row" style="margin-top:24px">
+            <input type="checkbox" id="fn-escala" ${(f===null||f?.entra_em_escala)?'checked':''}/>
+            Entra em escala
+          </label>
+        </div>
+      </div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="fn-restrita" ${f?.restrito_a_filhos && f.restrito_a_filhos.length>0?'checked':''}/>
+          Função restrita a um grupo específico de filhos
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Marque pra limitar quem pode ser escalado (ex: Lojinha). Quando desmarcado, qualquer filho ativo é elegível.</div>
+      </div>
+      <div class="fi-group" id="fn-restritos-wrap" style="display:${f?.restrito_a_filhos && f.restrito_a_filhos.length>0?'':'none'}">
+        <label>Filhos elegíveis</label>
+        <div class="chips" id="fn-restritos">
+          ${S.filhos.filter(x=>!x.status||x.status==='ativo').map(x => {
+            const sel = (f?.restrito_a_filhos||[]).includes(x.id);
+            return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${x.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${x.nome.split(' ')[0]}</button>`;
+          }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhum filho ativo</span>'}
+        </div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?`<button class="btn" onclick="window._app.toggleArquivarFuncao('${id}',true);closeModal()">${f.arquivada?'Restaurar':'Arquivar'}</button>`:''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="fn-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#fn-restrita').onchange = e => {
+    $('#fn-restritos-wrap').style.display = e.target.checked ? '' : 'none';
+  };
+
+  $('#fn-save').onclick = async () => {
+    const nome = $('#fn-nome').value.trim();
+    if(!nome) { toast('Informe o nome','err'); return; }
+    const restrita = $('#fn-restrita').checked;
+    const restritos = restrita ? $$('#fn-restritos [data-sel="true"]').map(b=>b.dataset.fid) : null;
+    if(restrita && (!restritos || restritos.length===0)) { toast('Selecione ao menos um filho elegível','err'); return; }
+    const data = {
+      nome,
+      descricao: $('#fn-desc').value.trim(),
+      cor: $('#fn-cor').value || null,
+      entra_em_escala: $('#fn-escala').checked,
+      restrito_a_filhos: restritos,
+      arquivada: f?.arquivada || false,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(isEdit) {
+        await updateDoc(doc(dbPvd,'adm_funcoes',id), data);
+      } else {
+        data.criadoEm = serverTimestamp();
+        data.tarefas_padrao = [];
+        await addDoc(collection(dbPvd,'adm_funcoes'), data);
+      }
+      toast(isEdit?'Função atualizada':'Função criada','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+async function toggleArquivarFuncao(id, valor) {
+  try { await updateDoc(doc(dbPvd,'adm_funcoes',id), { arquivada: valor, atualizadoEm: serverTimestamp() }); }
+  catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+async function seedFuncoes() {
+  const iniciais = [
+    // Postos / cargos (etiqueta no perfil, podem ou não escalar)
+    { nome:'Cambono', descricao:'Auxilia a entidade incorporada', cor:'#3498db', entra_em_escala:true, restrito_a_filhos:null },
+    { nome:'Curimba', descricao:'Toca os atabaques', cor:'#e63329', entra_em_escala:true, restrito_a_filhos:null },
+    { nome:'Ekedi', descricao:'Cuidados litúrgicos com os orixás', cor:'#9b59b6', entra_em_escala:true, restrito_a_filhos:null },
+    { nome:'Médium em desenvolvimento', descricao:'Em formação mediúnica', cor:null, entra_em_escala:false, restrito_a_filhos:null },
+    { nome:'Médium feito', descricao:'Iniciado, incorpora regularmente', cor:'#2ecc71', entra_em_escala:false, restrito_a_filhos:null },
+    { nome:'Filho de fé', descricao:'Frequentador regular sem posto definido', cor:null, entra_em_escala:false, restrito_a_filhos:null },
+    // Escalas operacionais (as 3 que o Pai quer rastrear)
+    { nome:'Limpeza antes da gira', descricao:'Preparação do espaço antes do trabalho', cor:'#f39c12', entra_em_escala:true, restrito_a_filhos:null },
+    { nome:'Limpeza depois da gira', descricao:'Organização do espaço após o trabalho', cor:'#f39c12', entra_em_escala:true, restrito_a_filhos:null },
+    { nome:'Lojinha', descricao:'Plantão na lojinha (grupo restrito)', cor:'#d4a843', entra_em_escala:true, restrito_a_filhos:[] }
+  ];
+  try {
+    for(const f of iniciais) {
+      await addDoc(collection(dbPvd,'adm_funcoes'), { ...f, arquivada:false, tarefas_padrao:[], criadoEm:serverTimestamp(), atualizadoEm:serverTimestamp() });
+    }
+    toast('Funções iniciais criadas. Edite "Lojinha" pra definir o grupo restrito.','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+// ── KANBAN ────────────────────────────────────────────────────────────────
+function renderKanban(c) {
+  const ativos = S.kanban.filter(k => !k.arquivado);
+  const cols = { todo:[], doing:[], blocked:[], done:[] };
+  ativos.forEach(k => { (cols[k.status]||cols.todo).push(k); });
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Kanban</div>
+        <div class="page-sub">${ativos.length} card${ativos.length===1?'':'s'} ativo${ativos.length===1?'':'s'}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openKanbanForm()">+ Novo card</button>
+      </div>
+    </div>
+
+    <div class="kanban" id="kanban-board">
+      ${[
+        { k:'todo', label:'A Fazer', icon:'<circle cx="12" cy="12" r="9"/>' },
+        { k:'doing', label:'Em Andamento', icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+        { k:'blocked', label:'Bloqueado', icon:'<circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/>' },
+        { k:'done', label:'Feito', icon:'<polyline points="20 6 9 17 4 12"/>' }
+      ].map(col => `
+        <div class="kcol kcol-${col.k}" data-col="${col.k}">
+          <div class="kcol-h">
+            <div class="kcol-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${col.icon}</svg>
+              ${col.label}
+            </div>
+            <div class="kcol-count">${cols[col.k].length}</div>
+          </div>
+          <div class="kcol-body" data-col="${col.k}">
+            ${cols[col.k].map(k => kCardHtml(k)).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  attachKanbanDnD();
+}
+
+function kCardHtml(k) {
+  const resps = (k.responsaveis||[]).map(rid => S.filhos.find(f=>f.id===rid)).filter(Boolean);
+  const today = new Date().toISOString().slice(0,10);
+  const overdue = k.prazo && k.prazo < today && k.status !== 'done';
+  return `
+    <div class="kcard prio-${k.prioridade||'media'}" draggable="true" data-id="${k.id}" onclick="window._app.openKanbanForm('${k.id}')">
+      <div class="kcard-t">${k.titulo}</div>
+      <div class="kcard-meta">
+        ${resps.slice(0,2).map(r=>`<span class="chip">${r.nome.split(' ')[0]}</span>`).join('')}
+        ${resps.length>2 ? `<span class="chip">+${resps.length-2}</span>` : ''}
+        ${k.prazo ? `<span class="prazo ${overdue?'overdue':''}">${fmt.data(k.prazo)}</span>` : ''}
+        ${k.status==='blocked' && k.motivo_bloqueio ? `<span class="chip chip-amber">${k.motivo_bloqueio.slice(0,30)}${k.motivo_bloqueio.length>30?'...':''}</span>` : ''}
+        ${k.origem && k.origem!=='manual' ? `<span class="chip">auto</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function attachKanbanDnD() {
+  let dragged = null;
+  $$('#kanban-board .kcard').forEach(el => {
+    el.addEventListener('dragstart', e => { dragged = el; el.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    el.addEventListener('dragend', () => { el.classList.remove('dragging'); dragged = null; });
+  });
+  $$('#kanban-board .kcol').forEach(col => {
+    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('over'));
+    col.addEventListener('drop', async e => {
+      e.preventDefault();
+      col.classList.remove('over');
+      if(!dragged) return;
+      const id = dragged.dataset.id;
+      const newStatus = col.dataset.col;
+      const card = S.kanban.find(k=>k.id===id);
+      if(!card || card.status === newStatus) return;
+      if(newStatus === 'blocked') {
+        // pede motivo
+        const motivo = prompt('Motivo do bloqueio:');
+        if(!motivo) return;
+        try {
+          await updateDoc(doc(dbPvd,'adm_kanban',id), { status:'blocked', motivo_bloqueio:motivo, atualizadoEm: serverTimestamp() });
+          toast('Card movido','ok');
+        } catch(e) { toast('Erro: '+e.message,'err'); }
+      } else {
+        const patch = { status:newStatus, atualizadoEm: serverTimestamp() };
+        if(card.status==='blocked') patch.motivo_bloqueio = null;
+        if(newStatus==='done') patch.movido_done_em = serverTimestamp();
+        try { await updateDoc(doc(dbPvd,'adm_kanban',id), patch); toast('Card movido','ok'); }
+        catch(e) { toast('Erro: '+e.message,'err'); }
+      }
+    });
+  });
+}
+
+function openKanbanForm(id=null) {
+  const k = id ? S.kanban.find(x=>x.id===id) : null;
+  const isEdit = !!k;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar card':'Novo card'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Título *</label><input class="fi" id="kc-titulo" value="${k?.titulo||''}"/></div>
+      <div class="fi-group"><label>Descrição</label><textarea class="fi" id="kc-desc">${k?.descricao||''}</textarea></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Status</label>
+          <select class="fi" id="kc-status">
+            <option value="todo" ${(!k||k?.status==='todo')?'selected':''}>A Fazer</option>
+            <option value="doing" ${k?.status==='doing'?'selected':''}>Em Andamento</option>
+            <option value="blocked" ${k?.status==='blocked'?'selected':''}>Bloqueado</option>
+            <option value="done" ${k?.status==='done'?'selected':''}>Feito</option>
+          </select>
+        </div>
+        <div class="fi-group"><label>Prioridade</label>
+          <select class="fi" id="kc-prio">
+            <option value="baixa" ${k?.prioridade==='baixa'?'selected':''}>Baixa</option>
+            <option value="media" ${(!k||k?.prioridade==='media')?'selected':''}>Média</option>
+            <option value="alta" ${k?.prioridade==='alta'?'selected':''}>Alta</option>
+            <option value="urgente" ${k?.prioridade==='urgente'?'selected':''}>Urgente</option>
+          </select>
+        </div>
+      </div>
+      <div id="kc-blockwrap" style="display:${k?.status==='blocked'?'':'none'}">
+        <div class="fi-group"><label>Motivo do bloqueio *</label><input class="fi" id="kc-motivo" value="${k?.motivo_bloqueio||''}"/></div>
+      </div>
+      <div class="fi-group"><label>Prazo</label><input type="date" class="fi" id="kc-prazo" value="${k?.prazo||''}"/></div>
+      <div class="fi-group"><label>Responsáveis</label>
+        <div class="chips" id="kc-resps">
+          ${S.filhos.filter(f=>!f.status||f.status==='ativo').map(f => {
+            const sel = (k?.responsaveis||[]).includes(f.id);
+            return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${f.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${f.nome.split(' ')[0]}</button>`;
+          }).join('') || '<span style="color:var(--text3)">Nenhum filho ativo</span>'}
+        </div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="kc-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="kc-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#kc-status').onchange = e => {
+    $('#kc-blockwrap').style.display = e.target.value === 'blocked' ? '' : 'none';
+  };
+
+  $('#kc-save').onclick = async () => {
+    const titulo = $('#kc-titulo').value.trim();
+    if(!titulo) { toast('Informe o título','err'); return; }
+    const status = $('#kc-status').value;
+    const motivo = status === 'blocked' ? $('#kc-motivo').value.trim() : null;
+    if(status === 'blocked' && !motivo) { toast('Informe o motivo do bloqueio','err'); return; }
+    const responsaveis = $$('#kc-resps [data-sel="true"]').map(b=>b.dataset.fid);
+    const data = {
+      titulo,
+      descricao: $('#kc-desc').value.trim(),
+      status,
+      motivo_bloqueio: motivo,
+      prioridade: $('#kc-prio').value,
+      prazo: $('#kc-prazo').value || null,
+      responsaveis,
+      arquivado: false,
+      origem: k?.origem || 'manual',
+      origem_ref: k?.origem_ref || null,
+      atualizadoEm: serverTimestamp()
+    };
+    if(status==='done' && k?.status!=='done') data.movido_done_em = serverTimestamp();
+    try {
+      if(isEdit) {
+        await updateDoc(doc(dbPvd,'adm_kanban',id), data);
+      } else {
+        data.criadoEm = serverTimestamp();
+        data.criadoPor = S.user.uid;
+        await addDoc(collection(dbPvd,'adm_kanban'), data);
+      }
+      toast(isEdit?'Card atualizado':'Card criado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(isEdit) $('#kc-del').onclick = () => {
+    confirmar('Excluir este card?', async () => {
+      try { await deleteDoc(doc(dbPvd,'adm_kanban',id)); toast('Card excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── CALENDÁRIO ────────────────────────────────────────────────────────────
+let calMes = new Date().toISOString().slice(0,7);
+
+function renderCalendario(c) {
+  const [ano, mes] = calMes.split('-').map(Number);
+  const first = new Date(ano, mes-1, 1);
+  const last = new Date(ano, mes, 0);
+  const firstDow = first.getDay();
+  const daysInMonth = last.getDate();
+
+  const mesEventos = S.eventos.filter(e => e.data && e.data.startsWith(calMes) && !e.arquivado);
+  const today = new Date().toISOString().slice(0,10);
+
+  // classe visual do evento (ausência de publico/tipo = trata como pública por padrão)
+  const evtClass = e => {
+    if(e.tipo === 'festa') return 'festa';
+    if(['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','ensaio_curimba'].includes(e.tipo)) return 'trabalho';
+    if(e.publico === false || e.tipo === 'gira_fechada') return 'fechada';
+    return 'publico';
+  };
+
+  let cells = '';
+  for(let i=0; i<firstDow; i++) cells += `<div class="cal-day out"></div>`;
+  for(let d=1; d<=daysInMonth; d++) {
+    const dStr = `${ano}-${String(mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const evs = mesEventos.filter(e => e.data === dStr);
+    cells += `
+      <div class="cal-day ${dStr===today?'today':''}" onclick="window._app.openEventoForm(null,'${dStr}')">
+        <div class="cal-day-n">${d}</div>
+        ${evs.map(e => `<div class="cal-evt ${evtClass(e)}" onclick="event.stopPropagation();window._app.openEventoForm('${e.id}')">${e.nome||e.titulo||'·'}</div>`).join('')}
+      </div>
+    `;
+  }
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Calendário</div>
+        <div class="page-sub">${mesEventos.length} evento${mesEventos.length===1?'':'s'} nesse mês</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-sm" onclick="window._app.calNav(-1)">◀</button>
+        <input type="month" class="fi" style="width:auto" value="${calMes}" id="cal-mes"/>
+        <button class="btn btn-sm" onclick="window._app.calNav(1)">▶</button>
+        <button class="btn btn-primary" onclick="window._app.openEventoForm()">+ Novo evento</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cal-grid">
+        ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>`<div class="cal-head">${d}</div>`).join('')}
+        ${cells}
+      </div>
+      <div style="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text3)">
+        <span><span class="chip chip-green">●</span> Gira pública</span>
+        <span><span class="chip chip-blue">●</span> Gira fechada</span>
+        <span><span class="chip chip-gold">●</span> Trabalho/mutirão</span>
+        <span><span class="chip chip-purple">●</span> Festa</span>
+      </div>
+    </div>
+  `;
+  $('#cal-mes').onchange = e => { calMes = e.target.value; renderCalendario(c); };
+}
+
+function calNav(delta) {
+  const [ano, mes] = calMes.split('-').map(Number);
+  const d = new Date(ano, mes-1+delta, 1);
+  calMes = d.toISOString().slice(0,7);
+  renderRoute();
+}
+
+function openEventoForm(id=null, dataInicial=null) {
+  const e = id ? S.eventos.find(x=>x.id===id) : null;
+  const isEdit = !!e;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar evento':'Novo evento'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="Gira de Pretos-Velhos"/></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Data *</label><input type="date" class="fi" id="ev-data" value="${e?.data||dataInicial||''}"/></div>
+        <div class="fi-group"><label>Hora</label><input type="time" class="fi" id="ev-hora" value="${e?.hora||''}"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Tipo</label>
+          <select class="fi" id="ev-tipo">
+            <option value="gira_aberta" ${(!e||e?.tipo==='gira_aberta')?'selected':''}>Gira aberta</option>
+            <option value="gira_fechada" ${e?.tipo==='gira_fechada'?'selected':''}>Gira fechada</option>
+            <option value="trabalho_interno" ${e?.tipo==='trabalho_interno'?'selected':''}>Trabalho interno</option>
+            <option value="ensaio_curimba" ${e?.tipo==='ensaio_curimba'?'selected':''}>Ensaio de curimba</option>
+            <option value="reuniao" ${e?.tipo==='reuniao'?'selected':''}>Reunião</option>
+            <option value="mutirao" ${e?.tipo==='mutirao'?'selected':''}>Mutirão</option>
+            <option value="obrigacao_coletiva" ${e?.tipo==='obrigacao_coletiva'?'selected':''}>Obrigação coletiva</option>
+            <option value="festa" ${e?.tipo==='festa'?'selected':''}>Festa</option>
+            <option value="outro" ${e?.tipo==='outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
+        <div class="fi-group" style="justify-content:flex-end">
+          <label class="checkbox-row" style="margin-top:24px">
+            <input type="checkbox" id="ev-publico" ${(!e||e?.publico)?'checked':''}/>
+            Público (aparece no site)
+          </label>
+        </div>
+      </div>
+      <div class="fi-group"><label>Local</label><input class="fi" id="ev-local" value="${e?.local||'Terreiro'}"/></div>
+      <div class="fi-group"><label>Descrição</label><textarea class="fi" id="ev-desc">${e?.descricao||''}</textarea></div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="ev-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="ev-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#ev-save').onclick = async () => {
+    const nome = $('#ev-nome').value.trim();
+    const data = $('#ev-data').value;
+    if(!nome) { toast('Informe o título','err'); return; }
+    if(!data) { toast('Informe a data','err'); return; }
+    const payload = {
+      nome,
+      data,
+      hora: $('#ev-hora').value || '',
+      tipo: $('#ev-tipo').value,
+      publico: $('#ev-publico').checked,
+      local: $('#ev-local').value.trim(),
+      descricao: $('#ev-desc').value.trim(),
+      arquivado: false,
+      atualizadoEm: serverTimestamp()
+    };
+    if(!isEdit) {
+      payload.criadoEm = serverTimestamp();
+      payload.criadoPor = S.user.uid;
+      payload.status = 'Confirmada';
+      payload.ts = serverTimestamp();
+    }
+    try {
+      if(isEdit) await updateDoc(doc(dbCand,'eventos',id), payload);
+      else await addDoc(collection(dbCand,'eventos'), payload);
+      toast(isEdit?'Evento atualizado':'Evento criado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(isEdit) $('#ev-del').onclick = () => {
+    confirmar('Excluir este evento?', async () => {
+      try { await deleteDoc(doc(dbCand,'eventos',id)); toast('Evento excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── ESCALAS (tabs: Gira + Lojinha) ─────────────────────────────────────────
+let escTab = 'gira';
+
+function renderEscalas(c) {
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Escalas</div>
+        <div class="page-sub">${S.escalas.length} escala${S.escalas.length===1?'':'s'} publicada${S.escalas.length===1?'':'s'}</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${escTab==='gira'?'active':''}" onclick="window._app.setEscTab('gira')">Por gira</button>
+      <button class="${escTab==='lojinha'?'active':''}" onclick="window._app.setEscTab('lojinha')">Lojinha</button>
+    </div>
+
+    <div id="esc-body"></div>
+
+    <p style="color:var(--text3);font-size:12px;text-align:center;margin-top:20px">v0.1: criação manual. Gerador automático com rodízio justo vem depois.</p>
+  `;
+
+  if(escTab === 'gira') renderEscalasGira();
+  else renderEscalasLojinha();
+}
+
+function setEscTab(t) { escTab = t; renderRoute(); }
+
+function renderEscalasGira() {
+  const body = $('#esc-body');
+  const futuros = S.eventos
+    .filter(e => e.data >= new Date().toISOString().slice(0,10) && !e.arquivado)
+    .slice(0,20);
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="card-h"><div class="card-title">Próximos eventos</div></div>
+      ${futuros.length === 0 ? '<div class="empty"><div class="empty-s">Nenhum evento futuro. Crie eventos no calendário primeiro.</div></div>' : futuros.map(ev => {
+        const escalas = S.escalas.filter(es => es.evento_id === ev.id);
+        const totalAloc = escalas.reduce((s,e)=>s+(e.alocacoes||[]).length, 0);
+        return `
+          <div class="list-item">
+            <div class="li-avatar" style="background:var(--blue-bg);color:var(--blue)">${(ev.data||'').slice(8,10)}</div>
+            <div class="li-main">
+              <div class="li-name">${ev.nome||ev.titulo}</div>
+              <div class="li-meta">
+                <span>${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</span>
+                ${escalas.length?`<span class="chip chip-green">${totalAloc} pessoa${totalAloc===1?'':'s'} escalada${totalAloc===1?'':'s'}</span>`:'<span class="chip chip-amber">Sem escala</span>'}
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn btn-sm btn-primary" onclick="window._app.openEscalaForm('${ev.id}','${escalas[0]?escalas[0].id:''}')">${escalas.length?'Editar':'Criar escala'}</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderEscalasLojinha() {
+  const body = $('#esc-body');
+  const fnLojinha = S.funcoes.find(f => f.nome && f.nome.toLowerCase().includes('lojinha') && !f.arquivada);
+
+  if(!fnLojinha) {
+    body.innerHTML = `
+      <div class="empty">
+        <div class="empty-t">Função "Lojinha" não cadastrada</div>
+        <div class="empty-s">Crie uma função chamada "Lojinha" e marque como restrita ao grupo que trabalha lá.</div>
+        <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.openFuncaoForm()">Criar função</button>
+      </div>
+    `;
+    return;
+  }
+
+  if(!fnLojinha.restrito_a_filhos || fnLojinha.restrito_a_filhos.length === 0) {
+    body.innerHTML = `
+      <div class="empty">
+        <div class="empty-t">Defina o grupo da lojinha</div>
+        <div class="empty-s">A função "Lojinha" existe mas ainda não tem filhos elegíveis definidos. Edite a função pra marcar o grupo.</div>
+        <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.openFuncaoForm('${fnLojinha.id}')">Editar função Lojinha</button>
+      </div>
+    `;
+    return;
+  }
+
+  const grupoIds = fnLojinha.restrito_a_filhos;
+  const grupo = S.filhos.filter(f => grupoIds.includes(f.id));
+
+  // semanas: atual + próximas 3
+  const hoje = new Date();
+  const startOfWeek = new Date(hoje);
+  startOfWeek.setDate(hoje.getDate() - hoje.getDay()); // domingo
+  startOfWeek.setHours(0,0,0,0);
+
+  const semanas = [];
+  for(let i=0; i<4; i++) {
+    const s = new Date(startOfWeek);
+    s.setDate(startOfWeek.getDate() + i*7);
+    const e = new Date(s); e.setDate(s.getDate()+6);
+    const semanaId = isoWeek(s);
+    semanas.push({ id:semanaId, inicio:s.toISOString().slice(0,10), fim:e.toISOString().slice(0,10), label:`${s.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${e.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}` });
+  }
+
+  body.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h">
+        <div class="card-title">Grupo da lojinha</div>
+        <button class="btn btn-sm" onclick="window._app.openFuncaoForm('${fnLojinha.id}')">Editar grupo</button>
+      </div>
+      <div class="chips">${grupo.map(f=>`<span class="chip chip-gold">${f.nome}</span>`).join('')}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><div class="card-title">Plantões — próximas 4 semanas</div></div>
+      ${semanas.map(sem => {
+        const esc = S.escalas.find(e => e.tipo === 'lojinha' && e.periodo === sem.id);
+        const total = esc ? (esc.alocacoes||[]).length : 0;
+        return `
+          <div class="list-item">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
+            </div>
+            <div class="li-main">
+              <div class="li-name">${sem.label}</div>
+              <div class="li-meta">${total?`<span class="chip chip-green">${total} plantão${total===1?'':'ões'}</span>`:'<span class="chip chip-amber">Sem plantão</span>'}</div>
+            </div>
+            <div class="li-actions">
+              <button class="btn btn-sm btn-primary" onclick="window._app.openLojinhaEscalaForm('${sem.id}','${sem.inicio}','${sem.fim}','${esc?esc.id:''}')">${esc?'Editar':'Criar plantão'}</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function isoWeek(d) {
+  const date = new Date(d);
+  date.setHours(0,0,0,0);
+  date.setDate(date.getDate() + 4 - (date.getDay()||7));
+  const yearStart = new Date(date.getFullYear(),0,1);
+  const wk = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getFullYear()}-W${String(wk).padStart(2,'0')}`;
+}
+
+function openLojinhaEscalaForm(periodoId, inicio, fim, escId='') {
+  const esc = escId ? S.escalas.find(x=>x.id===escId) : null;
+  const fnLojinha = S.funcoes.find(f => f.nome && f.nome.toLowerCase().includes('lojinha') && !f.arquivada);
+  if(!fnLojinha) { toast('Função Lojinha não encontrada','err'); return; }
+  const grupo = S.filhos.filter(f => (fnLojinha.restrito_a_filhos||[]).includes(f.id));
+
+  const dias = [];
+  const startD = new Date(inicio+'T00:00:00');
+  const endD = new Date(fim+'T00:00:00');
+  for(let d = new Date(startD); d <= endD; d.setDate(d.getDate()+1)) {
+    dias.push({ data: d.toISOString().slice(0,10), label: d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit'}) });
+  }
+
+  const alocByDia = {};
+  (esc?.alocacoes||[]).forEach(a => {
+    if(a.dia) {
+      alocByDia[a.dia] = alocByDia[a.dia] || [];
+      alocByDia[a.dia].push(a.filho_id);
+    }
+  });
+
+  openModal(`
+    <div class="modal-h"><h3>Plantão da lojinha — ${periodoId}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(inicio)} até ${fmt.dataLong(fim)}</div>
+      ${dias.map(d => `
+        <div class="fi-group">
+          <label style="text-transform:capitalize">${d.label} (${fmt.data(d.data)})</label>
+          <div class="chips" id="lj-${d.data}">
+            ${grupo.map(f => {
+              const sel = (alocByDia[d.data]||[]).includes(f.id);
+              return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${f.id}" data-dia="${d.data}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${f.nome.split(' ')[0]}</button>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="modal-f">
+      ${esc?'<button class="btn btn-danger" id="lj-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="lj-save">${esc?'Salvar':'Publicar plantão'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#lj-save').onclick = async () => {
+    const alocacoes = [];
+    dias.forEach(d => {
+      $$(`#lj-${d.data} [data-sel="true"]`).forEach(b => {
+        alocacoes.push({
+          funcao_id: fnLojinha.id,
+          filho_id: b.dataset.fid,
+          dia: d.data,
+          status: 'escalado',
+          notificado: false
+        });
+      });
+    });
+    const data = {
+      tipo: 'lojinha',
+      periodo: periodoId,
+      evento_id: null,
+      data: inicio,
+      data_fim: fim,
+      alocacoes,
+      status_geral: 'publicada',
+      geradoPor: 'manual',
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(esc) await updateDoc(doc(dbPvd,'adm_escalas',escId), data);
+      else { data.criadoEm = serverTimestamp(); await addDoc(collection(dbPvd,'adm_escalas'), data); }
+      toast('Plantão salvo','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(esc) $('#lj-del').onclick = () => {
+    confirmar('Excluir plantão dessa semana?', async () => {
+      try { await deleteDoc(doc(dbPvd,'adm_escalas',escId)); toast('Plantão excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+function openEscalaForm(evId, escId='') {
+  const ev = S.eventos.find(x=>x.id===evId);
+  const esc = escId ? S.escalas.find(x=>x.id===escId) : null;
+  // Lojinha tem tela própria — excluir da escala de gira
+  const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala && !(f.nome||'').toLowerCase().includes('lojinha'));
+  const filhosAtivos = S.filhos.filter(f => !f.status || f.status==='ativo');
+
+  // pega mes do evento pra checar disponibilidade
+  const mesEv = (ev.data||'').slice(0,7);
+  const indispMap = {};
+  S.disponibilidade.filter(d => d.mes === mesEv).forEach(d => {
+    indispMap[d.filho_id] = d;
+  });
+
+  // Contagem de quantas vezes cada filho foi escalado nas últimas 8 semanas (rodízio justo)
+  const dataLim = new Date(ev.data+'T00:00:00');
+  dataLim.setDate(dataLim.getDate() - 56);
+  const limStr = dataLim.toISOString().slice(0,10);
+  const contagem = {};
+  S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data < ev.data)
+    .forEach(es => (es.alocacoes||[]).forEach(a => { contagem[a.filho_id] = (contagem[a.filho_id]||0) + 1; }));
+
+  const alocPreenchidas = {};
+  (esc?.alocacoes||[]).forEach(a => {
+    alocPreenchidas[a.funcao_id] = alocPreenchidas[a.funcao_id] || [];
+    alocPreenchidas[a.funcao_id].push(a.filho_id);
+  });
+
+  // Domingo: preferência pra quem mora perto (gira da manhã, evitar desgaste de quem mora longe)
+  const ehDomingo = ev.data ? new Date(ev.data+'T00:00:00').getDay() === 0 : false;
+
+  // Gerador automático: pra cada função, escolhe N candidatos
+  // Critério: menos escalado nas últimas 8 semanas (rodízio justo) + mora_perto se domingo + random tiebreaker
+  function gerarSugestao(qtdPorFuncao=1) {
+    const usados = new Set();
+    const sug = {};
+    funcoesAtivas.forEach(fn => {
+      let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
+        ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
+        : filhosAtivos.filter(f => (f.postos||[]).includes(fn.id));
+      // Se nenhum filho tem essa função, expande pra todos os ativos
+      if(elegiveis.length === 0 && !fn.restrito_a_filhos) elegiveis = filhosAtivos;
+      // Remove indisponíveis
+      elegiveis = elegiveis.filter(f => {
+        const d = indispMap[f.id];
+        if(!d) return true;
+        if(d.datas_indisponivel?.includes(ev.data)) return false;
+        if(d.funcoes_indisponivel?.includes(fn.id)) return false;
+        return true;
+      });
+      // Ordena: menos escalado primeiro, depois mora_perto (se domingo), depois random
+      elegiveis.sort((a,b) => {
+        const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
+        if(ca !== cb) return ca - cb;
+        if(ehDomingo) {
+          const pa = a.mora_perto?1:0, pb = b.mora_perto?1:0;
+          if(pa !== pb) return pb - pa;
+        }
+        return Math.random() - 0.5;
+      });
+      // Evita escalar o mesmo filho em múltiplas funções da mesma escala
+      const escolhidos = [];
+      for(const f of elegiveis) {
+        if(escolhidos.length >= qtdPorFuncao) break;
+        if(usados.has(f.id)) continue;
+        escolhidos.push(f.id);
+        usados.add(f.id);
+      }
+      sug[fn.id] = escolhidos;
+    });
+    return sug;
+  }
+
+  // Se está criando nova escala, já pré-sugere automático
+  if(!esc) {
+    const sugestao = gerarSugestao(1);
+    Object.keys(sugestao).forEach(fId => alocPreenchidas[fId] = sugestao[fId]);
+  }
+
+  openModal(`
+    <div class="modal-h"><h3>${esc?'Editar escala':'Criar escala'} — ${ev.nome||ev.titulo}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
+      ${ehDomingo ? '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--green)">🏠 Gira de domingo — preferência pra quem mora perto. Os que moram perto aparecem primeiro (com badge verde).</div>' : ''}
+      ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
+        const idDispLog = `e-${fn.id}`;
+        // se a função é restrita, só esses filhos. Senão, todos os ativos
+        let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
+          ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
+          : filhosAtivos;
+        // Domingo: ordena mora_perto primeiro
+        if(ehDomingo) {
+          elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
+        }
+        const restrita = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0;
+        return `
+        <div class="fi-group">
+          <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}</label>
+          <div class="chips" id="${idDispLog}">
+            ${elegiveis.length===0 ? '<span style="color:var(--text3);font-size:12px">Nenhum filho elegível pra essa função</span>' : elegiveis.map(f => {
+              const sel = (alocPreenchidas[fn.id]||[]).includes(f.id);
+              const indisp = indispMap[f.id];
+              const indispDay = indisp && indisp.datas_indisponivel?.includes(ev.data);
+              const indispFunc = indisp && indisp.funcoes_indisponivel?.includes(fn.id);
+              const naoTemPosto = !restrita && !(f.postos||[]).includes(fn.id);
+              const disabled = indispDay || indispFunc;
+              const perto = ehDomingo && f.mora_perto;
+              const titleMsg = disabled ? (indispDay?'Indisponível esse dia':'Recusou essa função no mês') : (naoTemPosto?'Não tem essa função, mas pode escalar':(perto?'Mora perto · prefira pra domingo':''));
+              const cssClass = sel ? 'chip-gold' : (perto ? 'chip-green' : '');
+              return `<button type="button" class="chip ${cssClass}" title="${titleMsg}" style="${disabled?'opacity:.35;cursor:not-allowed':''} ${naoTemPosto&&!sel?'opacity:.5':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${perto?'🏠 ':''}${f.nome.split(' ')[0]}${naoTemPosto?'*':''}</button>`;
+            }).join('')}
+          </div>
+        </div>
+        `;
+      }).join('')}
+      <div style="color:var(--text3);font-size:11px">* sem essa função no perfil · esmaecidos = indisponíveis no mês</div>
+    </div>
+    <div class="modal-f">
+      ${esc?'<button class="btn btn-danger" id="es-del">Excluir</button>':''}
+      <button class="btn" id="es-auto" title="Limpa seleção atual e gera de novo">🔄 Gerar automático</button>
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="es-save">${esc?'Salvar':'Publicar escala'}</button>
+    </div>
+  `, { lg: true });
+
+  // botão "Gerar automático" — regera e remarca chips
+  $('#es-auto').onclick = () => {
+    const sugestao = gerarSugestao(1);
+    // limpa todas as marcações e remarca pelas sugestões
+    funcoesAtivas.forEach(fn => {
+      $$(`#e-${fn.id} [data-fid]`).forEach(b => {
+        const filhoId = b.dataset.fid;
+        const ehSugerido = (sugestao[fn.id]||[]).includes(filhoId);
+        b.dataset.sel = ehSugerido ? 'true' : 'false';
+        b.classList.toggle('chip-gold', ehSugerido);
+      });
+    });
+    toast('Escala regerada automaticamente · ajuste se quiser','ok');
+  };
+
+  $('#es-save').onclick = async () => {
+    const alocacoes = [];
+    funcoesAtivas.forEach(fn => {
+      $$(`#e-${fn.id} [data-sel="true"]`).forEach(b => {
+        alocacoes.push({
+          funcao_id: fn.id,
+          filho_id: b.dataset.fid,
+          status: 'escalado',
+          notificado: false
+        });
+      });
+    });
+    const data = {
+      tipo: 'gira',
+      evento_id: evId,
+      periodo: null,
+      data: ev.data,
+      data_fim: null,
+      alocacoes,
+      status_geral: 'publicada',
+      geradoPor: 'manual',
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(esc) {
+        await updateDoc(doc(dbPvd,'adm_escalas',escId), data);
+      } else {
+        data.criadoEm = serverTimestamp();
+        await addDoc(collection(dbPvd,'adm_escalas'), data);
+      }
+      toast('Escala salva','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(esc) $('#es-del').onclick = () => {
+    confirmar('Excluir esta escala?', async () => {
+      try { await deleteDoc(doc(dbPvd,'adm_escalas',escId)); toast('Escala excluída','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── AVISOS ─────────────────────────────────────────────────────────────────
+function renderAvisos(c) {
+  const ativos = S.avisos.filter(a=>!a.arquivado).sort((a,b)=>(b.publicadoEm?.seconds||0)-(a.publicadoEm?.seconds||0));
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Avisos</div>
+        <div class="page-sub">Mural interno — ${ativos.length} aviso${ativos.length===1?'':'s'} ativo${ativos.length===1?'':'s'}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openAvisoForm()">+ Novo aviso</button>
+      </div>
+    </div>
+
+    ${ativos.length===0 ? '<div class="empty"><div class="empty-t">Nenhum aviso publicado</div></div>' : ativos.map(a => `
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:14px">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              ${a.importante ? '<span class="chip chip-red">IMPORTANTE</span>' : ''}
+              <span style="font-size:11px;color:var(--text3)">${fmt.rel(a.publicadoEm)}</span>
+            </div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:6px">${a.titulo}</div>
+            <div style="font-size:14px;color:var(--text2);line-height:1.5;white-space:pre-wrap">${a.corpo}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="window._app.openAvisoForm('${a.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="window._app.arquivarAviso('${a.id}')">Arquivar</button>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function openAvisoForm(id=null) {
+  const a = id ? S.avisos.find(x=>x.id===id) : null;
+  const isEdit = !!a;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar aviso':'Novo aviso'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Título *</label><input class="fi" id="av-titulo" value="${a?.titulo||''}"/></div>
+      <div class="fi-group"><label>Corpo *</label><textarea class="fi" id="av-corpo" style="min-height:160px">${a?.corpo||''}</textarea></div>
+      <label class="checkbox-row"><input type="checkbox" id="av-imp" ${a?.importante?'checked':''}/> Marcar como importante</label>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="av-save">${isEdit?'Salvar':'Publicar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#av-save').onclick = async () => {
+    const titulo = $('#av-titulo').value.trim();
+    const corpo = $('#av-corpo').value.trim();
+    if(!titulo || !corpo) { toast('Preencha título e corpo','err'); return; }
+    const data = {
+      titulo, corpo,
+      importante: $('#av-imp').checked,
+      arquivado: false,
+      publicadoPor: S.user.uid
+    };
+    try {
+      if(isEdit) await updateDoc(doc(dbPvd,'adm_avisos',id), { ...data, atualizadoEm: serverTimestamp() });
+      else await addDoc(collection(dbPvd,'adm_avisos'), { ...data, publicadoEm: serverTimestamp(), criadoEm: serverTimestamp() });
+      toast(isEdit?'Aviso atualizado':'Aviso publicado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+async function arquivarAviso(id) {
+  confirmar('Arquivar este aviso?', async () => {
+    try { await updateDoc(doc(dbPvd,'adm_avisos',id), { arquivado:true, atualizadoEm: serverTimestamp() }); toast('Aviso arquivado','ok'); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+// ── AGENDA DO PAI ─────────────────────────────────────────────────────────
+let agendaFiltro = 'semana'; // 'hoje' | 'semana' | 'mes' | 'todos'
+
+function renderAgenda(c) {
+  const hoje = new Date().toISOString().slice(0,10);
+  const fimSemana = new Date(); fimSemana.setDate(fimSemana.getDate()+7);
+  const fimSemanaStr = fimSemana.toISOString().slice(0,10);
+  const fimMes = new Date(); fimMes.setDate(fimMes.getDate()+30);
+  const fimMesStr = fimMes.toISOString().slice(0,10);
+
+  let lista = [...S.atendimentos].sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  if(agendaFiltro === 'hoje') lista = lista.filter(a => a.data === hoje);
+  else if(agendaFiltro === 'semana') lista = lista.filter(a => a.data >= hoje && a.data <= fimSemanaStr);
+  else if(agendaFiltro === 'mes') lista = lista.filter(a => a.data >= hoje && a.data <= fimMesStr);
+
+  // KPIs do mês
+  const mesAtual = hoje.slice(0,7);
+  const atendsMes = S.atendimentos.filter(a => a.data && a.data.startsWith(mesAtual));
+  const realizadosMes = atendsMes.filter(a => a.status_atendimento === 'realizado');
+  const receitaMes = realizadosMes.filter(a => a.status_pagamento && a.status_pagamento.startsWith('pago')).reduce((s,a)=>s+(a.valor||0),0);
+  const pendentes = atendsMes.filter(a => a.status_pagamento === 'pendente' && a.status_atendimento === 'realizado').reduce((s,a)=>s+(a.valor||0),0);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Agenda do Pai</div>
+        <div class="page-sub">${atendsMes.length} atendimento${atendsMes.length===1?'':'s'} esse mês · ${realizadosMes.length} realizado${realizadosMes.length===1?'':'s'}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openAtendimentoForm()">+ Novo atendimento</button>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:18px">
+      <div class="metric" style="--clr:var(--green)"><div class="ml">Receita do mês</div><div class="mv">R$ ${receitaMes.toFixed(0)}</div><div class="mh">de ${realizadosMes.length} jogo${realizadosMes.length===1?'':'s'}</div></div>
+      <div class="metric" style="--clr:var(--amber)"><div class="ml">Pendente receber</div><div class="mv">R$ ${pendentes.toFixed(0)}</div></div>
+      <div class="metric" style="--clr:var(--blue)"><div class="ml">Esta semana</div><div class="mv">${S.atendimentos.filter(a => a.data >= hoje && a.data <= fimSemanaStr).length}</div></div>
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Consulentes únicos</div><div class="mv">${S.consulentes.filter(c=>!c.arquivado).length}</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="${agendaFiltro==='hoje'?'active':''}" onclick="window._app.setAgendaFiltro('hoje')">Hoje</button>
+      <button class="${agendaFiltro==='semana'?'active':''}" onclick="window._app.setAgendaFiltro('semana')">7 dias</button>
+      <button class="${agendaFiltro==='mes'?'active':''}" onclick="window._app.setAgendaFiltro('mes')">30 dias</button>
+      <button class="${agendaFiltro==='todos'?'active':''}" onclick="window._app.setAgendaFiltro('todos')">Todos</button>
+    </div>
+
+    <div>
+      ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum atendimento</div><div class="empty-s">Clique em "Novo atendimento" pra agendar.</div></div>' : lista.map(a => {
+        const isHoje = a.data === hoje;
+        const isPassado = a.data < hoje;
+        const isBuzios = a.tipo_oraculo === 'buzios';
+        const statusPag = a.status_pagamento || 'pendente';
+        const corPag = statusPag.startsWith('pago') ? 'chip-green' : (statusPag === 'isento' ? 'chip' : 'chip-amber');
+        const labelPag = statusPag === 'pendente' ? 'pendente' : (statusPag === 'isento' ? 'isento' : statusPag.replace('pago_','pago '));
+        const corAtend = a.status_atendimento === 'realizado' ? 'chip-green' : (a.status_atendimento === 'cancelado' || a.status_atendimento === 'nao_compareceu' ? 'chip' : 'chip-blue');
+        return `
+          <div class="list-item" onclick="window._app.openAtendimentoForm('${a.id}')" style="cursor:pointer;${isHoje?'border-color:var(--gold-bg)':''}">
+            <div class="li-avatar" style="background:${isBuzios?'rgba(155,89,182,0.15)':'var(--gold-bg)'};color:${isBuzios?'var(--purple)':'var(--gold)'};flex-direction:column;font-size:11px;line-height:1.2">
+              <div style="font-weight:700;font-size:14px">${(a.data||'').slice(8,10)}</div>
+              <div style="font-size:9px;text-transform:uppercase">${new Date((a.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+            </div>
+            <div class="li-main">
+              <div class="li-name">${a.consulente_nome||'—'} ${isBuzios?'<span class="chip chip-purple" style="font-size:10px">búzios · privado</span>':'<span class="chip chip-gold" style="font-size:10px">baralho cigano</span>'}</div>
+              <div class="li-meta">
+                <span>${a.hora||'—'}${a.duracao_min?` · ${a.duracao_min}min`:''}</span>
+                <span>R$ ${a.valor||0}</span>
+                <span class="chip ${corPag}">${labelPag}</span>
+                <span class="chip ${corAtend}">${a.status_atendimento||'agendado'}</span>
+                ${isHoje?'<span class="chip chip-gold">HOJE</span>':''}
+                ${isPassado && a.status_atendimento === 'agendado'?'<span class="chip chip-amber">atrasado</span>':''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
+
+function openAtendimentoForm(id=null) {
+  const a = id ? S.atendimentos.find(x=>x.id===id) : null;
+  const isEdit = !!a;
+  const consulentesAtivos = S.consulentes.filter(c=>!c.arquivado).sort((a,b)=>a.nome.localeCompare(b.nome));
+
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar atendimento':'Novo atendimento'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Consulente *</label>
+        <select class="fi" id="at-cons">
+          <option value="">— Selecione ou crie novo —</option>
+          ${consulentesAtivos.map(c => `<option value="${c.id}" ${a?.consulente_id===c.id?'selected':''}>${c.nome}${c.tel?' · '+c.tel:''}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" style="margin-top:6px" onclick="window._app.openConsulenteForm(null,true)">+ Novo consulente</button>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Data *</label><input type="date" class="fi" id="at-data" value="${a?.data||new Date().toISOString().slice(0,10)}"/></div>
+        <div class="fi-group"><label>Hora *</label><input type="time" class="fi" id="at-hora" value="${a?.hora||''}"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Tipo de oráculo *</label>
+          <select class="fi" id="at-tipo">
+            <option value="baralho_cigano" ${(!a||a?.tipo_oraculo==='baralho_cigano')?'selected':''}>Baralho cigano (público)</option>
+            <option value="buzios" ${a?.tipo_oraculo==='buzios'?'selected':''}>Búzios (privado)</option>
+          </select>
+        </div>
+        <div class="fi-group"><label>Duração (min)</label><input type="number" class="fi" id="at-dur" value="${a?.duracao_min||60}" min="15" step="15"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Valor (R$) *</label><input type="number" class="fi" id="at-valor" value="${a?.valor||100}" min="0" step="10"/></div>
+        <div class="fi-group"><label>Status do pagamento</label>
+          <select class="fi" id="at-pag">
+            <option value="pendente" ${(!a||a?.status_pagamento==='pendente')?'selected':''}>Pendente</option>
+            <option value="pago_pix" ${a?.status_pagamento==='pago_pix'?'selected':''}>Pago via PIX</option>
+            <option value="pago_dinheiro" ${a?.status_pagamento==='pago_dinheiro'?'selected':''}>Pago em dinheiro</option>
+            <option value="pago_cartao" ${a?.status_pagamento==='pago_cartao'?'selected':''}>Pago no cartão</option>
+            <option value="isento" ${a?.status_pagamento==='isento'?'selected':''}>Isento</option>
+          </select>
+        </div>
+      </div>
+      <div class="fi-group"><label>Status do atendimento</label>
+        <select class="fi" id="at-st">
+          <option value="agendado" ${(!a||a?.status_atendimento==='agendado')?'selected':''}>Agendado</option>
+          <option value="confirmado" ${a?.status_atendimento==='confirmado'?'selected':''}>Confirmado</option>
+          <option value="realizado" ${a?.status_atendimento==='realizado'?'selected':''}>Realizado</option>
+          <option value="nao_compareceu" ${a?.status_atendimento==='nao_compareceu'?'selected':''}>Não compareceu</option>
+          <option value="cancelado" ${a?.status_atendimento==='cancelado'?'selected':''}>Cancelado</option>
+        </select>
+      </div>
+      <div class="fi-group"><label>Observação (privada, só você e o Pai veem)</label><textarea class="fi" id="at-obs">${a?.observacao||''}</textarea></div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="at-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="at-save">${isEdit?'Salvar':'Agendar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#at-save').onclick = async () => {
+    const consId = $('#at-cons').value;
+    if(!consId) { toast('Selecione um consulente','err'); return; }
+    const cons = S.consulentes.find(x=>x.id===consId);
+    if(!cons) { toast('Consulente não encontrado','err'); return; }
+    const data = $('#at-data').value;
+    const hora = $('#at-hora').value;
+    if(!data || !hora) { toast('Informe data e hora','err'); return; }
+    const tipo = $('#at-tipo').value;
+    const valor = parseFloat($('#at-valor').value) || 0;
+    const stPag = $('#at-pag').value;
+    const stAt = $('#at-st').value;
+
+    const payload = {
+      consulente_id: consId,
+      consulente_nome: cons.nome,
+      consulente_tel: cons.tel || '',
+      data, hora,
+      duracao_min: parseInt($('#at-dur').value) || 60,
+      tipo_oraculo: tipo,
+      publico: tipo !== 'buzios',
+      valor,
+      status_pagamento: stPag,
+      pago_em: stPag.startsWith('pago') && (!a || !a.status_pagamento || !a.status_pagamento.startsWith('pago')) ? serverTimestamp() : (a?.pago_em||null),
+      status_atendimento: stAt,
+      observacao: $('#at-obs').value.trim(),
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(isEdit) {
+        await updateDoc(doc(dbPvd,'adm_atendimentos',id), payload);
+      } else {
+        payload.criadoEm = serverTimestamp();
+        await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
+      }
+      // se foi marcado como realizado, atualiza consulente (ultima_vez, qtd)
+      if(stAt === 'realizado' && (!a || a.status_atendimento !== 'realizado')) {
+        const novosAtends = (cons.qtd_atendimentos||0) + 1;
+        await updateDoc(doc(dbPvd,'adm_consulentes',consId), {
+          ultima_vez: serverTimestamp(),
+          qtd_atendimentos: novosAtends,
+          atualizadoEm: serverTimestamp()
+        });
+      }
+      toast(isEdit?'Atendimento atualizado':'Atendimento agendado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(isEdit) $('#at-del').onclick = () => {
+    confirmar('Excluir este atendimento?', async () => {
+      try { await deleteDoc(doc(dbPvd,'adm_atendimentos',id)); toast('Atendimento excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── CONSULENTES ────────────────────────────────────────────────────────────
+let filtroConsulentes = { busca:'', arquivados:false };
+
+function renderConsulentes(c) {
+  let lista = S.consulentes.filter(x => {
+    if(!filtroConsulentes.arquivados && x.arquivado) return false;
+    if(filtroConsulentes.arquivados && !x.arquivado) return false;
+    if(filtroConsulentes.busca) {
+      const q = filtroConsulentes.busca.toLowerCase();
+      return (x.nome||'').toLowerCase().includes(q) || (x.tel||'').includes(q);
+    }
+    return true;
+  }).sort((a,b) => (b.ultima_vez?.seconds||0) - (a.ultima_vez?.seconds||0));
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Consulentes</div>
+        <div class="page-sub">${S.consulentes.filter(x=>!x.arquivado).length} ativos · ${S.consulentes.filter(x=>x.arquivado).length} arquivados</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openConsulenteForm()">+ Novo consulente</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="row-2">
+        <div class="fi-group" style="margin:0">
+          <label>Buscar</label>
+          <input class="fi" id="cn-busca" placeholder="Nome ou telefone..." value="${filtroConsulentes.busca}"/>
+        </div>
+        <div class="fi-group" style="margin:0">
+          <label>Mostrar</label>
+          <select class="fi" id="cn-arq">
+            <option value="false" ${!filtroConsulentes.arquivados?'selected':''}>Ativos</option>
+            <option value="true" ${filtroConsulentes.arquivados?'selected':''}>Arquivados</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum consulente</div></div>' : lista.map(x => `
+        <div class="list-item" onclick="window._app.openConsulenteForm('${x.id}')" style="cursor:pointer">
+          <div class="li-avatar">${fmt.initials(x.nome)}</div>
+          <div class="li-main">
+            <div class="li-name">${x.nome}</div>
+            <div class="li-meta">
+              ${x.tel ? `<span>📱 ${x.tel}</span>` : ''}
+              <span>${x.qtd_atendimentos||0} atendimento${(x.qtd_atendimentos||0)===1?'':'s'}</span>
+              ${x.ultima_vez ? `<span>último: ${fmt.rel(x.ultima_vez)}</span>` : '<span class="chip chip-blue">nunca atendido</span>'}
+              ${x.origem ? `<span class="chip">${x.origem}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  $('#cn-busca').oninput = e => { filtroConsulentes.busca = e.target.value; renderConsulentes(c); };
+  $('#cn-arq').onchange = e => { filtroConsulentes.arquivados = e.target.value === 'true'; renderConsulentes(c); };
+}
+
+function openConsulenteForm(id=null, fromAtendimento=false) {
+  const x = id ? S.consulentes.find(c=>c.id===id) : null;
+  const isEdit = !!x;
+  const historico = x ? S.atendimentos.filter(a => a.consulente_id === id).sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora)) : [];
+
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Consulente':'Novo consulente'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="cn-nome" value="${x?.nome||''}"/></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Telefone</label><input class="fi" id="cn-tel" value="${x?.tel||''}" placeholder="11999999999"/></div>
+        <div class="fi-group"><label>Email</label><input class="fi" id="cn-email" value="${x?.email||''}"/></div>
+      </div>
+      <div class="fi-group"><label>Como chegou aqui?</label>
+        <select class="fi" id="cn-origem">
+          <option value="">— Não especificado —</option>
+          <option value="instagram" ${x?.origem==='instagram'?'selected':''}>Instagram</option>
+          <option value="indicacao" ${x?.origem==='indicacao'?'selected':''}>Indicação</option>
+          <option value="site" ${x?.origem==='site'?'selected':''}>Site</option>
+          <option value="anuncio" ${x?.origem==='anuncio'?'selected':''}>Anúncio</option>
+          <option value="gira_aberta" ${x?.origem==='gira_aberta'?'selected':''}>Gira aberta</option>
+          <option value="outro" ${x?.origem==='outro'?'selected':''}>Outro</option>
+        </select>
+      </div>
+      <div class="fi-group"><label>Observações do Pai (privadas — notas entre sessões)</label><textarea class="fi" id="cn-obs" style="min-height:100px">${x?.observacoes||''}</textarea></div>
+
+      ${isEdit && historico.length ? `
+        <div class="divider"></div>
+        <div class="sec-lbl" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin:14px 0 10px">Histórico — ${historico.length} atendimento${historico.length===1?'':'s'}</div>
+        ${historico.slice(0,10).map(a => `
+          <div style="padding:10px 12px;background:var(--glass);border-radius:8px;margin-bottom:6px;font-size:13px">
+            <div style="display:flex;justify-content:space-between;gap:10px">
+              <span><strong>${fmt.data(a.data)}</strong> · ${a.hora||'—'} · ${a.tipo_oraculo==='buzios'?'búzios':'baralho'}</span>
+              <span class="chip ${a.status_atendimento==='realizado'?'chip-green':'chip'}">${a.status_atendimento}</span>
+            </div>
+            ${a.observacao?`<div style="color:var(--text2);margin-top:4px;font-size:12.5px">${a.observacao}</div>`:''}
+          </div>
+        `).join('')}
+      ` : ''}
+    </div>
+    <div class="modal-f">
+      ${isEdit?`<button class="btn" onclick="window._app.toggleArquivarConsulente('${id}',${!x.arquivado});closeModal()">${x.arquivado?'Restaurar':'Arquivar'}</button>`:''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      ${isEdit?`<button class="btn btn-primary" onclick="closeModal();window._app.openAtendimentoForm()" style="margin-right:6px">+ Novo atendimento</button>`:''}
+      <button class="btn btn-primary" id="cn-save">${isEdit?'Salvar':(fromAtendimento?'Criar e voltar':'Criar')}</button>
+    </div>
+  `, { lg: true });
+
+  $('#cn-save').onclick = async () => {
+    const nome = $('#cn-nome').value.trim();
+    if(!nome) { toast('Informe o nome','err'); return; }
+    const data = {
+      nome,
+      tel: $('#cn-tel').value.replace(/\D/g,''),
+      email: $('#cn-email').value.trim() || null,
+      origem: $('#cn-origem').value || null,
+      observacoes: $('#cn-obs').value.trim(),
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(isEdit) {
+        await updateDoc(doc(dbPvd,'adm_consulentes',id), data);
+        toast('Consulente atualizado','ok');
+        closeModal();
+      } else {
+        data.criadoEm = serverTimestamp();
+        data.primeira_vez = serverTimestamp();
+        data.qtd_atendimentos = 0;
+        data.arquivado = false;
+        const ref = await addDoc(collection(dbPvd,'adm_consulentes'), data);
+        toast('Consulente criado','ok');
+        closeModal();
+        if(fromAtendimento) {
+          setTimeout(() => {
+            openAtendimentoForm();
+            setTimeout(() => { const sel = $('#at-cons'); if(sel) sel.value = ref.id; }, 100);
+          }, 200);
+        }
+      }
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+async function toggleArquivarConsulente(id, valor) {
+  try { await updateDoc(doc(dbPvd,'adm_consulentes',id), { arquivado: valor, atualizadoEm: serverTimestamp() }); toast(valor?'Arquivado':'Restaurado','ok'); }
+  catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+// ── SOLICITAÇÕES (pedidos vindos do agendar.html público) ──────────────────
+function atualizarBadgeSolicitacoes() {
+  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').length;
+  const badge = $('#sol-badge');
+  if(!badge) return;
+  if(pendentes > 0) { badge.textContent = pendentes; badge.style.display = ''; }
+  else badge.style.display = 'none';
+}
+
+function renderSolicitacoes(c) {
+  atualizarBadgeSolicitacoes();
+  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  const processadas = S.solicitacoes.filter(s => s.status !== 'pendente').sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Solicitações de agendamento</div>
+        <div class="page-sub">${pendentes.length} pendente${pendentes.length===1?'':'s'} · vindas do site público</div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="agendar.html" target="_blank">↗ Ver página pública</a>
+      </div>
+    </div>
+
+    ${pendentes.length === 0 ? '<div class="card"><div class="empty"><div class="empty-t">Nenhuma solicitação pendente</div><div class="empty-s">Quando alguém agendar pela página pública, aparece aqui.</div></div></div>' : `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="card-title">Pendentes (${pendentes.length})</div></div>
+        ${pendentes.map(s => `
+          <div class="list-item" style="border-color:var(--gold)">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);flex-direction:column;font-size:11px;line-height:1.2">
+              <div style="font-weight:700;font-size:14px">${(s.data||'').slice(8,10)}</div>
+              <div style="font-size:9px;text-transform:uppercase">${new Date((s.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+            </div>
+            <div class="li-main">
+              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${s.hora}</span></div>
+              <div class="li-meta">
+                ${s.tel?`<span>📱 ${s.tel}</span>`:''}
+                ${s.email?`<span>✉️ ${s.email}</span>`:''}
+                <span>R$ ${s.valor_proposto||0}</span>
+                <span style="font-size:11px;color:var(--text3)">${fmt.rel(s.criadoEm)}</span>
+              </div>
+              ${s.observacao?`<div style="margin-top:6px;font-size:12.5px;color:var(--text2);font-style:italic">"${s.observacao}"</div>`:''}
+            </div>
+            <div class="li-actions">
+              <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${s.id}')">Rejeitar</button>
+              <button class="btn btn-sm btn-primary" onclick="window._app.aprovarSolicitacao('${s.id}')">Aprovar</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+
+    ${processadas.length ? `
+      <details>
+        <summary style="cursor:pointer;color:var(--text3);font-size:13px;padding:10px 0">Histórico (${processadas.length})</summary>
+        <div style="margin-top:10px">
+          ${processadas.slice(0,30).map(s => `
+            <div class="list-item" style="opacity:.7">
+              <div class="li-avatar">${fmt.initials(s.nome)}</div>
+              <div class="li-main">
+                <div class="li-name">${s.nome}</div>
+                <div class="li-meta">
+                  <span>${fmt.data(s.data)} · ${s.hora}</span>
+                  <span class="chip ${s.status==='aprovada'?'chip-green':'chip'}">${s.status}</span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </details>
+    `:''}
+  `;
+}
+
+async function aprovarSolicitacao(id) {
+  const s = S.solicitacoes.find(x => x.id === id);
+  if(!s) return;
+  confirmar(`Aprovar agendamento de <strong>${s.nome}</strong> em ${fmt.data(s.data)} às ${s.hora}? Vou criar o consulente e o atendimento automaticamente.`, async () => {
+    try {
+      // 1. Verifica se consulente já existe (pelo tel)
+      let consId = null;
+      if(s.tel) {
+        const existente = S.consulentes.find(c => c.tel === s.tel || c.nome.toLowerCase() === s.nome.toLowerCase());
+        if(existente) consId = existente.id;
+      }
+      // 2. Cria consulente se necessário
+      if(!consId) {
+        const ref = await addDoc(collection(dbPvd,'adm_consulentes'), {
+          nome: s.nome,
+          tel: s.tel || '',
+          email: s.email || null,
+          origem: 'site',
+          observacoes: s.observacao || '',
+          primeira_vez: serverTimestamp(),
+          qtd_atendimentos: 0,
+          arquivado: false,
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp()
+        });
+        consId = ref.id;
+      }
+      // 3. Cria atendimento agendado
+      await addDoc(collection(dbPvd,'adm_atendimentos'), {
+        consulente_id: consId,
+        consulente_nome: s.nome,
+        consulente_tel: s.tel || '',
+        data: s.data,
+        hora: s.hora,
+        duracao_min: s.duracao_min || 60,
+        tipo_oraculo: s.tipo_oraculo || 'baralho_cigano',
+        publico: true,
+        valor: s.valor_proposto || 0,
+        status_pagamento: 'pendente',
+        pago_em: null,
+        status_atendimento: 'agendado',
+        observacao: s.observacao || '',
+        origem_solicitacao_id: id,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp()
+      });
+      // 4. Marca solicitação como aprovada
+      await updateDoc(doc(dbPvd,'adm_solicitacoes',id), {
+        status: 'aprovada',
+        atualizadoEm: serverTimestamp()
+      });
+      toast('Aprovado · agendamento criado','ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+async function rejeitarSolicitacao(id) {
+  const s = S.solicitacoes.find(x => x.id === id);
+  if(!s) return;
+  confirmar(`Rejeitar pedido de <strong>${s.nome}</strong>? O slot fica livre de novo.`, async () => {
+    try {
+      await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { status: 'rejeitada', atualizadoEm: serverTimestamp() });
+      toast('Rejeitada','ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+// ── CONFIG AGENDAMENTO ─────────────────────────────────────────────────────
+let configAgCarregado = null;
+
+async function renderConfigAgendamento(c) {
+  c.innerHTML = `<div class="empty"><div class="spinner" style="width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto"></div></div>`;
+  let dados = {};
+  try {
+    const snap = await getDoc(doc(dbPvd,'adm_config','agendamento'));
+    if(snap.exists()) dados = snap.data();
+  } catch(e) { /* doc novo */ }
+  const cfg = {
+    dias_atendimento: [2,3,4,5,6],
+    hora_inicio: '10:00', hora_fim: '18:00',
+    duracao_slot: 60, valor_padrao: 150,
+    whatsapp: '5519992494267',
+    texto_intro: '',
+    antecedencia_min_horas: 24,
+    ativa: true,
+    ...dados
+  };
+  configAgCarregado = cfg;
+
+  const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Configuração do agendamento público</div>
+        <div class="page-sub">Define o que aparece em <code>agendar.html</code></div>
+      </div>
+      <div class="page-actions">
+        <a class="btn" href="agendar.html" target="_blank">↗ Abrir página pública</a>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:720px">
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="cf-ativa" ${cfg.ativa?'checked':''}/>
+          Agendamentos ativos (desmarcar pra fechar temporariamente)
+        </label>
+      </div>
+      <div class="fi-group">
+        <label>Dias de atendimento</label>
+        <div class="chips">
+          ${diasLabel.map((lbl,i) => `
+            <button type="button" class="chip ${cfg.dias_atendimento.includes(i)?'chip-gold':''}" data-d="${i}" onclick="this.classList.toggle('chip-gold')">${lbl}</button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Hora início</label><input type="time" class="fi" id="cf-ini" value="${cfg.hora_inicio}"/></div>
+        <div class="fi-group"><label>Hora fim</label><input type="time" class="fi" id="cf-fim" value="${cfg.hora_fim}"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Duração de cada slot (min)</label><input type="number" class="fi" id="cf-dur" value="${cfg.duracao_slot}" min="30" step="15"/></div>
+        <div class="fi-group"><label>Valor padrão (R$)</label><input type="number" class="fi" id="cf-val" value="${cfg.valor_padrao}" min="0" step="10"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Antecedência mínima (horas)</label><input type="number" class="fi" id="cf-ant" value="${cfg.antecedencia_min_horas}" min="0"/></div>
+        <div class="fi-group"><label>WhatsApp (com DDI)</label><input class="fi" id="cf-wpp" value="${cfg.whatsapp}" placeholder="5519999999999"/></div>
+      </div>
+      <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary" id="cf-save">Salvar configuração</button>
+      </div>
+    </div>
+  `;
+
+  $('#cf-save').onclick = async () => {
+    const dias = Array.from(document.querySelectorAll('.chip.chip-gold[data-d]')).map(b => parseInt(b.dataset.d));
+    const payload = {
+      ativa: $('#cf-ativa').checked,
+      dias_atendimento: dias,
+      hora_inicio: $('#cf-ini').value,
+      hora_fim: $('#cf-fim').value,
+      duracao_slot: parseInt($('#cf-dur').value) || 60,
+      valor_padrao: parseFloat($('#cf-val').value) || 0,
+      antecedencia_min_horas: parseInt($('#cf-ant').value) || 0,
+      whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
+      texto_intro: $('#cf-intro').value.trim() || null,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      await setDoc(doc(dbPvd,'adm_config','agendamento'), payload, { merge: true });
+      toast('Configuração salva','ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+// ── VIEWS DO FILHO ─────────────────────────────────────────────────────────
+function renderMeuDashboard(c) {
+  const f = S.filhoDoc;
+  const hoje = new Date().toISOString().slice(0,10);
+  const minhasEscalas = S.escalas
+    .filter(es => es.data >= hoje && (es.alocacoes||[]).some(a => a.filho_id === f.id))
+    .sort((a,b) => a.data.localeCompare(b.data));
+  const proxima = minhasEscalas[0];
+  const proxEvento = proxima ? S.eventos.find(e => e.id === proxima.evento_id) : null;
+  const minhaFuncaoProx = proxima ? (proxima.alocacoes.find(a=>a.filho_id===f.id)?.funcao_id) : null;
+  const nomeFuncao = minhaFuncaoProx ? S.funcoes.find(fn=>fn.id===minhaFuncaoProx)?.nome : '';
+
+  const avisosAtivos = S.avisos.filter(a=>!a.arquivado).slice(0,3);
+  const meusCards = S.kanban.filter(k => !k.arquivado && k.status!=='done' && (k.responsaveis||[]).includes(f.id));
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Olá, ${f.nome.split(' ')[0]}</div>
+        <div class="page-sub">${proxima ? `Próxima escala: ${nomeFuncao} em ${proxEvento?.nome||''} (${fmt.data(proxima.data)})` : 'Sem escalas próximas'}</div>
+      </div>
+    </div>
+
+    ${proxima ? `
+      <div class="card" style="margin-bottom:18px;border-color:var(--gold);box-shadow:0 0 24px rgba(212,168,67,0.08)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="chip chip-gold">PRÓXIMA ESCALA</span></div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">${proxEvento?.nome||'Evento'}</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">${fmt.dataLong(proxima.data)} · ${proxEvento?.hora||'—'}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="chip chip-gold">Função: ${nomeFuncao}</span>
+          <span class="chip">${proxEvento?.local||'Terreiro'}</span>
+        </div>
+      </div>
+    ` : ''}
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-h"><div class="card-title">Avisos recentes</div></div>
+        ${avisosAtivos.length===0 ? '<div class="empty"><div class="empty-s">Nenhum aviso</div></div>' : avisosAtivos.map(a=>`
+          <div class="list-item">
+            ${a.importante?'<div class="chip chip-red">!</div>':''}
+            <div class="li-main">
+              <div class="li-name">${a.titulo}</div>
+              <div class="li-meta">${fmt.rel(a.publicadoEm)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-title">Minhas tarefas</div></div>
+        ${meusCards.length===0 ? '<div class="empty"><div class="empty-s">Nenhuma tarefa atribuída</div></div>' : meusCards.map(k=>`
+          <div class="list-item">
+            <div class="chip chip-${k.status==='blocked'?'amber':(k.status==='doing'?'blue':'')}">${k.status==='todo'?'a fazer':(k.status==='doing'?'em andamento':'bloqueado')}</div>
+            <div class="li-main">
+              <div class="li-name">${k.titulo}</div>
+              ${k.prazo?`<div class="li-meta">Prazo: ${fmt.data(k.prazo)}</div>`:''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderMinhasEscalas(c) {
+  const f = S.filhoDoc;
+  const hoje = new Date().toISOString().slice(0,10);
+  const minhas = S.escalas.filter(es => (es.alocacoes||[]).some(a => a.filho_id === f.id));
+  const futuras = minhas.filter(es => es.data >= hoje).sort((a,b)=>a.data.localeCompare(b.data));
+  const passadas = minhas.filter(es => es.data < hoje).sort((a,b)=>b.data.localeCompare(a.data));
+
+  const card = (es) => {
+    const ev = S.eventos.find(e=>e.id===es.evento_id);
+    const aloc = es.alocacoes.find(a=>a.filho_id===f.id);
+    const fn = S.funcoes.find(fn=>fn.id===aloc?.funcao_id);
+    return `
+      <div class="list-item">
+        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(es.data||'').slice(8,10)}</div>
+        <div class="li-main">
+          <div class="li-name">${ev?.nome||'Evento'} — <span style="color:var(--gold)">${fn?.nome||'—'}</span></div>
+          <div class="li-meta"><span>${fmt.dataLong(es.data)} · ${ev?.hora||'—'}</span><span class="chip">${aloc?.status||'escalado'}</span></div>
+        </div>
+      </div>
+    `;
+  };
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Minhas escalas</div>
+        <div class="page-sub">${futuras.length} futura${futuras.length===1?'':'s'} · ${passadas.length} passada${passadas.length===1?'':'s'}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><div class="card-title">Próximas</div></div>
+      ${futuras.length===0?'<div class="empty"><div class="empty-s">Sem escalas futuras</div></div>':futuras.map(card).join('')}
+    </div>
+
+    ${passadas.length?`
+      <div class="card">
+        <div class="card-h"><div class="card-title">Histórico</div></div>
+        ${passadas.slice(0,20).map(card).join('')}
+      </div>
+    `:''}
+  `;
+}
+
+function renderDisponibilidade(c) {
+  const f = S.filhoDoc;
+  // Mes atual + próximo
+  const now = new Date();
+  const meses = [
+    now.toISOString().slice(0,7),
+    new Date(now.getFullYear(), now.getMonth()+1, 1).toISOString().slice(0,7)
+  ];
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Minha disponibilidade</div>
+        <div class="page-sub">Marque os dias que <strong>NÃO</strong> pode comparecer. Vazio = totalmente disponível.</div>
+      </div>
+    </div>
+    ${meses.map(m => `<div class="card" style="margin-bottom:18px" id="disp-${m}"></div>`).join('')}
+  `;
+
+  meses.forEach(m => renderDispMes(m));
+}
+
+async function renderDispMes(m) {
+  const f = S.filhoDoc;
+  const docId = `${f.id}_${m}`;
+  const disp = S.disponibilidade.find(d => d.id === docId) || { datas_indisponivel:[], funcoes_indisponivel:[] };
+  const [ano, mes] = m.split('-').map(Number);
+  const first = new Date(ano, mes-1, 1);
+  const last = new Date(ano, mes, 0);
+  const firstDow = first.getDay();
+  const daysInMonth = last.getDate();
+  const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+
+  let cells = '';
+  for(let i=0; i<firstDow; i++) cells += `<div class="disp-day out"></div>`;
+  for(let d=1; d<=daysInMonth; d++) {
+    const dStr = `${ano}-${String(mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const indisp = disp.datas_indisponivel?.includes(dStr);
+    cells += `<div class="disp-day ${indisp?'indisp':''}" data-d="${dStr}" data-m="${m}">${d}</div>`;
+  }
+
+  const funcoesAtivas = S.funcoes.filter(f=>!f.arquivada);
+  const card = $(`#disp-${m}`);
+  card.innerHTML = `
+    <div class="card-h"><div class="card-title" style="text-transform:capitalize">${nomeMes}</div></div>
+    <div class="disp-cal" style="margin-bottom:14px">
+      ${['D','S','T','Q','Q','S','S'].map(d=>`<div style="text-align:center;font-size:11px;color:var(--text3);padding:4px">${d}</div>`).join('')}
+      ${cells}
+    </div>
+    <div class="fi-group">
+      <label>Funções que NÃO posso fazer esse mês</label>
+      <div class="chips" id="disp-funcs-${m}">
+        ${funcoesAtivas.map(fn => {
+          const sel = (disp.funcoes_indisponivel||[]).includes(fn.id);
+          return `<button type="button" class="chip ${sel?'chip-red':''}" data-fid="${fn.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-red')">${fn.nome}</button>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="fi-group">
+      <label>Observação opcional</label>
+      <input class="fi" id="disp-obs-${m}" value="${disp.obs||''}" placeholder="Ex: estou de luto / vou viajar dia X"/>
+    </div>
+    <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="window._app.salvarDisp('${m}')">Salvar disponibilidade</button></div>
+  `;
+
+  card.querySelectorAll('.disp-day:not(.out)').forEach(el => {
+    el.onclick = () => el.classList.toggle('indisp');
+  });
+}
+
+async function salvarDisp(m) {
+  const f = S.filhoDoc;
+  const docId = `${f.id}_${m}`;
+  const datas = $$(`#disp-${m} .disp-day.indisp[data-d]`).map(el => el.dataset.d);
+  const funcs = $$(`#disp-funcs-${m} [data-sel="true"]`).map(el => el.dataset.fid);
+  const obs = $(`#disp-obs-${m}`).value.trim();
+  try {
+    await setDoc(doc(dbPvd,'adm_disponibilidade',docId), {
+      filho_id: f.id,
+      mes: m,
+      datas_indisponivel: datas,
+      funcoes_indisponivel: funcs,
+      obs,
+      atualizadoEm: serverTimestamp()
+    }, { merge:true });
+    toast('Disponibilidade salva','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+function renderAvisosFilho(c) {
+  const ativos = S.avisos.filter(a=>!a.arquivado).sort((a,b)=>(b.publicadoEm?.seconds||0)-(a.publicadoEm?.seconds||0));
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Avisos</div>
+        <div class="page-sub">${ativos.length} aviso${ativos.length===1?'':'s'} do terreiro</div>
+      </div>
+    </div>
+    ${ativos.length===0 ? '<div class="empty"><div class="empty-t">Nenhum aviso ativo</div></div>' : ativos.map(a => `
+      <div class="card" style="margin-bottom:12px;${a.importante?'border-color:var(--red-bd)':''}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${a.importante ? '<span class="chip chip-red">IMPORTANTE</span>' : ''}
+          <span style="font-size:11px;color:var(--text3)">${fmt.rel(a.publicadoEm)}</span>
+        </div>
+        <div style="font-size:16px;font-weight:700;margin-bottom:6px">${a.titulo}</div>
+        <div style="font-size:14px;color:var(--text2);line-height:1.5;white-space:pre-wrap">${a.corpo}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+// ── EXPOSE ─────────────────────────────────────────────────────────────────
+window._app = {
+  navigate,
+  openFilhoForm,
+  openFuncaoForm,
+  toggleArquivarFuncao,
+  seedFuncoes,
+  openKanbanForm,
+  openEventoForm,
+  openEscalaForm,
+  setEscTab,
+  openLojinhaEscalaForm,
+  openAtendimentoForm,
+  openConsulenteForm,
+  toggleArquivarConsulente,
+  setAgendaFiltro,
+  aprovarSolicitacao,
+  rejeitarSolicitacao,
+  openAvisoForm,
+  arquivarAviso,
+  calNav,
+  salvarDisp,
+  openEvento: (id) => openEventoForm(id)
+};
+
+// Mantém badge de solicitações atualizado mesmo quando não está na rota
+const _origAttach = attachListeners;
+// Hook leve no listener de solicitações (já está em attachListeners)
+setInterval(() => {
+  if(S.role === 'admin' && typeof atualizarBadgeSolicitacoes === 'function') atualizarBadgeSolicitacoes();
+}, 3000);
+</script>
+</body>
+</html>
