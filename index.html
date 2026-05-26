@@ -624,8 +624,8 @@ function attachListeners() {
     if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
   }));
 
-  // Compromissos de rega
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_rega_compromissos'), snap => {
+  // Rega diária (1 doc por dia coberto)
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_rega_diaria'), snap => {
     S.regas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['rega','dashboard'].includes(S.route)) renderRoute();
   }));
@@ -1927,10 +1927,17 @@ function openEscalaForm(evId, escId='') {
     Object.keys(sugestao).forEach(fId => alocPreenchidas[fId] = sugestao[fId]);
   }
 
+  // Lista indisponíveis pra esse dia (pra mostrar transparência ao admin)
+  const indispNesseDia = filhosAtivos.filter(f => {
+    const d = indispMap[f.id];
+    return d && d.datas_indisponivel?.includes(ev.data);
+  });
+
   openModal(`
     <div class="modal-h"><h3>${esc?'Editar escala':'Criar escala'} — ${ev.nome||ev.titulo}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
+      <div style="color:var(--text3);font-size:13px;margin-bottom:10px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
+      ${indispNesseDia.length > 0 ? `<div style="background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px"><strong style="color:var(--red)">${indispNesseDia.length} filho${indispNesseDia.length===1?'':'s'} marcou indisponibilidade nesse dia:</strong> <span style="color:var(--text2)">${indispNesseDia.map(f=>f.nome.split(' ')[0]).join(', ')}</span><br><span style="color:var(--text3);font-size:12px">Eles não aparecem como sugestão e ficam desabilitados nos chips abaixo.</span></div>` : '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;color:var(--green)">✓ Nenhum filho marcou indisponibilidade nesse dia.</div>'}
       ${eventoEhFesta ? '<div style="background:rgba(155,89,182,0.1);border:1px solid rgba(155,89,182,0.3);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--purple)">🎉 <strong>Festa</strong> — escalas de festa têm dinâmica diferente e ficam pra v2. Você ainda pode escalar manualmente abaixo, mas o auto-gerar está desativado.</div>' : ''}
       ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
         const idDispLog = `e-${fn.id}`;
@@ -2583,92 +2590,127 @@ function renderControleDisp(c) {
 
 // ── REGA (rodízio voluntário diário) ──────────────────────────────────────
 function renderRega(c) {
-  const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const diasCurto = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const hojeIdx = new Date().getDay();
-  const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
-
-  // Map: filho_id → array de dias
-  const compromissos = {};
-  S.regas.forEach(r => { compromissos[r.filho_id] = r.dias_semana || []; });
-
-  const filhosPorDia = idx => filhosAtivos.filter(f => (compromissos[f.id]||[]).includes(idx));
-  const filhosSemCompromisso = filhosAtivos.filter(f => !compromissos[f.id] || compromissos[f.id].length === 0);
-  const filhosComCompromisso = filhosAtivos.filter(f => compromissos[f.id] && compromissos[f.id].length > 0);
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hojeStr = hoje.toISOString().slice(0,10);
   const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/disponibilidade.html';
 
-  const hojeRega = filhosPorDia(hojeIdx);
+  // Map: data → reserva
+  const porDia = {};
+  S.regas.forEach(r => { porDia[r.data] = r; });
+
+  // Mês atual e próximo
+  const mes1 = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const mes2 = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1);
+
+  // Cobertura por mês: quantos dias do mês a partir de hoje estão cobertos
+  function coberturaMes(mesDate) {
+    const ano = mesDate.getFullYear(), mes = mesDate.getMonth();
+    const last = new Date(ano, mes+1, 0);
+    const inicio = mesDate.toISOString().slice(0,10) < hojeStr ? hojeStr : mesDate.toISOString().slice(0,10);
+    let total = 0, cobertos = 0;
+    for(let d = 1; d <= last.getDate(); d++) {
+      const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
+      if(dStr < inicio) continue;
+      total++;
+      if(porDia[dStr]) cobertos++;
+    }
+    return { total, cobertos };
+  }
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function renderMesCal(mesDate) {
+    const ano = mesDate.getFullYear(), mes = mesDate.getMonth();
+    const first = new Date(ano, mes, 1);
+    const last = new Date(ano, mes+1, 0);
+    const firstDow = first.getDay();
+    const daysInMonth = last.getDate();
+    const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+    const { total, cobertos } = coberturaMes(mesDate);
+    const pct = total ? Math.round((cobertos/total)*100) : 0;
+
+    let cells = '';
+    for(let i=0; i<firstDow; i++) cells += `<div></div>`;
+    for(let d=1; d<=daysInMonth; d++) {
+      const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
+      const passado = dStr < hojeStr;
+      const reserva = porDia[dStr];
+      const ehHoje = dStr === hojeStr;
+      let bg = passado ? 'transparent' : (reserva ? 'var(--green-bg)' : 'rgba(243,156,18,0.08)');
+      let bd = ehHoje ? 'var(--red)' : (reserva ? 'var(--green-bd)' : 'var(--border)');
+      let col = passado ? 'var(--text3)' : (reserva ? 'var(--green)' : 'var(--amber)');
+      const nome = reserva ? (reserva.filho_nome||'').split(' ')[0] : '';
+      cells += `
+        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado?'.3':'1'};padding:4px" title="${reserva?'Reservado por '+reserva.filho_nome:(passado?'':'Disponível')}">
+          <div style="font-weight:700">${d}</div>
+          ${nome ? `<div style="font-size:9px;font-weight:600;line-height:1;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px">${nome}</div>` : ''}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h">
+          <div class="card-title" style="text-transform:capitalize">${nomeMes}</div>
+          <div style="font-size:13px;color:var(--text3)"><strong style="color:${pct>=70?'var(--green)':(pct>=40?'var(--amber)':'var(--red)')}">${cobertos}/${total}</strong> dias cobertos · ${pct}%</div>
+        </div>
+        <div style="background:var(--glass2);border-radius:6px;height:6px;overflow:hidden;margin-bottom:12px">
+          <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--green),var(--gold))"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">
+          ${['D','S','T','Q','Q','S','S'].map(d=>`<div style="text-align:center;font-size:10px;color:var(--text3);font-weight:600;padding:4px">${d}</div>`).join('')}
+          ${cells}
+        </div>
+      </div>
+    `;
+  }
+
+  const reservaHoje = porDia[hojeStr];
+  const semCobertura = [];
+  for(let i = 0; i < 14; i++) {
+    const d = new Date(hoje); d.setDate(hoje.getDate()+i);
+    const dStr = d.toISOString().slice(0,10);
+    if(!porDia[dStr]) semCobertura.push(dStr);
+  }
 
   c.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-title">Rega</div>
-        <div class="page-sub">Rodízio voluntário · cada filho assina os dias que se compromete a regar</div>
+        <div class="page-sub">1 pessoa por dia · filhos reservam pela página pública</div>
       </div>
       <div class="page-actions">
-        <a class="btn" href="disponibilidade.html" target="_blank">↗ Página pública (filho marca lá)</a>
+        <a class="btn" href="disponibilidade.html" target="_blank">↗ Página pública</a>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:14px;border-color:${hojeRega.length?'var(--green-bd)':'var(--amber-bg)'}">
+    <div class="card" style="margin-bottom:14px;border-color:${reservaHoje?'var(--green-bd)':'var(--amber-bg)'}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="chip ${hojeRega.length?'chip-green':'chip-amber'}">HOJE · ${diasLabel[hojeIdx]}</span>
+        <span class="chip ${reservaHoje?'chip-green':'chip-amber'}">HOJE · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
       </div>
-      ${hojeRega.length === 0 ? `
-        <div style="font-size:15px;color:var(--amber);font-weight:600">Ninguém assinou pra regar hoje 😬</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:6px">Talvez peça no grupo, ou copie o link da página pública pra galera assinar dias.</div>
+      ${reservaHoje ? `
+        <div style="font-size:18px;font-weight:700;color:var(--green)">${reservaHoje.filho_nome}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:4px">vai regar hoje 🌱</div>
       ` : `
-        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Quem rega hoje:</div>
-        <div class="chips">${hojeRega.map(f => `<span class="chip chip-green">${f.nome.split(' ')[0]}</span>`).join('')}</div>
+        <div style="font-size:15px;color:var(--amber);font-weight:600">Sem cobertura pra hoje 😬</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:6px">Nenhum filho assumiu este dia. Manda a página pra galera ou peça no grupo.</div>
+        <button class="btn btn-primary" style="margin-top:10px" onclick="navigator.clipboard.writeText('Salve! Faltam dias na escala de rega da casa: ${linkPublico}').then(()=>window._app.toast('Mensagem copiada','ok'))">Copiar mensagem pro grupo</button>
       `}
     </div>
 
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-h"><div class="card-title">Semana toda</div></div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
-        ${diasCurto.map((d,i) => {
-          const filhos = filhosPorDia(i);
-          const ehHoje = i === hojeIdx;
-          return `
-            <div style="padding:10px;border:1px solid ${ehHoje?'var(--red)':'var(--border)'};border-radius:8px;background:${ehHoje?'var(--red-bg)':'var(--glass2)'}">
-              <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:${ehHoje?'var(--red)':'var(--text3)'};margin-bottom:8px">${d.toUpperCase()}${ehHoje?' · HOJE':''}</div>
-              ${filhos.length === 0 ? '<div style="font-size:12px;color:var(--text3);font-style:italic">— ninguém —</div>' : filhos.map(f => `<div style="font-size:13px;margin-bottom:3px">${f.nome.split(' ')[0]}</div>`).join('')}
-            </div>
-          `;
-        }).join('')}
+    ${semCobertura.length > 0 ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--amber-bg)">
+        <div class="card-h">
+          <div class="card-title" style="color:var(--amber)">⚠️ Próximos 14 dias sem cobertura (${semCobertura.length})</div>
+        </div>
+        <div class="chips">
+          ${semCobertura.slice(0,14).map(d => `<span class="chip chip-amber">${fmt.data(d)}</span>`).join('')}
+        </div>
       </div>
-    </div>
+    `:''}
 
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="card-h"><div class="card-title">Quem assinou (${filhosComCompromisso.length})</div></div>
-        ${filhosComCompromisso.length === 0 ? '<div class="empty"><div class="empty-s">Ninguém ainda</div></div>' : filhosComCompromisso.map(f => {
-          const dias = (compromissos[f.id]||[]).sort((a,b)=>a-b);
-          return `
-            <div class="list-item">
-              <div class="li-avatar">${fmt.initials(f.nome)}</div>
-              <div class="li-main">
-                <div class="li-name">${f.nome}</div>
-                <div class="li-meta"><span>${dias.map(d=>diasCurto[d]).join(' · ')}</span></div>
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-
-      <div class="card">
-        <div class="card-h"><div class="card-title">Ainda não assinaram (${filhosSemCompromisso.length})</div></div>
-        ${filhosSemCompromisso.length === 0 ? '<div class="empty"><div class="empty-s">Todos os filhos ativos já assinaram</div></div>' : `
-          ${filhosSemCompromisso.map(f => `
-            <div class="list-item">
-              <div class="li-avatar" style="background:var(--glass2);color:var(--text3)">${fmt.initials(f.nome)}</div>
-              <div class="li-main"><div class="li-name">${f.nome}</div></div>
-            </div>
-          `).join('')}
-          <button class="btn btn-primary" style="margin-top:10px;width:100%" onclick="navigator.clipboard.writeText('Salve! Cadastre os dias que você pode regar a casa: ${linkPublico}').then(()=>window._app && window._app.toast && window._app.toast('Mensagem copiada','ok'))">Copiar mensagem pro grupo</button>
-        `}
-      </div>
-    </div>
+    ${renderMesCal(mes1)}
+    ${renderMesCal(mes2)}
   `;
 }
 
