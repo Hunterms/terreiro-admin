@@ -308,6 +308,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         Escalas
       </button>
+      <button data-route="lojinha">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+        Lojinha
+      </button>
 
       <div class="section-label">Atendimentos do Pai</div>
       <button data-route="agenda">
@@ -425,6 +429,8 @@ const S = {
   consulentes: [],
   solicitacoes: [],
   regas: [],
+  estoque: [],
+  vendas: [],
   route: 'dashboard',
   unsubs: []
 };
@@ -645,6 +651,20 @@ function attachListeners() {
     if(['rega','dashboard'].includes(S.route)) renderRoute();
   }));
 
+  // Estoque (compartilhado com candieiro-simples / PDV)
+  S.unsubs.push(onSnapshot(collection(dbPvd,'fin_estoque'), snap => {
+    S.estoque = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['lojinha','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Vendas (do PDV — só admin lê)
+  if(S.role === 'admin') {
+    S.unsubs.push(onSnapshot(query(collection(dbPvd,'sales'), orderBy('ts','desc')), snap => {
+      S.vendas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(['lojinha','dashboard'].includes(S.route)) renderRoute();
+    }));
+  }
+
   // Atendimentos (só admin)
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
@@ -686,6 +706,7 @@ function renderRoute() {
     case 'rega':          return renderRega(c);
     case 'calendario':    return renderCalendario(c);
     case 'escalas':       return renderEscalas(c);
+    case 'lojinha':       return renderLojinha(c);
     case 'agenda':        return renderAgenda(c);
     case 'solicitacoes':  return renderSolicitacoes(c);
     case 'consulentes':   return renderConsulentes(c);
@@ -2880,6 +2901,209 @@ function renderRega(c) {
   `;
 }
 
+// ── LOJINHA / ESTOQUE ─────────────────────────────────────────────────────
+let filtroLojinha = { busca:'', categoria:'todas', stockOnly:'todos' };
+
+function renderLojinha(c) {
+  const categorias = [...new Set(S.estoque.map(p => p.categoria).filter(Boolean))].sort();
+  let lista = [...S.estoque].sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+
+  if(filtroLojinha.busca) {
+    const q = filtroLojinha.busca.toLowerCase();
+    lista = lista.filter(p => (p.nome||'').toLowerCase().includes(q) || (p.codigo||'').toLowerCase().includes(q));
+  }
+  if(filtroLojinha.categoria !== 'todas') {
+    lista = lista.filter(p => p.categoria === filtroLojinha.categoria);
+  }
+  if(filtroLojinha.stockOnly === 'baixo') {
+    lista = lista.filter(p => (p.estoque||0) <= (p.minimo||0));
+  } else if(filtroLojinha.stockOnly === 'zerado') {
+    lista = lista.filter(p => (p.estoque||0) === 0);
+  }
+
+  const totalEstoque = S.estoque.reduce((s,p)=>s+(p.estoque||0)*(p.preco||0), 0);
+  const estoqueBaixo = S.estoque.filter(p => (p.estoque||0) <= (p.minimo||0) && (p.estoque||0) > 0).length;
+  const estoqueZero = S.estoque.filter(p => (p.estoque||0) === 0).length;
+
+  // Vendas do mês atual
+  const mesAtual = new Date().toISOString().slice(0,7);
+  const vendasMes = S.vendas.filter(v => {
+    if(!v.ts) return false;
+    const d = v.ts.toDate ? v.ts.toDate() : new Date(v.ts);
+    return d.toISOString().slice(0,7) === mesAtual;
+  });
+  const receitaMes = vendasMes.reduce((s,v)=>s+(v.total||0), 0);
+  const itensVendidosMes = vendasMes.reduce((s,v)=>s+(v.items||[]).reduce((sub,i)=>sub+(i.qty||0),0), 0);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lojinha</div>
+        <div class="page-sub">${S.estoque.length} produto${S.estoque.length===1?'':'s'} cadastrado${S.estoque.length===1?'':'s'} · estoque compartilhado com o PDV</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openProdutoForm()">+ Novo produto</button>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:18px">
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Valor em estoque</div><div class="mv">R$ ${totalEstoque.toFixed(0)}</div><div class="mh">${S.estoque.length} produtos</div></div>
+      <div class="metric" style="--clr:${estoqueZero>0?'var(--red)':'var(--green)'}"><div class="ml">Itens zerados</div><div class="mv">${estoqueZero}</div><div class="mh">precisam repor</div></div>
+      <div class="metric" style="--clr:var(--amber)"><div class="ml">Estoque baixo</div><div class="mv">${estoqueBaixo}</div><div class="mh">≤ mínimo</div></div>
+      <div class="metric" style="--clr:var(--green)"><div class="ml">Receita do mês</div><div class="mv">R$ ${receitaMes.toFixed(0)}</div><div class="mh">${itensVendidosMes} itens vendidos</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid grid-3">
+        <div class="fi-group" style="margin:0"><label>Buscar</label><input class="fi" id="lj-busca" placeholder="Nome ou código" value="${filtroLojinha.busca}"/></div>
+        <div class="fi-group" style="margin:0"><label>Categoria</label>
+          <select class="fi" id="lj-cat">
+            <option value="todas">Todas</option>
+            ${categorias.map(c => `<option value="${c}" ${filtroLojinha.categoria===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fi-group" style="margin:0"><label>Estoque</label>
+          <select class="fi" id="lj-stock">
+            <option value="todos">Todos</option>
+            <option value="baixo" ${filtroLojinha.stockOnly==='baixo'?'selected':''}>Abaixo do mínimo</option>
+            <option value="zerado" ${filtroLojinha.stockOnly==='zerado'?'selected':''}>Zerado</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      ${lista.length === 0 ? `
+        <div class="empty">
+          <div class="empty-t">${S.estoque.length === 0 ? 'Nenhum produto cadastrado' : 'Nenhum produto bate os filtros'}</div>
+          ${S.estoque.length === 0 ? '<div class="empty-s">Comece adicionando os produtos da casa</div>' : ''}
+        </div>
+      ` : lista.map(p => {
+        const baixo = (p.estoque||0) <= (p.minimo||0);
+        const zerado = (p.estoque||0) === 0;
+        const corBg = zerado ? 'var(--red-bg)' : (baixo ? 'rgba(243,156,18,0.08)' : 'var(--glass)');
+        const corBd = zerado ? 'var(--red-bd)' : (baixo ? 'rgba(243,156,18,0.2)' : 'var(--border)');
+        return `
+        <div class="list-item" style="background:${corBg};border-color:${corBd}" onclick="window._app.openProdutoForm('${p.id}')">
+          <div class="li-avatar" style="background:${zerado?'var(--red-bg)':(baixo?'var(--amber-bg)':'var(--gold-bg)')};color:${zerado?'var(--red)':(baixo?'var(--amber)':'var(--gold)')};flex-direction:column;font-size:11px;line-height:1.1">
+            <div style="font-size:16px;font-weight:700">${p.estoque||0}</div>
+            <div style="font-size:9px;text-transform:uppercase">${p.minimo?'/'+p.minimo+' min':'no estoque'}</div>
+          </div>
+          <div class="li-main">
+            <div class="li-name">${p.nome||'—'}</div>
+            <div class="li-meta">
+              ${p.categoria ? `<span class="chip">${p.categoria}</span>` : ''}
+              ${p.codigo ? `<span style="color:var(--text3)">#${p.codigo}</span>` : ''}
+              <span><strong>R$ ${(p.preco||0).toFixed(2)}</strong></span>
+              ${zerado ? '<span class="chip chip-red">ZERADO</span>' : (baixo ? '<span class="chip chip-amber">baixo</span>' : '')}
+            </div>
+          </div>
+          <div class="li-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarProduto('${p.id}','entrada')">+ Entrada</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarProduto('${p.id}','saida')">− Saída</button>
+          </div>
+        </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  $('#lj-busca').oninput = e => { filtroLojinha.busca = e.target.value; renderLojinha(c); };
+  $('#lj-cat').onchange = e => { filtroLojinha.categoria = e.target.value; renderLojinha(c); };
+  $('#lj-stock').onchange = e => { filtroLojinha.stockOnly = e.target.value; renderLojinha(c); };
+}
+
+function openProdutoForm(id=null) {
+  const p = id ? S.estoque.find(x=>x.id===id) : null;
+  const isEdit = !!p;
+  const categorias = [...new Set(S.estoque.map(x => x.categoria).filter(Boolean))].sort();
+
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar produto':'Novo produto'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="pp-nome" value="${p?.nome||''}"/></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Código / SKU</label><input class="fi" id="pp-cod" value="${p?.codigo||''}" placeholder="opcional"/></div>
+        <div class="fi-group"><label>Categoria</label>
+          <input class="fi" id="pp-cat" value="${p?.categoria||''}" placeholder="ex: velas, ervas, guias" list="cats-list"/>
+          <datalist id="cats-list">${categorias.map(c=>`<option value="${c}"></option>`).join('')}</datalist>
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Preço (R$) *</label><input type="number" step="0.01" class="fi" id="pp-preco" value="${p?.preco||''}"/></div>
+        <div class="fi-group"><label>Estoque atual</label><input type="number" class="fi" id="pp-estoque" value="${p?.estoque||0}"/></div>
+      </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Estoque mínimo (alerta)</label><input type="number" class="fi" id="pp-min" value="${p?.minimo||0}"/></div>
+        <div class="fi-group"><label>Estoque inicial (ei)</label><input type="number" class="fi" id="pp-ei" value="${p?.ei||0}" placeholder="histórico — quanto tinha quando cadastrou"/></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="pp-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="pp-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#pp-save').onclick = async () => {
+    const nome = $('#pp-nome').value.trim();
+    if(!nome) { toast('Informe o nome','err'); return; }
+    const data = {
+      nome,
+      codigo: $('#pp-cod').value.trim(),
+      categoria: $('#pp-cat').value.trim(),
+      preco: parseFloat($('#pp-preco').value) || 0,
+      estoque: parseInt($('#pp-estoque').value) || 0,
+      minimo: parseInt($('#pp-min').value) || 0,
+      ei: parseInt($('#pp-ei').value) || 0
+    };
+    try {
+      if(isEdit) await updateDoc(doc(dbPvd,'fin_estoque',id), data);
+      else await addDoc(collection(dbPvd,'fin_estoque'), data);
+      toast(isEdit?'Produto atualizado':'Produto cadastrado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(isEdit) $('#pp-del').onclick = () => {
+    confirmar(`Excluir <strong>${p.nome}</strong>? O PDV não verá mais esse produto.`, async () => {
+      try { await deleteDoc(doc(dbPvd,'fin_estoque',id)); toast('Produto excluído','ok'); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+async function movimentarProduto(id, tipo) {
+  const p = S.estoque.find(x => x.id === id);
+  if(!p) return;
+  const label = tipo === 'entrada' ? 'Entrada (compra/reposição)' : 'Saída manual (sem venda no PDV)';
+  openModal(`
+    <div class="modal-h"><h3>${label} — ${p.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:14px">Estoque atual: <strong style="color:var(--text)">${p.estoque||0}</strong></div>
+      <div class="fi-group"><label>Quantidade *</label><input type="number" class="fi" id="mv-qtd" value="1" min="1" autofocus/></div>
+      <div class="fi-group"><label>Observação (opcional)</label><input class="fi" id="mv-obs" placeholder="ex: compra na loja X"/></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="mv-save">Confirmar ${tipo === 'entrada' ? 'entrada' : 'saída'}</button>
+    </div>
+  `);
+
+  $('#mv-save').onclick = async () => {
+    const qtd = parseInt($('#mv-qtd').value) || 0;
+    if(qtd <= 0) { toast('Quantidade inválida','err'); return; }
+    const delta = tipo === 'entrada' ? qtd : -qtd;
+    const novoEstoque = (p.estoque||0) + delta;
+    if(novoEstoque < 0) { toast('Estoque ficaria negativo','err'); return; }
+    try {
+      await updateDoc(doc(dbPvd,'fin_estoque',id), { estoque: novoEstoque });
+      toast(`${tipo === 'entrada' ? 'Entrada' : 'Saída'} registrada · estoque agora: ${novoEstoque}`,'ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
 // ── SOLICITAÇÕES (pedidos vindos do agendar.html público) ──────────────────
 function atualizarBadgeSolicitacoes() {
   const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').length;
@@ -3359,6 +3583,8 @@ window._app = {
   setEscTab,
   setAnalisePeriodo,
   openLojinhaEscalaForm,
+  openProdutoForm,
+  movimentarProduto,
   openAtendimentoForm,
   openConsulenteForm,
   toggleArquivarConsulente,
