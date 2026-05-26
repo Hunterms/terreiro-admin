@@ -1673,20 +1673,32 @@ function openEscalaForm(evId, escId='') {
     alocPreenchidas[a.funcao_id].push(a.filho_id);
   });
 
-  // Domingo: preferência pra quem mora perto (gira da manhã, evitar desgaste de quem mora longe)
+  // Domingo: preferência geral pra quem mora perto (gira da manhã)
   const ehDomingo = ev.data ? new Date(ev.data+'T00:00:00').getDay() === 0 : false;
 
+  // Detecta regra espacial pela função:
+  // - "antes" no nome → prefere mora_longe (eles chegam cedo, não precisam voltar)
+  // - "depois" no nome → prefere mora_perto (não pegam BR à noite)
+  // - domingo (geral) → prefere mora_perto
+  // - resto → sem preferência espacial
+  function tipoEspacial(fn) {
+    const n = (fn.nome||'').toLowerCase();
+    if(n.includes('antes')) return 'longe';
+    if(n.includes('depois')) return 'perto';
+    if(ehDomingo) return 'perto';
+    return null;
+  }
+
   // Gerador automático: pra cada função, escolhe N candidatos
-  // Critério: menos escalado nas últimas 8 semanas (rodízio justo) + mora_perto se domingo + random tiebreaker
+  // Critério: rodízio justo (menos escalado) + regra espacial + random tiebreaker
   function gerarSugestao(qtdPorFuncao=1) {
     const usados = new Set();
     const sug = {};
     funcoesAtivas.forEach(fn => {
+      // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
       let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
         ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
-        : filhosAtivos.filter(f => (f.postos||[]).includes(fn.id));
-      // Se nenhum filho tem essa função, expande pra todos os ativos
-      if(elegiveis.length === 0 && !fn.restrito_a_filhos) elegiveis = filhosAtivos;
+        : filhosAtivos;
       // Remove indisponíveis
       elegiveis = elegiveis.filter(f => {
         const d = indispMap[f.id];
@@ -1695,12 +1707,16 @@ function openEscalaForm(evId, escId='') {
         if(d.funcoes_indisponivel?.includes(fn.id)) return false;
         return true;
       });
-      // Ordena: menos escalado primeiro, depois mora_perto (se domingo), depois random
+      const tipoSp = tipoEspacial(fn);
+      // Ordena: menos escalado primeiro, depois regra espacial, depois random
       elegiveis.sort((a,b) => {
         const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
         if(ca !== cb) return ca - cb;
-        if(ehDomingo) {
+        if(tipoSp === 'perto') {
           const pa = a.mora_perto?1:0, pb = b.mora_perto?1:0;
+          if(pa !== pb) return pb - pa;
+        } else if(tipoSp === 'longe') {
+          const pa = a.mora_perto?0:1, pb = b.mora_perto?0:1;
           if(pa !== pb) return pb - pa;
         }
         return Math.random() - 0.5;
@@ -1728,39 +1744,43 @@ function openEscalaForm(evId, escId='') {
     <div class="modal-h"><h3>${esc?'Editar escala':'Criar escala'} — ${ev.nome||ev.titulo}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div style="color:var(--text3);font-size:13px;margin-bottom:14px">${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</div>
-      ${ehDomingo ? '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--green)">🏠 Gira de domingo — preferência pra quem mora perto. Os que moram perto aparecem primeiro (com badge verde).</div>' : ''}
+      ${ehDomingo ? '<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--green)">🏠 Gira de domingo — preferência pra quem mora perto pra não desgastar quem mora longe.</div>' : ''}
       ${funcoesAtivas.length === 0 ? '<div class="empty"><div class="empty-s">Nenhuma função cadastrada. Crie em Funções primeiro.</div></div>' : funcoesAtivas.map(fn => {
         const idDispLog = `e-${fn.id}`;
-        // se a função é restrita, só esses filhos. Senão, todos os ativos
+        // Função restrita → só os elegíveis do grupo. Senão, TODOS os ativos.
         let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
           ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
           : filhosAtivos;
-        // Domingo: ordena mora_perto primeiro
-        if(ehDomingo) {
-          elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
-        }
+        const tipoSp = tipoEspacial(fn);
+        // Ordena por regra espacial pra os preferidos aparecerem primeiro
+        if(tipoSp === 'perto') elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
+        else if(tipoSp === 'longe') elegiveis = [...elegiveis].sort((a,b) => (a.mora_perto?1:0) - (b.mora_perto?1:0));
         const restrita = fn.restrito_a_filhos && fn.restrito_a_filhos.length>0;
+        const dicaSp = tipoSp === 'perto' ? '<span style="font-size:11px;color:var(--text3);margin-left:6px">🏠 prefira mora perto</span>' : (tipoSp === 'longe' ? '<span style="font-size:11px;color:var(--text3);margin-left:6px">🏃 prefira mora longe</span>' : '');
         return `
         <div class="fi-group">
-          <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}</label>
+          <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}${dicaSp}</label>
           <div class="chips" id="${idDispLog}">
             ${elegiveis.length===0 ? '<span style="color:var(--text3);font-size:12px">Nenhum filho elegível pra essa função</span>' : elegiveis.map(f => {
               const sel = (alocPreenchidas[fn.id]||[]).includes(f.id);
               const indisp = indispMap[f.id];
               const indispDay = indisp && indisp.datas_indisponivel?.includes(ev.data);
               const indispFunc = indisp && indisp.funcoes_indisponivel?.includes(fn.id);
-              const naoTemPosto = !restrita && !(f.postos||[]).includes(fn.id);
               const disabled = indispDay || indispFunc;
-              const perto = ehDomingo && f.mora_perto;
-              const titleMsg = disabled ? (indispDay?'Indisponível esse dia':'Recusou essa função no mês') : (naoTemPosto?'Não tem essa função, mas pode escalar':(perto?'Mora perto · prefira pra domingo':''));
-              const cssClass = sel ? 'chip-gold' : (perto ? 'chip-green' : '');
-              return `<button type="button" class="chip ${cssClass}" title="${titleMsg}" style="${disabled?'opacity:.35;cursor:not-allowed':''} ${naoTemPosto&&!sel?'opacity:.5':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${perto?'🏠 ':''}${f.nome.split(' ')[0]}${naoTemPosto?'*':''}</button>`;
+              // Destaca conforme regra espacial
+              const destaca = tipoSp === 'perto' ? f.mora_perto : (tipoSp === 'longe' ? !f.mora_perto : false);
+              const titleMsg = disabled
+                ? (indispDay?'Indisponível esse dia':'Recusou essa função no mês')
+                : (destaca ? (tipoSp === 'perto' ? 'Mora perto · prioridade pra essa função' : 'Mora longe · prioridade pra essa função') : '');
+              const cssClass = sel ? 'chip-gold' : (destaca ? 'chip-green' : '');
+              const emoji = destaca ? (tipoSp === 'perto' ? '🏠 ' : '🏃 ') : '';
+              return `<button type="button" class="chip ${cssClass}" title="${titleMsg}" style="${disabled?'opacity:.35;cursor:not-allowed':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${emoji}${f.nome.split(' ')[0]}</button>`;
             }).join('')}
           </div>
         </div>
         `;
       }).join('')}
-      <div style="color:var(--text3);font-size:11px">* sem essa função no perfil · esmaecidos = indisponíveis no mês</div>
+      <div style="color:var(--text3);font-size:11px">esmaecidos = indisponíveis no mês · 🏠 mora perto · 🏃 mora longe</div>
     </div>
     <div class="modal-f">
       ${esc?'<button class="btn btn-danger" id="es-del">Excluir</button>':''}
