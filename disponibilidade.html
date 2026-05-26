@@ -68,6 +68,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 .disp-day.indisp::before{content:'✕';position:absolute;font-size:18px}
 .disp-day{position:relative}
 .disp-day.out{opacity:.2;cursor:default;background:transparent}
+.disp-day.importante{border-color:var(--gold);color:var(--gold);font-weight:700}
+.disp-day.importante::after{content:'';position:absolute;bottom:4px;width:5px;height:5px;border-radius:50%;background:var(--gold)}
+.disp-day.importante.indisp{border-color:var(--red-bd);color:var(--red)}
+.disp-day.importante.indisp::after{display:none}
 
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;padding:7px 12px;border-radius:14px;font-size:13px;font-weight:600;background:var(--glass2);color:var(--text2);border:1px solid var(--border);cursor:pointer;transition:all .12s;font-family:var(--font)}
@@ -352,21 +356,51 @@ function renderMes(m) {
   const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   const hoje = new Date().toISOString().slice(0,10);
 
+  // Calcula dias importantes desse mês (dia do evento + dia seguinte se requer limpeza)
+  const importantes = {};
+  (APP.eventos||[]).forEach(ev => {
+    if(!ev.data || ev.arquivado) return;
+    if(ev.data.slice(0,7) !== m && ev.data.slice(0,7) !== `${ano}-${pad(mes-1)}`) {
+      // Pode ser que evento do mês anterior tenha "dia seguinte" caindo nesse mês
+    }
+    const requerLimpeza = ev.requer_limpeza !== false;
+    if(ev.data.startsWith(`${ano}-${pad(mes)}`)) {
+      importantes[ev.data] = { ev, motivo: 'evento' };
+    }
+    // Dia seguinte (limpeza depois) se aplicável
+    if(requerLimpeza) {
+      const dt = new Date(ev.data + 'T00:00:00');
+      dt.setDate(dt.getDate() + 1);
+      const dSeguinte = dt.toISOString().slice(0,10);
+      if(dSeguinte.startsWith(`${ano}-${pad(mes)}`)) {
+        if(!importantes[dSeguinte]) importantes[dSeguinte] = { ev, motivo: 'seguinte' };
+      }
+    }
+  });
+
   let cells = '';
   for(let i=0; i<firstDow; i++) cells += `<div class="disp-day out"></div>`;
   for(let d=1; d<=daysInMonth; d++) {
     const dStr = `${ano}-${pad(mes)}-${pad(d)}`;
     const indisp = disp.datas_indisponivel?.includes(dStr);
     const passado = dStr < hoje;
-    cells += `<div class="disp-day ${indisp?'indisp':''} ${passado?'out':''}" data-d="${dStr}" data-m="${m}" ${passado?'data-out=1':''}>${indisp?'':d}</div>`;
+    const imp = importantes[dStr];
+    const importanteClass = imp ? 'importante' : '';
+    const titulo = imp ? (imp.motivo === 'evento' ? `${imp.ev.nome||'Evento'} — ${imp.ev.hora||''}` : `Limpeza depois de ${imp.ev.nome||'gira'}`) : '';
+    cells += `<div class="disp-day ${indisp?'indisp':''} ${passado?'out':''} ${importanteClass}" data-d="${dStr}" data-m="${m}" ${passado?'data-out=1':''} title="${titulo}">${indisp?'':d}</div>`;
   }
 
+  const qtdImportantes = Object.keys(importantes).length;
   const card = $(`#mes-${m}`);
   card.innerHTML = `
     <div class="mes-title">${nomeMes}</div>
-    <div class="disp-cal" style="margin-bottom:14px">
+    <div class="disp-cal" style="margin-bottom:8px">
       ${['D','S','T','Q','Q','S','S'].map(d=>`<div class="disp-head">${d}</div>`).join('')}
       ${cells}
+    </div>
+    <div style="font-size:11.5px;color:var(--text3);margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:10px;height:10px;border:2px solid var(--gold);border-radius:3px"></span>${qtdImportantes} dia${qtdImportantes===1?'':'s'} com gira/trabalho — atenção especial</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:10px;height:10px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:3px"></span>marcado como indisponível</span>
     </div>
     <div class="fi-group">
       <label>Funções que NÃO posso fazer esse mês</label>
