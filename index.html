@@ -3832,6 +3832,46 @@ function atualizarBadgeSolicitacoes() {
   else badge.style.display = 'none';
 }
 
+const METODO_PAG_LABEL = {
+  pix: '💳 PIX',
+  dinheiro: '💵 Dinheiro (no dia)',
+  cartao_credito: '💳 Crédito',
+  cartao_debito: '💳 Débito',
+  transferencia: '🏦 Transferência'
+};
+
+function telLimpoBR(tel) {
+  if(!tel) return '';
+  let d = String(tel).replace(/\D/g,'');
+  if(d.length === 10 || d.length === 11) d = '55' + d; // adiciona DDI se veio sem
+  return d;
+}
+
+function linkWaConfirmacao(s) {
+  const num = telLimpoBR(s.tel);
+  if(!num) return null;
+  const dataBr = s.data ? new Date(s.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '';
+  const valor = s.valor_proposto || 0;
+  const primeiroNome = (s.nome||'').split(' ')[0];
+  const metPag = METODO_PAG_LABEL[s.metodo_pagamento] || s.metodo_pagamento || '';
+  const linhas = [
+    `Oi ${primeiroNome}, é do Terreiro do Candieiro 🪷`,
+    '',
+    `Tô confirmando seu agendamento:`,
+    `🪷 ${s.servico_nome || 'Consulta'}`,
+    `📅 ${dataBr} às ${s.hora}`,
+    `📍 ${s.modalidade==='online'?'Online (mando o link mais perto da hora)':'Presencial · R. Angelo Vicentim 236, Barão Geraldo'}`,
+    `💰 R$ ${valor}${metPag?` · ${metPag.replace(/^[^A-Za-zÀ-ÿ]+/,'')}`:''}`
+  ];
+  if(s.metodo_pagamento === 'pix') {
+    linhas.push('', 'PIX: 19992494267 (Nando) — pode me mandar o comprovante por aqui pra eu confirmar.');
+  } else if(s.comprovante_anexado) {
+    linhas.push('', 'Você disse que tem o comprovante — pode me mandar por aqui?');
+  }
+  linhas.push('', 'Qualquer dúvida, é só me chamar.', 'Axé!');
+  return `https://wa.me/${num}?text=${encodeURIComponent(linhas.join('\n'))}`;
+}
+
 function renderSolicitacoes(c) {
   atualizarBadgeSolicitacoes();
   const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
@@ -3851,28 +3891,40 @@ function renderSolicitacoes(c) {
     ${pendentes.length === 0 ? '<div class="card"><div class="empty"><div class="empty-t">Nenhuma solicitação pendente</div><div class="empty-s">Quando alguém agendar pela página pública, aparece aqui.</div></div></div>' : `
       <div class="card" style="margin-bottom:14px">
         <div class="card-h"><div class="card-title">Pendentes (${pendentes.length})</div></div>
-        ${pendentes.map(s => `
-          <div class="list-item" style="border-color:var(--gold)">
+        ${pendentes.map(s => {
+          const waLink = linkWaConfirmacao(s);
+          const metPag = METODO_PAG_LABEL[s.metodo_pagamento] || s.metodo_pagamento || '';
+          return `
+          <div class="list-item" style="border-color:var(--gold);align-items:flex-start">
             <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);flex-direction:column;font-size:11px;line-height:1.2">
               <div style="font-weight:700;font-size:14px">${(s.data||'').slice(8,10)}</div>
               <div style="font-size:9px;text-transform:uppercase">${new Date((s.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
             </div>
             <div class="li-main">
-              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${s.hora}</span></div>
-              <div class="li-meta">
-                ${s.tel?`<span>📱 ${s.tel}</span>`:''}
-                ${s.email?`<span>✉️ ${s.email}</span>`:''}
-                <span>R$ ${s.valor_proposto||0}</span>
-                <span style="font-size:11px;color:var(--text3)">${fmt.rel(s.criadoEm)}</span>
+              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${s.hora} · ${s.duracao_min||60} min</span></div>
+              <div class="li-meta" style="margin-top:4px">
+                <strong style="color:var(--text)">${s.servico_nome || 'Consulta'}</strong>
+                <span class="chip ${s.modalidade==='online'?'chip-blue':'chip-green'}">${s.modalidade==='online'?'online':'presencial'}</span>
+                <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
               </div>
-              ${s.observacao?`<div style="margin-top:6px;font-size:12.5px;color:var(--text2);font-style:italic">"${s.observacao}"</div>`:''}
+              <div class="li-meta" style="margin-top:6px">
+                ${s.tel?`<span>📱 ${s.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
+                ${s.email?`<span>✉️ ${s.email}</span>`:''}
+              </div>
+              <div class="li-meta" style="margin-top:6px">
+                ${metPag?`<span>${metPag}</span>`:''}
+                ${s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
+                <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
+              </div>
+              ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${s.observacao}"</div>`:''}
             </div>
-            <div class="li-actions">
-              <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${s.id}')">Rejeitar</button>
+            <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:140px">
+              ${waLink ? `<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
               <button class="btn btn-sm btn-primary" onclick="window._app.aprovarSolicitacao('${s.id}')">Aprovar</button>
+              <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${s.id}')">Rejeitar</button>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `}
 
