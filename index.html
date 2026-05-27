@@ -4096,18 +4096,50 @@ async function renderConfigAgendamento(c) {
     if(snap.exists()) dados = snap.data();
   } catch(e) { /* doc novo */ }
   const cfg = {
-    dias_atendimento: [2,3,4,5,6],
-    hora_inicio: '10:00', hora_fim: '18:00',
-    duracao_slot: 60, valor_padrao: 150,
     whatsapp: '5519992494267',
     texto_intro: '',
     antecedencia_min_horas: 24,
     ativa: true,
+    // Estrutura nova: janelas por dia da semana ('0'=dom .. '6'=sáb)
+    horarios_semana: {
+      '0': [], '1': [], '2': [{inicio:'10:00',fim:'18:00'}],
+      '3': [{inicio:'10:00',fim:'18:00'}], '4': [{inicio:'10:00',fim:'18:00'}],
+      '5': [{inicio:'10:00',fim:'18:00'}], '6': [{inicio:'10:00',fim:'18:00'}]
+    },
     ...dados
   };
+  // Migração: se tem `dias_atendimento` + `hora_inicio`/`hora_fim` mas não tem `horarios_semana` completo
+  if(dados.dias_atendimento && dados.hora_inicio && dados.hora_fim && (!dados.horarios_semana || Object.keys(dados.horarios_semana).length === 0)) {
+    cfg.horarios_semana = {};
+    for(let i=0; i<7; i++) {
+      cfg.horarios_semana[String(i)] = dados.dias_atendimento.includes(i) ? [{ inicio: dados.hora_inicio, fim: dados.hora_fim }] : [];
+    }
+  }
   configAgCarregado = cfg;
 
   const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+  const renderDia = (i) => {
+    const janelas = (cfg.horarios_semana[String(i)] || []);
+    return `
+      <div class="card" style="margin-bottom:10px;padding:14px" data-dia="${i}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:700;font-size:14px">${diasLabel[i]}</div>
+          <button type="button" class="btn btn-sm" onclick="window._app.addJanelaDia(${i})">+ Janela</button>
+        </div>
+        <div id="janelas-${i}">
+          ${janelas.length === 0 ? '<div style="font-size:12.5px;color:var(--text3);font-style:italic">Sem atendimento</div>' : janelas.map((j,idx) => `
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px" data-j="${idx}">
+              <input type="time" class="fi" value="${j.inicio}" data-campo="inicio" style="width:auto"/>
+              <span style="color:var(--text3)">até</span>
+              <input type="time" class="fi" value="${j.fim}" data-campo="fim" style="width:auto"/>
+              <button type="button" class="btn btn-sm btn-danger" onclick="window._app.delJanelaDia(${i},${idx})">×</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  };
 
   c.innerHTML = `
     <div class="page-head">
@@ -4116,56 +4148,54 @@ async function renderConfigAgendamento(c) {
         <div class="page-sub">Define o que aparece em <code>agendar.html</code></div>
       </div>
       <div class="page-actions">
+        <a class="btn" href="servicos" onclick="event.preventDefault();window._app.navigate('servicos')">⚙️ Gerenciar serviços</a>
         <a class="btn" href="agendar.html" target="_blank">↗ Abrir página pública</a>
       </div>
     </div>
 
-    <div class="card" style="max-width:720px">
+    <div class="card" style="max-width:780px;margin-bottom:14px">
       <div class="fi-group">
         <label class="checkbox-row">
           <input type="checkbox" id="cf-ativa" ${cfg.ativa?'checked':''}/>
           Agendamentos ativos (desmarcar pra fechar temporariamente)
         </label>
       </div>
-      <div class="fi-group">
-        <label>Dias de atendimento</label>
-        <div class="chips">
-          ${diasLabel.map((lbl,i) => `
-            <button type="button" class="chip ${cfg.dias_atendimento.includes(i)?'chip-gold':''}" data-d="${i}" onclick="this.classList.toggle('chip-gold')">${lbl}</button>
-          `).join('')}
-        </div>
-      </div>
-      <div class="row-2">
-        <div class="fi-group"><label>Hora início</label><input type="time" class="fi" id="cf-ini" value="${cfg.hora_inicio}"/></div>
-        <div class="fi-group"><label>Hora fim</label><input type="time" class="fi" id="cf-fim" value="${cfg.hora_fim}"/></div>
-      </div>
-      <div class="row-2">
-        <div class="fi-group"><label>Duração de cada slot (min)</label><input type="number" class="fi" id="cf-dur" value="${cfg.duracao_slot}" min="30" step="15"/></div>
-        <div class="fi-group"><label>Valor padrão (R$)</label><input type="number" class="fi" id="cf-val" value="${cfg.valor_padrao}" min="0" step="10"/></div>
-      </div>
       <div class="row-2">
         <div class="fi-group"><label>Antecedência mínima (horas)</label><input type="number" class="fi" id="cf-ant" value="${cfg.antecedencia_min_horas}" min="0"/></div>
         <div class="fi-group"><label>WhatsApp (com DDI)</label><input class="fi" id="cf-wpp" value="${cfg.whatsapp}" placeholder="5519999999999"/></div>
       </div>
       <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
-      <div style="display:flex;justify-content:flex-end;margin-top:8px">
-        <button class="btn btn-primary" id="cf-save">Salvar configuração</button>
-      </div>
+    </div>
+
+    <div style="max-width:780px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">Horários disponíveis por dia da semana</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Cada dia pode ter várias janelas (ex: manhã + tarde). Os slots são calculados pela duração do serviço escolhido pelo cliente.</div>
+      ${[2,3,4,5,6,0,1].map(renderDia).join('')}
+    </div>
+
+    <div style="max-width:780px;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" id="cf-save">Salvar configuração</button>
     </div>
   `;
 
   $('#cf-save').onclick = async () => {
-    const dias = Array.from(document.querySelectorAll('.chip.chip-gold[data-d]')).map(b => parseInt(b.dataset.d));
+    // Lê janelas atuais do DOM
+    const horarios_semana = {};
+    for(let i=0; i<7; i++) {
+      const cont = document.querySelector(`#janelas-${i}`);
+      if(!cont) { horarios_semana[String(i)] = []; continue; }
+      const janelas = Array.from(cont.querySelectorAll('[data-j]')).map(div => ({
+        inicio: div.querySelector('[data-campo=inicio]').value,
+        fim: div.querySelector('[data-campo=fim]').value
+      })).filter(j => j.inicio && j.fim);
+      horarios_semana[String(i)] = janelas;
+    }
     const payload = {
       ativa: $('#cf-ativa').checked,
-      dias_atendimento: dias,
-      hora_inicio: $('#cf-ini').value,
-      hora_fim: $('#cf-fim').value,
-      duracao_slot: parseInt($('#cf-dur').value) || 60,
-      valor_padrao: parseFloat($('#cf-val').value) || 0,
       antecedencia_min_horas: parseInt($('#cf-ant').value) || 0,
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       texto_intro: $('#cf-intro').value.trim() || null,
+      horarios_semana,
       atualizadoEm: serverTimestamp()
     };
     try {
@@ -4173,6 +4203,35 @@ async function renderConfigAgendamento(c) {
       toast('Configuração salva','ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
   };
+}
+
+// Helpers pra config-agendamento gerenciar janelas no DOM
+function addJanelaDia(i) {
+  const cont = document.querySelector(`#janelas-${i}`);
+  if(!cont) return;
+  const idx = cont.querySelectorAll('[data-j]').length;
+  // Remove "Sem atendimento" placeholder
+  if(cont.querySelector('div[style*="italic"]')) cont.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  div.setAttribute('data-j', idx);
+  div.innerHTML = `
+    <input type="time" class="fi" value="10:00" data-campo="inicio" style="width:auto"/>
+    <span style="color:var(--text3)">até</span>
+    <input type="time" class="fi" value="18:00" data-campo="fim" style="width:auto"/>
+    <button type="button" class="btn btn-sm btn-danger" onclick="window._app.delJanelaDia(${i},${idx})">×</button>
+  `;
+  cont.appendChild(div);
+}
+
+function delJanelaDia(i, idx) {
+  const cont = document.querySelector(`#janelas-${i}`);
+  if(!cont) return;
+  const el = cont.querySelector(`[data-j="${idx}"]`);
+  if(el) el.remove();
+  if(cont.querySelectorAll('[data-j]').length === 0) {
+    cont.innerHTML = '<div style="font-size:12.5px;color:var(--text3);font-style:italic">Sem atendimento</div>';
+  }
 }
 
 // ── VIEWS DO FILHO ─────────────────────────────────────────────────────────
@@ -4424,6 +4483,8 @@ window._app = {
   buscarGcalEventos,
   openServicoForm,
   seedServicos,
+  addJanelaDia,
+  delJanelaDia,
   openEventoForm,
   openEscalaForm,
   setEscTab,
