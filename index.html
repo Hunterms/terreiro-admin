@@ -4530,11 +4530,48 @@ async function renderConfigAgendamento(c) {
       ${[2,3,4,5,6,0,1].map(renderDia).join('')}
     </div>
 
-    <div style="max-width:780px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <button class="btn" id="cf-bootstrap-slots" title="Popula pub_slots_ocupados com atendimentos/solicitações existentes. Roda 1x após instalar rules.">🔁 Resincronizar slots públicos</button>
+    <div style="max-width:780px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="cf-bootstrap-slots" title="Popula pub_slots_ocupados com atendimentos/solicitações existentes. Roda 1x após instalar rules.">🔁 Resincronizar slots públicos</button>
+        <button class="btn" id="cf-import-gcal" title="Importa eventos do Google Calendar pra bloquear horários no agendar.html. Pra horários antigos que não existem como atendimento no admin." ${gcalIsConnected()?'':'disabled style="opacity:.5;cursor:not-allowed"'}>📅 Importar do Google Calendar</button>
+      </div>
       <button class="btn btn-primary" id="cf-save">Salvar configuração</button>
     </div>
+    ${!gcalIsConnected() ? '<div style="max-width:780px;font-size:12px;color:var(--text3);margin-top:8px">Conecte o Google Calendar (em Atendimentos do Pai → Agenda) pra liberar a importação.</div>' : ''}
   `;
+
+  $('#cf-import-gcal').onclick = async () => {
+    if(!gcalIsConnected()) { toast('Conecte o Google Calendar primeiro','err'); return; }
+    confirmar('Vai ler os eventos do <strong>Google Calendar</strong> dos próximos 90 dias e bloquear os horários no agendar.html. Pula eventos que já têm atendimento vinculado no admin.', async () => {
+      const btn = $('#cf-import-gcal');
+      const txtOrig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Lendo calendar...';
+      try {
+        const eventos = await gcalListEvents(90);
+        // IDs do gcal que já têm atendimento vinculado (não duplica)
+        const jaVinculados = new Set(S.atendimentos.map(a => a.google_event_id).filter(Boolean));
+        let c = 0, pulados = 0;
+        for(const ev of eventos) {
+          if(jaVinculados.has(ev.id)) { pulados++; continue; }
+          // só eventos com horário (não all-day)
+          if(!ev.start?.dateTime || !ev.end?.dateTime) { pulados++; continue; }
+          const start = new Date(ev.start.dateTime);
+          const end = new Date(ev.end.dateTime);
+          const dur = Math.max(15, Math.round((end - start) / 60000));
+          const data = start.toLocaleDateString('en-CA'); // YYYY-MM-DD em fuso local
+          const hora = `${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`;
+          await setDoc(doc(dbPvd,'pub_slots_ocupados','gcal_'+ev.id), {
+            data, hora, dur,
+            fonte: 'gcal_externo',
+            atualizadoEm: serverTimestamp()
+          });
+          c++;
+        }
+        toast(`${c} eventos do calendar importados${pulados?` · ${pulados} pulados`:''}`,'ok');
+      } catch(e) { toast('Erro: '+e.message,'err'); }
+      finally { btn.disabled = false; btn.textContent = txtOrig; }
+    });
+  };
 
   $('#cf-bootstrap-slots').onclick = async () => {
     confirmar('Vai popular <strong>pub_slots_ocupados</strong> com todos os atendimentos não-cancelados e solicitações pendentes a partir de hoje. Rode uma vez após instalar as rules.', async () => {
