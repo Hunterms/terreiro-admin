@@ -181,7 +181,7 @@ footer a{color:var(--gold);text-decoration:none}
 <script type="module">
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 
 const cfg = {
@@ -285,22 +285,14 @@ async function carregarOcupados() {
   const limite = new Date(); limite.setMonth(hoje.getMonth() + 3);
   const inicio = hoje.toISOString().slice(0,10);
   const fim = limite.toISOString().slice(0,10);
+  // Lê do espelho público (sem PII) — admin sincroniza atendimentos/solicitações aqui
   try {
-    const q1 = query(collection(db,'adm_atendimentos'), where('data','>=',inicio), where('data','<=',fim));
+    const q1 = query(collection(db,'pub_slots_ocupados'), where('data','>=',inicio), where('data','<=',fim));
     (await getDocs(q1)).forEach(d => {
       const a = d.data();
-      if(a.status_atendimento === 'cancelado') return;
-      marcarOcupado(a.data, a.hora, a.duracao_min || 60);
+      marcarOcupado(a.data, a.hora, a.dur || 60);
     });
-  } catch(e) {}
-  try {
-    const q2 = query(collection(db,'adm_solicitacoes'), where('data','>=',inicio), where('data','<=',fim));
-    (await getDocs(q2)).forEach(d => {
-      const a = d.data();
-      if(a.status === 'rejeitada' || a.status === 'cancelada') return;
-      marcarOcupado(a.data, a.hora, a.duracao_min || 60);
-    });
-  } catch(e) {}
+  } catch(e) { console.warn('Erro carregar slots:', e); }
 }
 
 function marcarOcupado(data, hora, dur) {
@@ -703,7 +695,7 @@ function abrirModalDados() {
     try {
       // NÃO salvamos o arquivo do comprovante no banco (decisão: floda storage).
       // Apenas o flag "anexou" pra admin saber que cliente vai mandar via WhatsApp.
-      await addDoc(collection(db,'adm_solicitacoes'), {
+      const solRef = await addDoc(collection(db,'adm_solicitacoes'), {
         nome, tel, email: email||null,
         observacao: obs,
         data: APP.dataSel,
@@ -720,6 +712,16 @@ function abrirModalDados() {
         origem: 'agendar_publico',
         criadoEm: serverTimestamp()
       });
+      // Espelha no pub_slots_ocupados (sem PII) pra outros agendamentos verem ocupado
+      try {
+        await setDoc(doc(db,'pub_slots_ocupados','sol_'+solRef.id), {
+          data: APP.dataSel,
+          hora: APP.horaSel,
+          dur: APP.servico.duracao_min || 60,
+          fonte: 'solicitacao',
+          atualizadoEm: serverTimestamp()
+        });
+      } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
       mostrarSucesso(nome, !!comprovFile);
     } catch(e) {

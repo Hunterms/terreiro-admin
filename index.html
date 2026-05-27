@@ -3117,6 +3117,12 @@ function openAtendimentoForm(id=null) {
         const ref = await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
         docId = ref.id;
       }
+      // Sync slot público (sem PII) — cancelado vira delete, resto vira upsert
+      if(stAt === 'cancelado') {
+        await delSlotPub('atend_'+docId);
+      } else {
+        await syncSlotPub('atend_'+docId, payload.data, payload.hora, payload.duracao_min, 'atendimento');
+      }
       // se foi marcado como realizado, atualiza consulente (ultima_vez, qtd)
       if(stAt === 'realizado' && (!a || a.status_atendimento !== 'realizado')) {
         const novosAtends = (cons.qtd_atendimentos||0) + 1;
@@ -3150,7 +3156,9 @@ function openAtendimentoForm(id=null) {
     confirmar('Excluir este atendimento?', async () => {
       try {
         if(gcalIsConnected() && a?.google_event_id) await gcalDeleteEvent(a.google_event_id);
-        await deleteDoc(doc(dbPvd,'adm_atendimentos',id)); toast('Atendimento excluído','ok');
+        await deleteDoc(doc(dbPvd,'adm_atendimentos',id));
+        await delSlotPub('atend_'+id);
+        toast('Atendimento excluído','ok');
       }
       catch(e) { toast('Erro: '+e.message,'err'); }
     });
@@ -3823,6 +3831,23 @@ async function movimentarDespensa(id, tipo) {
   };
 }
 
+// ── SLOTS PÚBLICOS (espelho sem PII pro agendar.html) ─────────────────────
+// Mantém pub_slots_ocupados/{atend_<id>|sol_<id>} com só {data,hora,dur,fonte}.
+// O agendar.html lê DAQUI em vez de adm_atendimentos/adm_solicitacoes — assim
+// fechamos a leitura pública dessas collections que têm PII (nome, tel, valor).
+async function syncSlotPub(slotId, data, hora, dur, fonte) {
+  if(!data || !hora) return;
+  try {
+    await setDoc(doc(dbPvd,'pub_slots_ocupados', slotId), {
+      data, hora, dur: dur||60, fonte: fonte||'atendimento', atualizadoEm: serverTimestamp()
+    });
+  } catch(e) { console.warn('syncSlotPub falhou:', e); }
+}
+async function delSlotPub(slotId) {
+  try { await deleteDoc(doc(dbPvd,'pub_slots_ocupados', slotId)); }
+  catch(e) { console.warn('delSlotPub falhou:', e); }
+}
+
 // ── SOLICITAÇÕES (pedidos vindos do agendar.html público) ──────────────────
 function atualizarBadgeSolicitacoes() {
   const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').length;
@@ -3978,7 +4003,7 @@ async function aprovarSolicitacao(id) {
         consId = ref.id;
       }
       // 3. Cria atendimento agendado
-      await addDoc(collection(dbPvd,'adm_atendimentos'), {
+      const atendRef = await addDoc(collection(dbPvd,'adm_atendimentos'), {
         consulente_id: consId,
         consulente_nome: s.nome,
         consulente_tel: s.tel || '',
@@ -3996,7 +4021,10 @@ async function aprovarSolicitacao(id) {
         criadoEm: serverTimestamp(),
         atualizadoEm: serverTimestamp()
       });
-      // 4. Marca solicitação como aprovada
+      // 4. Transfere slot público: sol_ → atend_
+      await syncSlotPub('atend_'+atendRef.id, s.data, s.hora, s.duracao_min||60, 'atendimento');
+      await delSlotPub('sol_'+id);
+      // 5. Marca solicitação como aprovada
       await updateDoc(doc(dbPvd,'adm_solicitacoes',id), {
         status: 'aprovada',
         atualizadoEm: serverTimestamp()
@@ -4012,6 +4040,7 @@ async function rejeitarSolicitacao(id) {
   confirmar(`Rejeitar pedido de <strong>${s.nome}</strong>? O slot fica livre de novo.`, async () => {
     try {
       await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { status: 'rejeitada', atualizadoEm: serverTimestamp() });
+      await delSlotPub('sol_'+id);
       toast('Rejeitada','ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
   });
@@ -4227,10 +4256,43 @@ async function renderConfigAgendamento(c) {
       ${[2,3,4,5,6,0,1].map(renderDia).join('')}
     </div>
 
-    <div style="max-width:780px;display:flex;justify-content:flex-end">
+    <div style="max-width:780px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <button class="btn" id="cf-bootstrap-slots" title="Popula pub_slots_ocupados com atendimentos/solicitações existentes. Roda 1x após instalar rules.">🔁 Resincronizar slots públicos</button>
       <button class="btn btn-primary" id="cf-save">Salvar configuração</button>
     </div>
   `;
+
+  $('#cf-bootstrap-slots').onclick = async () => {
+    confirmar('Vai popular <strong>pub_slots_ocupados</strong> com todos os atendimentos não-cancelados e solicitações pendentes a partir de hoje. Rode uma vez após instalar as rules.', async () => {
+      try {
+        const hoje = new Date().toISOString().slice(0,10);
+        let c = 0;
+        const snapA = await getDocs(collection(dbPvd,'adm_atendimentos'));
+        for(const d of snapA.docs) {
+          const a = d.data();
+          if(!a.data || a.data < hoje) continue;
+          if(a.status_atendimento === 'cancelado') continue;
+          await setDoc(doc(dbPvd,'pub_slots_ocupados','atend_'+d.id), {
+            data: a.data, hora: a.hora, dur: a.duracao_min||60,
+            fonte: 'atendimento', atualizadoEm: serverTimestamp()
+          });
+          c++;
+        }
+        const snapS = await getDocs(collection(dbPvd,'adm_solicitacoes'));
+        for(const d of snapS.docs) {
+          const s = d.data();
+          if(!s.data || s.data < hoje) continue;
+          if(s.status !== 'pendente') continue;
+          await setDoc(doc(dbPvd,'pub_slots_ocupados','sol_'+d.id), {
+            data: s.data, hora: s.hora, dur: s.duracao_min||60,
+            fonte: 'solicitacao', atualizadoEm: serverTimestamp()
+          });
+          c++;
+        }
+        toast(`${c} slots sincronizados`,'ok');
+      } catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
 
   $('#cf-save').onclick = async () => {
     // Lê janelas atuais do DOM
