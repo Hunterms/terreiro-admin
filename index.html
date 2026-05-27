@@ -2069,11 +2069,19 @@ let escTab = 'gira';
 let analisePeriodo = 'mes'; // 'mes' | 'bi' | 'tri'
 
 function renderEscalas(c) {
+  const hoje = new Date().toISOString().slice(0,10);
+  const futurosComEscala = S.eventos
+    .filter(e => e.data >= hoje && !e.arquivado)
+    .filter(ev => S.escalas.some(es => es.evento_id === ev.id));
+
   c.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-title">Escalas</div>
         <div class="page-sub">${S.escalas.length} escala${S.escalas.length===1?'':'s'} publicada${S.escalas.length===1?'':'s'}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn" id="pdf-escalas-top" ${futurosComEscala.length===0?'disabled style="opacity:.5;cursor:not-allowed"':''}>📄 PDF pra mandar no grupo</button>
       </div>
     </div>
 
@@ -2084,6 +2092,10 @@ function renderEscalas(c) {
 
     <div id="esc-body"></div>
   `;
+
+  if(futurosComEscala.length > 0) {
+    $('#pdf-escalas-top').onclick = () => gerarPdfEscalas(futurosComEscala);
+  }
 
   if(escTab === 'gira') renderEscalasGira();
   else if(escTab === 'analise') renderEscalasAnalise();
@@ -2261,7 +2273,6 @@ function renderEscalasGira() {
     .slice(0,30);
   // semEscala pra auto-gerar: exclui festas (ficam pra v2)
   const semEscala = futuros.filter(ev => !S.escalas.some(es => es.evento_id === ev.id) && !ehFesta(ev));
-  const comEscala = futuros.filter(ev => S.escalas.some(es => es.evento_id === ev.id));
 
   body.innerHTML = `
     ${semEscala.length > 0 ? `
@@ -2274,18 +2285,6 @@ function renderEscalasGira() {
           Cria escalas automáticas pros eventos sem escala dos próximos 30 dias, respeitando rodízio + mora perto/longe por função. Você revisa cada uma depois.
         </p>
         <button class="btn btn-primary" id="ge-batch">Gerar ${semEscala.length} escala${semEscala.length===1?'':'s'} pendente${semEscala.length===1?'':'s'}</button>
-      </div>
-    `:''}
-    ${comEscala.length > 0 ? `
-      <div class="card" style="margin-bottom:14px">
-        <div class="card-h">
-          <div class="card-title">📄 PDF pra mandar no grupo</div>
-          <div style="font-size:13px;color:var(--text3)">${comEscala.length} evento${comEscala.length===1?'':'s'} com escala</div>
-        </div>
-        <p style="font-size:13.5px;color:var(--text2);line-height:1.5;margin-bottom:14px">
-          Gera um PDF com as escalas de <strong>limpeza e lojinha</strong> das próximas giras. Compartilhe no WhatsApp do grupo dos filhos.
-        </p>
-        <button class="btn" id="pdf-escalas">📄 Gerar PDF</button>
       </div>
     `:''}
     <div class="card">
@@ -2313,12 +2312,12 @@ function renderEscalasGira() {
   `;
 
   if(semEscala.length > 0) $('#ge-batch').onclick = () => gerarEscalasEmLote(semEscala);
-  if(comEscala.length > 0) $('#pdf-escalas').onclick = () => gerarPdfEscalas(comEscala);
 }
 
 // ── PDF de escalas (limpeza + lojinha) pra compartilhar no grupo ──────────
 async function gerarPdfEscalas(eventos) {
-  const btn = $('#pdf-escalas');
+  const btn = $('#pdf-escalas-top');
+  const txtOrig = btn?.textContent || '📄 PDF pra mandar no grupo';
   if(btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   try {
     const mod = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
@@ -2329,99 +2328,114 @@ async function gerarPdfEscalas(eventos) {
 
     // ── Cabeçalho ─────────────────────────────────────────────────────
     pdf.setFont('helvetica','bold').setFontSize(18).setTextColor(20,20,20);
-    pdf.text('Escalas — Terreiro do Candieiro', M, y);
+    pdf.text('Escala dos próximos trabalhos', M, y);
     y += 6;
     pdf.setFont('helvetica','normal').setFontSize(9).setTextColor(120);
     const agora = new Date();
     pdf.text(
-      `Limpeza e lojinha · gerado em ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`,
+      `Terreiro do Candieiro · gerada em ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`,
       M, y
     );
     y += 4;
     pdf.setDrawColor(212,168,67).setLineWidth(0.6);
     pdf.line(M, y, W-M, y);
-    y += 7;
+    y += 8;
     pdf.setTextColor(20);
 
-    // ── Por evento ────────────────────────────────────────────────────
+    // ── Coleta todas alocações futuras agrupadas POR FUNÇÃO ───────────
+    // Estrutura: { fnNome: [ {ev, filhoNome}, ... ] }
+    const porFn = {};
     const ordenados = [...eventos].sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
 
     for(const ev of ordenados) {
       const escalas = S.escalas.filter(es => es.evento_id === ev.id);
       const alocs = escalas.flatMap(e => e.alocacoes || []);
-
-      // Filtra só limpeza + lojinha
-      const alocsRelevantes = alocs.filter(a => {
+      for(const a of alocs) {
         const fn = S.funcoes.find(f => f.id === a.funcao_id);
-        const nome = (fn?.nome||'').toLowerCase();
-        return nome.includes('limpeza') || nome.includes('lojinha');
-      });
-
-      if(alocsRelevantes.length === 0) continue; // pula eventos sem limpeza/lojinha
-
-      // quebra de página se precisa
-      if(y > H - 60) { pdf.addPage(); y = 18; }
-
-      // Título do evento
-      pdf.setFont('helvetica','bold').setFontSize(13).setTextColor(20);
-      const nomeEv = (ev.nome || ev.titulo || 'Gira').toString();
-      pdf.text(nomeEv, M, y);
-      y += 5;
-      pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(212,168,67);
-      const dataBr = new Date(ev.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
-      const dataCap = dataBr.charAt(0).toUpperCase() + dataBr.slice(1);
-      pdf.text(`${dataCap} · ${ev.hora||'—'}`, M, y);
-      y += 6;
-      pdf.setTextColor(20);
-
-      // Agrupa por função
-      const porFn = {};
-      alocsRelevantes.forEach(a => {
-        const fn = S.funcoes.find(f => f.id === a.funcao_id);
-        const key = fn?.nome || 'Outros';
-        if(!porFn[key]) porFn[key] = [];
-        porFn[key].push(a);
-      });
-
-      // Ordem: Limpeza antes → Limpeza depois → Lojinha → outros
-      const ordemFn = Object.keys(porFn).sort((a,b) => {
-        const ord = nm => {
-          const n = nm.toLowerCase();
-          if(n.includes('antes')) return 1;
-          if(n.includes('depois')) return 2;
-          if(n.includes('lojinha')) return 3;
-          return 4;
-        };
-        return ord(a) - ord(b);
-      });
-
-      for(const fnNome of ordemFn) {
-        if(y > H - 25) { pdf.addPage(); y = 18; }
-        pdf.setFont('helvetica','bold').setFontSize(10.5).setTextColor(60,60,60);
-        pdf.text(fnNome, M+2, y);
-        y += 4.5;
-        pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(20);
-        for(const a of porFn[fnNome]) {
-          if(y > H - 18) { pdf.addPage(); y = 18; }
-          const filho = S.filhos.find(f => f.id === a.filho_id);
-          const nome = filho?.nome || '(filho removido)';
-          pdf.text('• ' + nome, M+5, y);
-          y += 4.5;
-        }
-        y += 1;
+        if(!fn) continue;
+        const fnNome = fn.nome;
+        if(!porFn[fnNome]) porFn[fnNome] = [];
+        const filho = S.filhos.find(f => f.id === a.filho_id);
+        porFn[fnNome].push({ ev, filhoNome: filho?.nome || '(filho removido)' });
       }
-
-      // separador entre eventos
-      y += 3;
-      pdf.setDrawColor(230).setLineWidth(0.2);
-      pdf.line(M, y, W-M, y);
-      y += 6;
     }
 
-    // Avisa se ninguém tinha limpeza/lojinha
-    if(y === 18+6+7) { // só o header foi escrito
-      pdf.setFont('helvetica','italic').setFontSize(10).setTextColor(120);
-      pdf.text('Nenhuma escala de limpeza ou lojinha nas próximas giras.', M, 30);
+    // Ordem das funções: Limpeza antes → Limpeza depois → Lojinha → resto alfabético
+    const nomesFns = Object.keys(porFn).sort((a,b) => {
+      const ord = nm => {
+        const n = nm.toLowerCase();
+        if(n.includes('antes')) return 1;
+        if(n.includes('depois')) return 2;
+        if(n.includes('lojinha')) return 3;
+        if(n.includes('curimba')) return 4;
+        if(n.includes('atend')) return 5;
+        return 6;
+      };
+      const da = ord(a), db = ord(b);
+      return da !== db ? da - db : a.localeCompare(b);
+    });
+
+    // ── Por função, listar todos os trabalhos ────────────────────────
+    for(const fnNome of nomesFns) {
+      const entries = porFn[fnNome];
+      // estima altura mínima da seção (cabeçalho + 1 linha) pra quebra de página
+      if(y > H - 30) { pdf.addPage(); y = 18; }
+
+      // Cabeçalho da função (faixa dourada clarinha)
+      pdf.setFillColor(252,246,232);
+      pdf.rect(M-2, y-5, W-(M*2)+4, 8, 'F');
+      pdf.setFont('helvetica','bold').setFontSize(13).setTextColor(20,20,20);
+      pdf.text(fnNome, M, y);
+      pdf.setFont('helvetica','normal').setFontSize(9).setTextColor(140);
+      pdf.text(`${entries.length} plantã${entries.length===1?'o':'os'}`, W-M, y, { align:'right' });
+      y += 8;
+      pdf.setTextColor(20);
+
+      // Agrupa entries por evento dentro da função
+      const porEv = new Map();
+      for(const e of entries) {
+        const k = e.ev.id;
+        if(!porEv.has(k)) porEv.set(k, { ev: e.ev, nomes: [] });
+        porEv.get(k).nomes.push(e.filhoNome);
+      }
+
+      for(const { ev, nomes } of porEv.values()) {
+        if(y > H - 18) { pdf.addPage(); y = 18; }
+        // Linha do evento
+        const dataObj = new Date(ev.data+'T00:00:00');
+        const dia = String(dataObj.getDate()).padStart(2,'0');
+        const mes = String(dataObj.getMonth()+1).padStart(2,'0');
+        const dowAb = ['dom','seg','ter','qua','qui','sex','sáb'][dataObj.getDay()];
+        const dataStr = `${dia}/${mes} ${dowAb}`;
+        const evNome = (ev.nome || ev.titulo || 'Gira').toString();
+        const horaStr = ev.hora || '';
+
+        // Coluna 1: data + evento + hora (font:bold gold para data)
+        pdf.setFont('helvetica','bold').setFontSize(10).setTextColor(212,168,67);
+        pdf.text(dataStr, M, y);
+        pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(40,40,40);
+        const evTxt = `${evNome}${horaStr?` · ${horaStr}`:''}`;
+        pdf.text(evTxt, M+22, y);
+        y += 4.5;
+
+        // Linha 2: nomes
+        pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(20);
+        const nomesStr = nomes.join(' · ');
+        const linhas = pdf.splitTextToSize(nomesStr, W-(M*2)-6);
+        for(const ln of linhas) {
+          if(y > H - 14) { pdf.addPage(); y = 18; }
+          pdf.text('  ' + ln, M+2, y);
+          y += 4.2;
+        }
+        y += 1.5;
+      }
+      y += 4; // gap entre seções de função
+    }
+
+    // Sem dados?
+    if(nomesFns.length === 0) {
+      pdf.setFont('helvetica','italic').setFontSize(11).setTextColor(120);
+      pdf.text('Nenhuma escala criada pros próximos trabalhos.', M, 30);
     }
 
     // ── Rodapé numeração ──────────────────────────────────────────────
@@ -2434,13 +2448,13 @@ async function gerarPdfEscalas(eventos) {
     }
 
     const hoje = new Date().toISOString().slice(0,10);
-    pdf.save(`escalas-candieiro-${hoje}.pdf`);
+    pdf.save(`escala-candieiro-${hoje}.pdf`);
     toast('PDF gerado','ok');
   } catch(e) {
     console.error(e);
     toast('Erro ao gerar PDF: '+e.message,'err');
   } finally {
-    if(btn) { btn.disabled = false; btn.textContent = '📄 Gerar PDF'; }
+    if(btn) { btn.disabled = false; btn.textContent = txtOrig; }
   }
 }
 
