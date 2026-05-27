@@ -606,6 +606,36 @@ async function gcalDeleteEvent(eventId) {
     return r.ok || r.status === 410;
   } catch(e) { console.error('gcal delete erro:', e); return false; }
 }
+
+// Lista eventos do Google Calendar do Pai nos próximos N dias
+let _gcalCache = { events: [], loadedAt: 0 };
+async function gcalListEvents(daysAhead = 30) {
+  const tk = gcalToken();
+  if(!tk) return [];
+  const now = new Date();
+  const fim = new Date(); fim.setDate(now.getDate() + daysAhead);
+  const params = new URLSearchParams({
+    timeMin: now.toISOString(),
+    timeMax: fim.toISOString(),
+    singleEvents: 'true',          // expande recorrentes
+    orderBy: 'startTime',
+    maxResults: '250',
+    showDeleted: 'false'
+  });
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
+      headers: { 'Authorization':'Bearer '+tk }
+    });
+    if(!r.ok) {
+      console.warn('gcal list falhou:', r.status, await r.text());
+      if(r.status === 401) { localStorage.removeItem('gcal_token'); localStorage.removeItem('gcal_expires'); }
+      return [];
+    }
+    const data = await r.json();
+    _gcalCache = { events: data.items||[], loadedAt: Date.now() };
+    return _gcalCache.events;
+  } catch(e) { console.error('gcal list erro:', e); return []; }
+}
 function openModal(html, opts={}) {
   const bd = $('#modal-backdrop'), bod = $('#modal-body');
   bod.className = 'modal' + (opts.lg ? ' modal-lg' : '');
@@ -2847,14 +2877,16 @@ function renderAgenda(c) {
     </div>
 
     ${gcalOn ? `
-      <div style="padding:10px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--green)">
-        🟢 Sync ativo · novos atendimentos serão criados no Calendar de <strong>${gcalEm||'(conta google)'}</strong>. Edições e exclusões também sincronizam.
+      <div style="padding:10px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>🟢 Sync ativo · Calendar de <strong>${gcalEm||'(conta google)'}</strong></span>
+        <button class="btn btn-sm" onclick="window._app.buscarGcalEventos()">🔄 Buscar eventos do Calendar</button>
       </div>
     ` : `
       <div style="padding:10px 14px;background:var(--amber-bg);border:1px solid rgba(243,156,18,0.3);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--amber)">
         ⚠️ Sem sync · atendimentos ficam só aqui no admin. Clica "Conectar Google Calendar" pra sincronizar com o calendar do terreiro.
       </div>
     `}
+    <div id="gcal-events-section"></div>
 
     <div class="grid grid-4" style="margin-bottom:18px">
       <div class="metric" style="--clr:var(--green)"><div class="ml">Receita do mês</div><div class="mv">R$ ${receitaMes.toFixed(0)}</div><div class="mh">de ${realizadosMes.length} jogo${realizadosMes.length===1?'':'s'}</div></div>
@@ -2904,6 +2936,68 @@ function renderAgenda(c) {
 }
 
 function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
+
+async function buscarGcalEventos() {
+  const sec = $('#gcal-events-section');
+  if(!sec) return;
+  sec.innerHTML = `<div class="card" style="margin-bottom:14px;text-align:center;color:var(--text3);padding:24px"><div class="spinner" style="width:24px;height:24px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px"></div>Buscando do Google Calendar...</div>`;
+  const events = await gcalListEvents(30);
+  renderGcalEventos(events);
+}
+
+function renderGcalEventos(events) {
+  const sec = $('#gcal-events-section');
+  if(!sec) return;
+  if(!events || events.length === 0) {
+    sec.innerHTML = `<div class="card" style="margin-bottom:14px;text-align:center;color:var(--text3);padding:20px;font-size:13px">Nenhum evento no Calendar nos próximos 30 dias.</div>`;
+    return;
+  }
+
+  // Match com atendimentos existentes (mesmo google_event_id)
+  const atendByGcalId = {};
+  S.atendimentos.forEach(a => { if(a.google_event_id) atendByGcalId[a.google_event_id] = a; });
+
+  sec.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h">
+        <div class="card-title">📅 Google Calendar do Pai (próximos 30 dias)</div>
+        <div style="font-size:12px;color:var(--text3)">${events.length} evento${events.length===1?'':'s'} · cache local</div>
+      </div>
+      ${events.map(ev => {
+        const isAllDay = !!ev.start?.date;
+        const startStr = ev.start?.dateTime || ev.start?.date;
+        const endStr = ev.end?.dateTime || ev.end?.date;
+        const start = new Date(startStr);
+        const end = endStr ? new Date(endStr) : null;
+        const dataBr = start.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+        const diaSem = start.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
+        const horaStr = isAllDay ? 'dia todo' : `${start.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}${end?` – ${end.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:''}`;
+        const atendVinculado = atendByGcalId[ev.id];
+        const nome = (ev.summary || '(sem título)').slice(0,80);
+        const desc = (ev.description || '').replace(/\n/g,' · ').slice(0,120);
+        const localStr = ev.location || '';
+        const status = ev.status === 'cancelled' ? 'cancelado' : null;
+        return `
+          <div class="list-item" ${atendVinculado?`onclick="window._app.openAtendimentoForm('${atendVinculado.id}')" style="cursor:pointer"`:''}>
+            <div class="li-avatar" style="background:${atendVinculado?'var(--green-bg)':'var(--blue-bg)'};color:${atendVinculado?'var(--green)':'var(--blue)'};flex-direction:column;font-size:10px;line-height:1.1">
+              <div style="font-weight:700;font-size:13px">${start.getDate()}</div>
+              <div style="font-size:8px;text-transform:uppercase">${start.toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+            </div>
+            <div class="li-main">
+              <div class="li-name">${nome}${atendVinculado?' <span class="chip chip-green" style="font-size:10px;margin-left:6px">vinculado ao admin</span>':''}${status?' <span class="chip" style="font-size:10px">cancelado</span>':''}</div>
+              <div class="li-meta">
+                <span style="text-transform:capitalize">${diaSem}, ${dataBr}</span>
+                <span>${horaStr}</span>
+                ${localStr?`<span>📍 ${localStr}</span>`:''}
+              </div>
+              ${desc?`<div style="font-size:12px;color:var(--text3);margin-top:4px">${desc}${ev.description && ev.description.length>120?'…':''}</div>`:''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
 
 function openAtendimentoForm(id=null) {
   const a = id ? S.atendimentos.find(x=>x.id===id) : null;
@@ -4184,6 +4278,7 @@ window._app = {
   autoGerarTarefasFuncoes,
   gcalConnect,
   gcalDisconnect,
+  buscarGcalEventos,
   openEventoForm,
   openEscalaForm,
   setEscTab,
