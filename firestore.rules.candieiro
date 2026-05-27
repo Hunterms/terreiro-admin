@@ -1,0 +1,30 @@
+// ============================================================================
+// FIRESTORE SECURITY RULES — Projeto: terreiro-candieiro (CMS do site)
+// ============================================================================
+// Como deployar:
+//   Firebase Console → Projeto terreiro-candieiro → Firestore Database → Rules
+//   Cole o conteúdo abaixo (sem este header) e publique.
+//
+// Modelo:
+// - CMS (escrita): só usuário autenticado
+// - Site público (leitura): aberto pras collections que o site exibe
+// ============================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── CMS: tudo aberto pra usuário autenticado ─────────────────────────
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ── SITE PÚBLICO: leitura aberta das collections exibidas ────────────
+    // Conteúdo já é pra ser público (slides, fotos, eventos, etc.)
+    match /slides/{id}    { allow read: if true; }
+    match /galeria/{id}   { allow read: if true; }
+    match /eventos/{id}   { allow read: if true; }
+    match /paideanto/{id} { allow read: if true; }
+    match /config/{id}    { allow read: if true; }
+  }
+}
