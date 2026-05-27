@@ -392,7 +392,7 @@ function renderPasso1() {
       <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Escolha o serviço</h2>
       <div class="servicos">
         ${APP.servicos.map(s => `
-          <div class="servico" data-id="${s.id}">
+          <div class="servico ${APP.servico && APP.servico.id === s.id ? 'sel' : ''}" data-id="${s.id}">
             <div class="servico-nome">${s.nome}</div>
             <div class="servico-meta">
               <span><strong>R$ ${(s.valor||0).toFixed(0)}</strong></span>
@@ -433,12 +433,12 @@ function renderPasso2() {
     <div class="card">
       <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Como prefere o atendimento?</h2>
       <div class="modalidade-opts">
-        <div class="mod-opt" data-mod="presencial">
+        <div class="mod-opt ${APP.modalidade==='presencial'?'sel':''}" data-mod="presencial">
           <span class="mod-icon">🏛️</span>
           <div class="mod-nome">Presencial</div>
           <div class="mod-desc">No terreiro, Barão Geraldo</div>
         </div>
-        <div class="mod-opt" data-mod="online">
+        <div class="mod-opt ${APP.modalidade==='online'?'sel':''}" data-mod="online">
           <span class="mod-icon">💻</span>
           <div class="mod-nome">Online</div>
           <div class="mod-desc">Por videochamada</div>
@@ -491,6 +491,15 @@ function renderPasso3() {
       </div>
     </div>
   `;
+  // Se há data selecionada fora da semana atual, re-âncora a viewStart pra ela
+  if(APP.dataSel) {
+    const selD = new Date(APP.dataSel+'T00:00:00');
+    const viewD = new Date(APP.viewStart+'T00:00:00');
+    const viewEnd = new Date(viewD); viewEnd.setDate(viewD.getDate()+6);
+    if(selD < viewD || selD > viewEnd) {
+      APP.viewStart = APP.dataSel;
+    }
+  }
   renderDayStrip();
   $('#cal-prev').onclick = () => navSemana(-1);
   $('#cal-next').onclick = () => navSemana(1);
@@ -499,7 +508,7 @@ function renderPasso3() {
     APP.passo = 4;
     renderPasso();
   };
-  // Se já tinha data selecionada, restaura slots
+  // Se já tinha data selecionada, restaura slots (atualizarSlots já chama atualizarResumoFinal)
   if(APP.dataSel) atualizarSlots();
 }
 
