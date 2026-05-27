@@ -1283,12 +1283,12 @@ function openFilhoForm(id=null) {
       </div>
       <div class="fi-group"><label>Email (auth — opcional, pra logar)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
       <div class="fi-group">
-        <label>PIN de 4 dígitos (página pública)</label>
+        <label>PIN de 4 dígitos (fallback — só pra quem não tem telefone cadastrado)</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input class="fi" id="ff-pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" placeholder="ex: 1234" value="${f?.pin||''}" style="flex:1;font-family:monospace;letter-spacing:.3em;text-align:center;font-size:18px"/>
+          <input class="fi" id="ff-pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" placeholder="(vazio — usa últimos 4 do telefone)" value="${f?.pin||''}" style="flex:1;font-family:monospace;letter-spacing:.3em;text-align:center;font-size:18px"/>
           <button type="button" class="btn btn-sm" onclick="document.getElementById('ff-pin').value=Math.floor(1000+Math.random()*9000)">Sorteia</button>
         </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Filho usa pra acessar a área pessoal em <code>disponibilidade.html</code>. Manda pelo WhatsApp depois de cadastrar. Vazio = sem login (qualquer um seleciona o nome e acessa).</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">A página pública pede os <strong>últimos 4 dígitos do telefone</strong> automaticamente — sem cadastro de PIN aqui. Esse campo só é usado se o filho não tem tel cadastrado.</div>
       </div>
       <div class="fi-group">
         <label class="checkbox-row">

@@ -308,19 +308,31 @@ async function selecionarFilho(id) {
   const filho = APP.filhos.find(f => f.id === id);
   if(!filho) return;
 
-  // Se tem PIN cadastrado, exige autenticação (cache em sessionStorage)
-  if(filho.pin) {
-    const cached = sessionStorage.getItem(`pin_ok_${id}`);
+  // Autenticação: últimos 4 dígitos do tel cadastrado, ou PIN manual (fallback)
+  const telLimpo = (filho.tel||'').replace(/\D/g,'');
+  const ultimos4 = telLimpo.length >= 4 ? telLimpo.slice(-4) : null;
+  const auth = ultimos4 || filho.pin; // tel tem prioridade
+
+  if(auth) {
+    const cached = sessionStorage.getItem(`auth_${id}`);
     if(cached !== '1') {
-      const pin = prompt(`Olá ${filho.nome.split(' ')[0]}! Digite seu PIN de 4 dígitos pra acessar sua área pessoal:`);
-      if(!pin) { $('#filho-sel').value = ''; return; }
-      if(pin.replace(/\D/g,'').slice(0,4) !== filho.pin) {
-        alert('PIN incorreto. Se esqueceu, fala com o pai ou com a administração.');
+      const msg = ultimos4
+        ? `Olá ${filho.nome.split(' ')[0]}! Pra acessar sua área, digite os 4 últimos dígitos do seu celular cadastrado:`
+        : `Olá ${filho.nome.split(' ')[0]}! Digite seu PIN de 4 dígitos:`;
+      const entrada = prompt(msg);
+      if(!entrada) { $('#filho-sel').value = ''; return; }
+      const limpa = entrada.replace(/\D/g,'').slice(-4);
+      if(limpa !== auth) {
+        alert('Não bate. Verifica os números e tenta de novo. Se não souber, fala com a administração pra confirmar seu telefone cadastrado.');
         $('#filho-sel').value = '';
         return;
       }
-      sessionStorage.setItem(`pin_ok_${id}`, '1');
+      sessionStorage.setItem(`auth_${id}`, '1');
     }
+  } else {
+    alert(`Não há telefone nem PIN cadastrado pra ${filho.nome}. Fala com o admin pra atualizar seu cadastro antes de acessar.`);
+    $('#filho-sel').value = '';
+    return;
   }
 
   APP.filhoAtual = filho;
