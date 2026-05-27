@@ -42,9 +42,12 @@ h1 .accent{color:var(--gold)}
 
 /* Stepper */
 .stepper{display:flex;gap:6px;margin-bottom:18px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;justify-content:center;flex-wrap:wrap}
-.step{padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:var(--glass2)}
+.step{padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:var(--glass2);font-family:var(--font);color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.step.clickable{cursor:pointer;transition:filter .12s,transform .12s}
+.step.clickable:hover{filter:brightness(1.15);transform:translateY(-1px)}
 .step.active{background:var(--gold);color:#1a1209;border-color:var(--gold);font-weight:700}
 .step.done{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.step.future{opacity:.55;cursor:not-allowed}
 
 /* Service cards */
 .servicos{display:grid;gap:10px}
@@ -348,11 +351,31 @@ function renderStepper() {
     .filter(s => !(s.n === 2 && pulaMod))
     .map(s => {
       let cls = 'step';
-      if(APP.passo === s.n) cls += ' active';
-      else if(APP.passo > s.n) cls += ' done';
-      return `<span class="${cls}">${s.lbl}</span>`;
+      const isCurrent = APP.passo === s.n;
+      const isDone = APP.passo > s.n;
+      if(isCurrent) cls += ' active';
+      else if(isDone) cls += ' done';
+      else cls += ' future';
+      // clicável só se for done ou active (não pula pra frente)
+      const clickable = isDone || isCurrent;
+      if(clickable) cls += ' clickable';
+      const attrs = clickable
+        ? `role="button" tabindex="0" onclick="irParaPasso(${s.n})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();irParaPasso(${s.n});}"`
+        : '';
+      return `<span class="${cls}" ${attrs}>${s.lbl}</span>`;
     }).join('');
 }
+
+function irParaPasso(n) {
+  if(n === APP.passo) return;
+  if(n > APP.passo) return; // nunca pula pra frente
+  // se o modal de confirmar estiver aberto, fecha
+  closeModal();
+  APP.passo = n;
+  renderPasso();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+window.irParaPasso = irParaPasso;
 
 function renderPasso() {
   renderStepper();
