@@ -1836,13 +1836,19 @@ function setAnalisePeriodo(p) { analisePeriodo = p; renderRoute(); }
 function renderEscalasAnalise() {
   const body = $('#esc-body');
   const dias = analisePeriodo === 'mes' ? 30 : (analisePeriodo === 'bi' ? 60 : 90);
-  const labelPeriodo = analisePeriodo === 'mes' ? 'últimos 30 dias' : (analisePeriodo === 'bi' ? 'últimos 60 dias' : 'últimos 90 dias');
+  const labelPeriodo = analisePeriodo === 'mes' ? '30 dias atrás + 30 à frente' : (analisePeriodo === 'bi' ? '60 dias atrás + 60 à frente' : '90 dias atrás + 90 à frente');
   const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const lim = new Date(hoje); lim.setDate(hoje.getDate() - dias);
-  const limStr = lim.toISOString().slice(0,10);
+  const limPas = new Date(hoje); limPas.setDate(hoje.getDate() - dias);
+  const limFut = new Date(hoje); limFut.setDate(hoje.getDate() + dias);
+  const limPasStr = limPas.toISOString().slice(0,10);
+  const limFutStr = limFut.toISOString().slice(0,10);
 
-  // Conta alocações por filho, por função no período
-  const escalasNoPeriodo = S.escalas.filter(es => es.tipo === 'gira' && es.data >= limStr && es.data <= hoje.toISOString().slice(0,10));
+  // Conta alocações por filho, por função no período (passado + futuro)
+  // Não filtra por tipo: inclui escalas sem `tipo` (legado) e qualquer tipo de gira/festa
+  const escalasNoPeriodo = S.escalas.filter(es =>
+    es.tipo !== 'lojinha' && // lojinha tem dinâmica própria, fora da análise
+    es.data && es.data >= limPasStr && es.data <= limFutStr
+  );
   const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
   const funcoesAtivas = S.funcoes.filter(f => !f.arquivada && f.entra_em_escala);
 
