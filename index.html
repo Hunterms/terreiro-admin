@@ -1395,6 +1395,14 @@ function openFilhoForm(id=null) {
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra filhos mais velhos, gestantes ou com restrição. Não entra na auto-geração das escalas de limpeza, mas continua aparecendo como filho ativo em tudo mais.</div>
       </div>
+      <div class="fi-group">
+        <label>Mora junto com (grupo de carona)</label>
+        <input class="fi" id="ff-casa" list="casas-existentes" value="${f?.casa_id||''}" placeholder="Ex: casa-rose-elis (deixe vazio se mora sozinho)" autocomplete="off"/>
+        <datalist id="casas-existentes">
+          ${[...new Set(S.filhos.map(x => x.casa_id).filter(Boolean))].map(c => `<option value="${c}">`).join('')}
+        </datalist>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Use o <strong>mesmo nome de grupo</strong> pros filhos que moram juntos (ex: "casa-rose-elis"). A auto-geração tenta colocá-los na mesma gira pra economizar passagem.</div>
+      </div>
       <div class="fi-group"><label>Observações</label><textarea class="fi" id="ff-obs">${f?.obs||''}</textarea></div>
     </div>
     <div class="modal-f">
@@ -1422,6 +1430,7 @@ function openFilhoForm(id=null) {
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
       mora_perto: $('#ff-perto').checked,
       isento_limpeza: $('#ff-isento-limpeza').checked,
+      casa_id: ($('#ff-casa').value||'').trim().toLowerCase().replace(/\s+/g,'-') || null,
       obs: $('#ff-obs').value.trim(),
       atualizadoEm: serverTimestamp()
     };
@@ -2638,6 +2647,8 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
 
   const usados = new Set();
   const sug = {};
+  // Casas já alocadas neste evento — pra parear caronas dentro da mesma gira
+  const casasNoEvento = new Set();
   funcoesAtivas.forEach(fn => {
     const qtd = qtdParaFuncao(fn);
     let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
@@ -2652,9 +2663,16 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
     });
     // Filhos isentos de limpeza não entram em escalas de limpeza
     const ehLimpeza = (fn.nome||'').toLowerCase().includes('limpeza');
+    const ehDepois  = (fn.nome||'').toLowerCase().includes('depois');
     if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
+    // Limpeza DEPOIS: só mora perto. Quem mora longe é hard-excluído.
+    if(ehLimpeza && ehDepois) elegiveis = elegiveis.filter(f => f.mora_perto);
     const tipoSp = tipoEsp(fn);
     elegiveis.sort((a,b) => {
+      // 0. Boost: casa já no evento (caronas)
+      const casa_a = a.casa_id && casasNoEvento.has(a.casa_id) ? 1 : 0;
+      const casa_b = b.casa_id && casasNoEvento.has(b.casa_id) ? 1 : 0;
+      if(casa_a !== casa_b) return casa_b - casa_a;
       // 1. Menos vezes nessa função específica (fairness por função)
       const cafn_a = contagemFn[`${a.id}__${fn.id}`] || 0;
       const cafn_b = contagemFn[`${b.id}__${fn.id}`] || 0;
@@ -2678,6 +2696,7 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
       if(usados.has(f.id)) continue;
       escolhidos.push(f.id);
       usados.add(f.id);
+      if(f.casa_id) casasNoEvento.add(f.casa_id);
     }
     sug[fn.id] = escolhidos;
   });
@@ -2916,10 +2935,12 @@ function openEscalaForm(evId, escId='') {
   }));
 
   // Gerador automático: pra cada função, escolhe N candidatos
-  // Critério: menos vezes nessa função + rodízio geral + regra espacial + random
+  // Critério: casa já no evento → menos vezes na função → rodízio geral → espacial → random
   function gerarSugestao() {
     const usados = new Set();
     const sug = {};
+    // Casas (grupos de moradia) já alocadas neste evento — pra parear caronas
+    const casasNoEvento = new Set();
     funcoesAtivas.forEach(fn => {
       const qtd = qtdParaFuncao(fn);
       let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
@@ -2934,14 +2955,24 @@ function openEscalaForm(evId, escId='') {
       });
       // Filhos isentos de limpeza não entram em escalas de limpeza
       const ehLimpeza = (fn.nome||'').toLowerCase().includes('limpeza');
+      const ehDepois  = (fn.nome||'').toLowerCase().includes('depois');
       if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
+      // Limpeza DEPOIS: só mora perto entra. Quem mora longe é hard-excluído.
+      if(ehLimpeza && ehDepois) elegiveis = elegiveis.filter(f => f.mora_perto);
       const tipoSp = tipoEspacial(fn);
       elegiveis.sort((a,b) => {
+        // 0. Boost: casa já presente no evento (economia de carona)
+        const casa_a = a.casa_id && casasNoEvento.has(a.casa_id) ? 1 : 0;
+        const casa_b = b.casa_id && casasNoEvento.has(b.casa_id) ? 1 : 0;
+        if(casa_a !== casa_b) return casa_b - casa_a;
+        // 1. Fairness por função
         const cafn_a = contagemFn[`${a.id}__${fn.id}`] || 0;
         const cafn_b = contagemFn[`${b.id}__${fn.id}`] || 0;
         if(cafn_a !== cafn_b) return cafn_a - cafn_b;
+        // 2. Rodízio geral
         const ca = contagem[a.id] || 0, cb = contagem[b.id] || 0;
         if(ca !== cb) return ca - cb;
+        // 3. Regra espacial (já não importa pra limpeza depois — todos são perto)
         if(tipoSp === 'perto') {
           const pa = a.mora_perto?1:0, pb = b.mora_perto?1:0;
           if(pa !== pb) return pb - pa;
@@ -2957,6 +2988,7 @@ function openEscalaForm(evId, escId='') {
         if(usados.has(f.id)) continue;
         escolhidos.push(f.id);
         usados.add(f.id);
+        if(f.casa_id) casasNoEvento.add(f.casa_id);
       }
       sug[fn.id] = escolhidos;
     });
@@ -2991,6 +3023,11 @@ function openEscalaForm(evId, escId='') {
         let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
           ? filhosAtivos.filter(f => fn.restrito_a_filhos.includes(f.id))
           : filhosAtivos;
+        // Hard-excluir mora-longe e isentos pra limpeza (e perto pra limpeza depois)
+        const ehLimpezaFn = (fn.nome||'').toLowerCase().includes('limpeza');
+        const ehDepoisFn = (fn.nome||'').toLowerCase().includes('depois');
+        if(ehLimpezaFn) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
+        if(ehLimpezaFn && ehDepoisFn) elegiveis = elegiveis.filter(f => f.mora_perto);
         const tipoSp = tipoEspacial(fn);
         // Ordena por regra espacial pra os preferidos aparecerem primeiro
         if(tipoSp === 'perto') elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
