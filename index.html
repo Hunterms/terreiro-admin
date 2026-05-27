@@ -6,6 +6,8 @@
 <title>Candieiro — Admin</title>
 <link rel="manifest" href="manifest.json"/>
 <meta name="theme-color" content="#0d0d0d"/>
+<!-- Google Identity Services pra OAuth com Calendar -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -390,6 +392,10 @@ import {
   query, where, orderBy, serverTimestamp, getDoc, getDocs
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 
+// ── GOOGLE CALENDAR OAUTH ──────────────────────────────────────────────────
+const GOOGLE_CLIENT_ID = "365180068240-5d6avrv93pdltq140o18hb8r3jvvosui.apps.googleusercontent.com";
+const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
 // ── FIREBASE INIT (2 projects) ─────────────────────────────────────────────
 const cfgPvd = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -475,6 +481,130 @@ function toast(msg, type='') {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),200)},2400);
+}
+
+// ── GOOGLE CALENDAR INTEGRATION ───────────────────────────────────────────
+let _gcalTokenClient = null;
+
+function gcalToken() {
+  const tk = localStorage.getItem('gcal_token');
+  const exp = parseInt(localStorage.getItem('gcal_expires')||'0');
+  if(!tk || Date.now() >= exp) return null;
+  return tk;
+}
+
+function gcalEmail() { return localStorage.getItem('gcal_email') || null; }
+
+function gcalIsConnected() { return !!gcalToken(); }
+
+function gcalInitClient(onToken) {
+  if(!window.google || !google.accounts) {
+    toast('Google Identity ainda carregando, tenta de novo','err');
+    return null;
+  }
+  _gcalTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GCAL_SCOPE,
+    prompt: 'consent',
+    callback: (resp) => {
+      if(resp.error) { toast('Erro OAuth: '+resp.error,'err'); return; }
+      localStorage.setItem('gcal_token', resp.access_token);
+      localStorage.setItem('gcal_expires', String(Date.now() + (resp.expires_in||3600)*1000));
+      // Tenta descobrir o email do user via userinfo
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer '+resp.access_token }
+      }).then(r => r.json()).then(info => {
+        if(info.email) localStorage.setItem('gcal_email', info.email);
+        toast(`✓ Conectado como ${info.email||'usuário Google'}`,'ok');
+        if(typeof onToken === 'function') onToken();
+        if(['agenda','config-agendamento'].includes(S.route)) renderRoute();
+      }).catch(() => {
+        toast('✓ Google Calendar conectado','ok');
+        if(typeof onToken === 'function') onToken();
+        if(['agenda','config-agendamento'].includes(S.route)) renderRoute();
+      });
+    }
+  });
+  return _gcalTokenClient;
+}
+
+function gcalConnect() {
+  const c = gcalInitClient();
+  if(c) c.requestAccessToken();
+}
+
+function gcalDisconnect() {
+  const tk = gcalToken();
+  if(tk && window.google) {
+    try { google.accounts.oauth2.revoke(tk, () => {}); } catch(e) {}
+  }
+  localStorage.removeItem('gcal_token');
+  localStorage.removeItem('gcal_expires');
+  localStorage.removeItem('gcal_email');
+  toast('Google Calendar desconectado','ok');
+  if(['agenda','config-agendamento'].includes(S.route)) renderRoute();
+}
+
+// Cria evento no Google Calendar do user autenticado
+async function gcalCreateEvent(atend) {
+  const tk = gcalToken();
+  if(!tk) return null;
+  const ehBuzios = atend.tipo_oraculo === 'buzios';
+  const summary = ehBuzios ? 'Atendimento privado' : `Consulta — ${atend.consulente_nome||'?'}`;
+  const startISO = `${atend.data}T${atend.hora}:00`;
+  const startDate = new Date(startISO);
+  const endDate = new Date(startDate.getTime() + (atend.duracao_min||60)*60000);
+  const body = {
+    summary,
+    description: `${ehBuzios?'(privado)':''}\nValor: R$ ${atend.valor||0}\nTel: ${atend.consulente_tel||''}\n${atend.observacao||''}`.trim(),
+    start: { dateTime: startDate.toISOString(), timeZone: 'America/Sao_Paulo' },
+    end:   { dateTime: endDate.toISOString(),   timeZone: 'America/Sao_Paulo' }
+  };
+  try {
+    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST',
+      headers: { 'Authorization':'Bearer '+tk, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(!r.ok) { console.warn('gcal create falhou:', r.status, await r.text()); return null; }
+    const data = await r.json();
+    return data.id || null;
+  } catch(e) { console.error('gcal create erro:', e); return null; }
+}
+
+async function gcalUpdateEvent(eventId, atend) {
+  const tk = gcalToken();
+  if(!tk || !eventId) return false;
+  const ehBuzios = atend.tipo_oraculo === 'buzios';
+  const summary = ehBuzios ? 'Atendimento privado' : `Consulta — ${atend.consulente_nome||'?'}`;
+  const startDate = new Date(`${atend.data}T${atend.hora}:00`);
+  const endDate = new Date(startDate.getTime() + (atend.duracao_min||60)*60000);
+  const body = {
+    summary,
+    description: `${ehBuzios?'(privado)':''}\nValor: R$ ${atend.valor||0}\nTel: ${atend.consulente_tel||''}\n${atend.observacao||''}`.trim(),
+    start: { dateTime: startDate.toISOString(), timeZone: 'America/Sao_Paulo' },
+    end:   { dateTime: endDate.toISOString(),   timeZone: 'America/Sao_Paulo' }
+  };
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization':'Bearer '+tk, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    return r.ok;
+  } catch(e) { console.error('gcal update erro:', e); return false; }
+}
+
+async function gcalDeleteEvent(eventId) {
+  const tk = gcalToken();
+  if(!tk || !eventId) return false;
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization':'Bearer '+tk }
+    });
+    return r.ok || r.status === 410;
+  } catch(e) { console.error('gcal delete erro:', e); return false; }
 }
 function openModal(html, opts={}) {
   const bd = $('#modal-backdrop'), bod = $('#modal-body');
@@ -2699,6 +2829,9 @@ function renderAgenda(c) {
   const receitaMes = realizadosMes.filter(a => a.status_pagamento && a.status_pagamento.startsWith('pago')).reduce((s,a)=>s+(a.valor||0),0);
   const pendentes = atendsMes.filter(a => a.status_pagamento === 'pendente' && a.status_atendimento === 'realizado').reduce((s,a)=>s+(a.valor||0),0);
 
+  const gcalOn = gcalIsConnected();
+  const gcalEm = gcalEmail();
+
   c.innerHTML = `
     <div class="page-head">
       <div>
@@ -2706,9 +2839,22 @@ function renderAgenda(c) {
         <div class="page-sub">${atendsMes.length} atendimento${atendsMes.length===1?'':'s'} esse mês · ${realizadosMes.length} realizado${realizadosMes.length===1?'':'s'}</div>
       </div>
       <div class="page-actions">
+        ${gcalOn
+          ? `<button class="btn" onclick="window._app.gcalDisconnect()" title="${gcalEm||''}">✓ Google Calendar conectado${gcalEm?` (${gcalEm.split('@')[0]})`:''}</button>`
+          : `<button class="btn" onclick="window._app.gcalConnect()">🔗 Conectar Google Calendar</button>`}
         <button class="btn btn-primary" onclick="window._app.openAtendimentoForm()">+ Novo atendimento</button>
       </div>
     </div>
+
+    ${gcalOn ? `
+      <div style="padding:10px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--green)">
+        🟢 Sync ativo · novos atendimentos serão criados no Calendar de <strong>${gcalEm||'(conta google)'}</strong>. Edições e exclusões também sincronizam.
+      </div>
+    ` : `
+      <div style="padding:10px 14px;background:var(--amber-bg);border:1px solid rgba(243,156,18,0.3);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--amber)">
+        ⚠️ Sem sync · atendimentos ficam só aqui no admin. Clica "Conectar Google Calendar" pra sincronizar com o calendar do terreiro.
+      </div>
+    `}
 
     <div class="grid grid-4" style="margin-bottom:18px">
       <div class="metric" style="--clr:var(--green)"><div class="ml">Receita do mês</div><div class="mv">R$ ${receitaMes.toFixed(0)}</div><div class="mh">de ${realizadosMes.length} jogo${realizadosMes.length===1?'':'s'}</div></div>
@@ -2846,11 +2992,13 @@ function openAtendimentoForm(id=null) {
       atualizadoEm: serverTimestamp()
     };
     try {
+      let docId = id;
       if(isEdit) {
         await updateDoc(doc(dbPvd,'adm_atendimentos',id), payload);
       } else {
         payload.criadoEm = serverTimestamp();
-        await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
+        const ref = await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
+        docId = ref.id;
       }
       // se foi marcado como realizado, atualiza consulente (ultima_vez, qtd)
       if(stAt === 'realizado' && (!a || a.status_atendimento !== 'realizado')) {
@@ -2861,6 +3009,21 @@ function openAtendimentoForm(id=null) {
           atualizadoEm: serverTimestamp()
         });
       }
+
+      // Sync com Google Calendar (se conectado e não cancelado)
+      if(gcalIsConnected() && stAt !== 'cancelado') {
+        const atendFull = { ...payload, ...(a||{}) };
+        if(a?.google_event_id) {
+          await gcalUpdateEvent(a.google_event_id, atendFull);
+        } else {
+          const gevId = await gcalCreateEvent(atendFull);
+          if(gevId) await updateDoc(doc(dbPvd,'adm_atendimentos',docId), { google_event_id: gevId });
+        }
+      } else if(gcalIsConnected() && stAt === 'cancelado' && a?.google_event_id) {
+        await gcalDeleteEvent(a.google_event_id);
+        await updateDoc(doc(dbPvd,'adm_atendimentos',docId), { google_event_id: null });
+      }
+
       toast(isEdit?'Atendimento atualizado':'Atendimento agendado','ok');
       closeModal();
     } catch(e) { toast('Erro: '+e.message,'err'); }
@@ -2868,7 +3031,10 @@ function openAtendimentoForm(id=null) {
 
   if(isEdit) $('#at-del').onclick = () => {
     confirmar('Excluir este atendimento?', async () => {
-      try { await deleteDoc(doc(dbPvd,'adm_atendimentos',id)); toast('Atendimento excluído','ok'); }
+      try {
+        if(gcalIsConnected() && a?.google_event_id) await gcalDeleteEvent(a.google_event_id);
+        await deleteDoc(doc(dbPvd,'adm_atendimentos',id)); toast('Atendimento excluído','ok');
+      }
       catch(e) { toast('Erro: '+e.message,'err'); }
     });
   };
@@ -4016,6 +4182,8 @@ window._app = {
   openKanbanForm,
   limparKanbanAntigos,
   autoGerarTarefasFuncoes,
+  gcalConnect,
+  gcalDisconnect,
   openEventoForm,
   openEscalaForm,
   setEscTab,
