@@ -504,20 +504,34 @@ function gcalEmail() { return localStorage.getItem('gcal_email') || null; }
 
 function gcalIsConnected() { return !!gcalToken(); }
 
-function gcalInitClient(onToken) {
+function gcalInitClient(onToken, options) {
+  options = options || {};
+  const silent = !!options.silent;
   if(!window.google || !google.accounts) {
-    toast('Google Identity ainda carregando, tenta de novo','err');
+    if(!silent) toast('Google Identity ainda carregando, tenta de novo','err');
     return null;
   }
   _gcalTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: GCAL_SCOPE,
-    prompt: 'consent',
+    prompt: silent ? '' : 'consent',     // '' = sem popup se já consentiu
+    hint: gcalEmail() || undefined,       // ajuda Google a reusar a conta certa
     callback: (resp) => {
-      if(resp.error) { toast('Erro OAuth: '+resp.error,'err'); return; }
+      if(resp.error) {
+        if(!silent) toast('Erro OAuth: '+resp.error,'err');
+        else console.warn('gcal silent refresh falhou:', resp.error);
+        return;
+      }
       localStorage.setItem('gcal_token', resp.access_token);
       localStorage.setItem('gcal_expires', String(Date.now() + (resp.expires_in||3600)*1000));
-      // Tenta descobrir o email do user via userinfo
+      gcalScheduleRefresh(); // agenda próximo refresh
+      if(silent) {
+        // refresh silencioso — sem toast, só re-render se na tela relevante
+        if(['agenda','config-agendamento'].includes(S.route)) renderRoute();
+        if(typeof onToken === 'function') onToken();
+        return;
+      }
+      // Login explícito — busca email + mostra toast
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: 'Bearer '+resp.access_token }
       }).then(r => r.json()).then(info => {
@@ -530,7 +544,8 @@ function gcalInitClient(onToken) {
         if(typeof onToken === 'function') onToken();
         if(['agenda','config-agendamento'].includes(S.route)) renderRoute();
       });
-    }
+    },
+    error_callback: silent ? (() => {/* silent fail = tudo bem */}) : undefined
   });
   return _gcalTokenClient;
 }
@@ -538,6 +553,36 @@ function gcalInitClient(onToken) {
 function gcalConnect() {
   const c = gcalInitClient();
   if(c) c.requestAccessToken();
+}
+
+// ── Auto-refresh silencioso ───────────────────────────────────────────────
+// Reusa a sessão Google já consentida pra renovar o token sem popup. Falha
+// silenciosamente se cookies de 3rd party tiverem bloqueados — aí cai pro
+// "Conectar" manual.
+let _gcalRefreshTimer = null;
+function gcalRefreshSilent() {
+  if(!gcalEmail()) return; // nunca conectou nessa máquina
+  const c = gcalInitClient(null, { silent: true });
+  if(c) c.requestAccessToken({ prompt: '' });
+}
+function gcalScheduleRefresh() {
+  if(_gcalRefreshTimer) { clearTimeout(_gcalRefreshTimer); _gcalRefreshTimer = null; }
+  const exp = parseInt(localStorage.getItem('gcal_expires')||'0');
+  if(!exp) return;
+  const ms = Math.max(0, exp - Date.now() - 5*60*1000); // 5 min antes do vencimento
+  _gcalRefreshTimer = setTimeout(gcalRefreshSilent, ms);
+}
+// Boot: se temos email salvo (já conectou antes) mas o token expirou,
+// tenta refresh silencioso assim que o Google Identity carregar.
+function gcalBootstrapRefresh() {
+  if(!gcalEmail()) return;
+  if(gcalIsConnected()) { gcalScheduleRefresh(); return; }
+  // Espera GIS carregar
+  const tentar = () => {
+    if(window.google && google.accounts) gcalRefreshSilent();
+    else setTimeout(tentar, 500);
+  };
+  tentar();
 }
 
 function gcalDisconnect() {
@@ -751,6 +796,8 @@ onAuthStateChanged(authPvd, async user => {
   setupNav();
   attachListeners();
   navigate(role === 'admin' ? 'dashboard' : 'meu-dashboard');
+  // Google Calendar: tenta refresh silencioso se já tinha conectado antes
+  if(role === 'admin') gcalBootstrapRefresh();
 });
 
 function setupUserPill() {
