@@ -1388,6 +1388,13 @@ function openFilhoForm(id=null) {
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Quando marcado, esse filho é priorizado nas escalas de domingo (pra não desgastar quem mora longe).</div>
       </div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-isento-limpeza" ${f?.isento_limpeza?'checked':''}/>
+          Isenta de limpeza
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra filhos mais velhos, gestantes ou com restrição. Não entra na auto-geração das escalas de limpeza, mas continua aparecendo como filho ativo em tudo mais.</div>
+      </div>
       <div class="fi-group"><label>Observações</label><textarea class="fi" id="ff-obs">${f?.obs||''}</textarea></div>
     </div>
     <div class="modal-f">
@@ -1414,6 +1421,7 @@ function openFilhoForm(id=null) {
       auth_email: $('#ff-email').value.trim() || null,
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
       mora_perto: $('#ff-perto').checked,
+      isento_limpeza: $('#ff-isento-limpeza').checked,
       obs: $('#ff-obs').value.trim(),
       atualizadoEm: serverTimestamp()
     };
@@ -2323,126 +2331,154 @@ async function gerarPdfEscalas(eventos) {
     const mod = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
     const { jsPDF } = mod;
     const pdf = new jsPDF({ unit:'mm', format:'a4' });
-    const W = 210, H = 297, M = 16;
-    let y = 18;
+    const W = 210, H = 297, M = 18;
+    let y = 0;
 
-    // ── Cabeçalho ─────────────────────────────────────────────────────
-    pdf.setFont('helvetica','bold').setFontSize(18).setTextColor(20,20,20);
-    pdf.text('Escala dos próximos trabalhos', M, y);
-    y += 6;
-    pdf.setFont('helvetica','normal').setFontSize(9).setTextColor(120);
+    // Paleta
+    const C_GOLD     = [212,168,67];
+    const C_GOLD_BG  = [250,243,224];
+    const C_INK      = [25,22,18];
+    const C_TEXT     = [50,45,38];
+    const C_MUTED    = [140,128,108];
+    const C_LINE     = [220,210,190];
+    const C_RED      = [196,55,45];
+
+    const ehGiraAberta = ev => (ev?.tipo === 'gira_aberta') || (ev?.publico === true && !ev?.tipo);
+    const ehGiraFechada = ev => ev?.tipo === 'gira_fechada';
+    const ehFestaEv = ev => ev?.tipo === 'festa' || /festa/i.test(ev?.nome||ev?.titulo||'');
+
+    // ── HEADER GLOBAL (faixa dourada) ─────────────────────────────────
+    pdf.setFillColor(...C_GOLD);
+    pdf.rect(0, 0, W, 26, 'F');
+    pdf.setFont('helvetica','bold').setFontSize(20).setTextColor(255,255,255);
+    pdf.text('Escala dos próximos trabalhos', M, 14);
+    pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(255,255,255);
     const agora = new Date();
     pdf.text(
       `Terreiro do Candieiro · gerada em ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`,
-      M, y
+      M, 21
     );
-    y += 4;
-    pdf.setDrawColor(212,168,67).setLineWidth(0.6);
-    pdf.line(M, y, W-M, y);
-    y += 8;
-    pdf.setTextColor(20);
+    y = 36;
 
-    // ── Coleta todas alocações futuras agrupadas POR FUNÇÃO ───────────
-    // Estrutura: { fnNome: [ {ev, filhoNome}, ... ] }
-    const porFn = {};
-    const ordenados = [...eventos].sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
+    // ── Sort + filtra eventos com ao menos uma alocação ───────────────
+    const ordenados = [...eventos]
+      .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')))
+      .filter(ev => {
+        const escs = S.escalas.filter(es => es.evento_id === ev.id);
+        return escs.flatMap(e => e.alocacoes || []).length > 0;
+      });
 
+    if(ordenados.length === 0) {
+      pdf.setFont('helvetica','italic').setFontSize(11).setTextColor(...C_MUTED);
+      pdf.text('Nenhuma escala criada pros próximos trabalhos.', M, y);
+    }
+
+    const ordemFn = nm => {
+      const n = (nm||'').toLowerCase();
+      if(n.includes('antes')) return 1;
+      if(n.includes('depois')) return 2;
+      if(n.includes('lojinha')) return 3;
+      if(n.includes('curimba')) return 4;
+      if(n.includes('atend')) return 5;
+      return 6;
+    };
+
+    // ── Por trabalho/gira ─────────────────────────────────────────────
     for(const ev of ordenados) {
       const escalas = S.escalas.filter(es => es.evento_id === ev.id);
       const alocs = escalas.flatMap(e => e.alocacoes || []);
+      if(alocs.length === 0) continue;
+
+      // Agrupa alocs por função
+      const porFn = {};
       for(const a of alocs) {
         const fn = S.funcoes.find(f => f.id === a.funcao_id);
         if(!fn) continue;
-        const fnNome = fn.nome;
-        if(!porFn[fnNome]) porFn[fnNome] = [];
         const filho = S.filhos.find(f => f.id === a.filho_id);
-        porFn[fnNome].push({ ev, filhoNome: filho?.nome || '(filho removido)' });
+        if(!porFn[fn.nome]) porFn[fn.nome] = [];
+        porFn[fn.nome].push(filho?.nome || '(filho removido)');
       }
-    }
+      const fnsOrdenadas = Object.keys(porFn).sort((a,b) => {
+        const da = ordemFn(a), db = ordemFn(b);
+        return da !== db ? da - db : a.localeCompare(b);
+      });
 
-    // Ordem das funções: Limpeza antes → Limpeza depois → Lojinha → resto alfabético
-    const nomesFns = Object.keys(porFn).sort((a,b) => {
-      const ord = nm => {
-        const n = nm.toLowerCase();
-        if(n.includes('antes')) return 1;
-        if(n.includes('depois')) return 2;
-        if(n.includes('lojinha')) return 3;
-        if(n.includes('curimba')) return 4;
-        if(n.includes('atend')) return 5;
-        return 6;
-      };
-      const da = ord(a), db = ord(b);
-      return da !== db ? da - db : a.localeCompare(b);
-    });
+      // estima altura mínima do bloco antes de desenhar
+      const fnsHeight = fnsOrdenadas.reduce((acc, fnNome) => {
+        const nomesStr = porFn[fnNome].join(' · ');
+        const linhas = pdf.splitTextToSize(nomesStr, W-(M*2)-10).length;
+        return acc + 5 + (linhas * 4.2) + 2.5;
+      }, 0);
+      const blocoH = 18 + fnsHeight + 6;
+      if(y + blocoH > H - 14) { pdf.addPage(); y = 18; }
 
-    // ── Por função, listar todos os trabalhos ────────────────────────
-    for(const fnNome of nomesFns) {
-      const entries = porFn[fnNome];
-      // estima altura mínima da seção (cabeçalho + 1 linha) pra quebra de página
-      if(y > H - 30) { pdf.addPage(); y = 18; }
+      // ── Card do trabalho ─────────────────────────────────────────────
+      // Faixa lateral colorida (vermelho = festa, dourado = gira_aberta, cinza = fechada/outro)
+      const corFaixa = ehFestaEv(ev) ? C_RED : (ehGiraAberta(ev) ? C_GOLD : [120,110,90]);
+      pdf.setFillColor(...corFaixa);
+      pdf.rect(M-4, y-4, 2.5, blocoH-2, 'F');
 
-      // Cabeçalho da função (faixa dourada clarinha)
-      pdf.setFillColor(252,246,232);
-      pdf.rect(M-2, y-5, W-(M*2)+4, 8, 'F');
-      pdf.setFont('helvetica','bold').setFontSize(13).setTextColor(20,20,20);
-      pdf.text(fnNome, M, y);
-      pdf.setFont('helvetica','normal').setFontSize(9).setTextColor(140);
-      pdf.text(`${entries.length} plantã${entries.length===1?'o':'os'}`, W-M, y, { align:'right' });
-      y += 8;
-      pdf.setTextColor(20);
+      // Título do evento + data
+      const dataObj = new Date(ev.data+'T00:00:00');
+      const dia = String(dataObj.getDate()).padStart(2,'0');
+      const mes = String(dataObj.getMonth()+1).padStart(2,'0');
+      const dowFull = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][dataObj.getDay()];
+      const mesAb = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][dataObj.getMonth()];
 
-      // Agrupa entries por evento dentro da função
-      const porEv = new Map();
-      for(const e of entries) {
-        const k = e.ev.id;
-        if(!porEv.has(k)) porEv.set(k, { ev: e.ev, nomes: [] });
-        porEv.get(k).nomes.push(e.filhoNome);
-      }
+      // Data destacada à esquerda
+      pdf.setFont('helvetica','bold').setFontSize(22).setTextColor(...corFaixa);
+      pdf.text(dia, M, y+4);
+      pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(...C_MUTED);
+      pdf.text(mesAb, M+12, y+1);
+      pdf.setFont('helvetica','bold').setFontSize(9).setTextColor(...C_TEXT);
+      pdf.text(dowFull, M+12, y+5);
 
-      for(const { ev, nomes } of porEv.values()) {
-        if(y > H - 18) { pdf.addPage(); y = 18; }
-        // Linha do evento
-        const dataObj = new Date(ev.data+'T00:00:00');
-        const dia = String(dataObj.getDate()).padStart(2,'0');
-        const mes = String(dataObj.getMonth()+1).padStart(2,'0');
-        const dowAb = ['dom','seg','ter','qua','qui','sex','sáb'][dataObj.getDay()];
-        const dataStr = `${dia}/${mes} ${dowAb}`;
-        const evNome = (ev.nome || ev.titulo || 'Gira').toString();
-        const horaStr = ev.hora || '';
+      // Nome + hora à direita da data
+      pdf.setFont('helvetica','bold').setFontSize(13).setTextColor(...C_INK);
+      const nomeEv = (ev.nome || ev.titulo || 'Gira').toString();
+      pdf.text(nomeEv, M+34, y);
+      pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(...C_MUTED);
+      const horaStr = ev.hora ? `${ev.hora}` : '—';
+      const tipoLabel = ehFestaEv(ev) ? 'Festa' : (ehGiraAberta(ev) ? 'Gira aberta' : (ehGiraFechada(ev) ? 'Gira fechada' : (ev.tipo||'').replace(/_/g,' ')||'Trabalho'));
+      pdf.text(`${horaStr} · ${tipoLabel}`, M+34, y+5);
 
-        // Coluna 1: data + evento + hora (font:bold gold para data)
-        pdf.setFont('helvetica','bold').setFontSize(10).setTextColor(212,168,67);
-        pdf.text(dataStr, M, y);
-        pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(40,40,40);
-        const evTxt = `${evNome}${horaStr?` · ${horaStr}`:''}`;
-        pdf.text(evTxt, M+22, y);
-        y += 4.5;
+      y += 11;
 
-        // Linha 2: nomes
-        pdf.setFont('helvetica','normal').setFontSize(10).setTextColor(20);
+      // Linha sutil separando header do conteúdo
+      pdf.setDrawColor(...C_LINE).setLineWidth(0.3);
+      pdf.line(M, y, W-M, y);
+      y += 5;
+
+      // ── Funções dentro do trabalho ──────────────────────────────────
+      for(const fnNome of fnsOrdenadas) {
+        const nomes = porFn[fnNome];
+        // Label da função em chip dourado claro
+        pdf.setFillColor(...C_GOLD_BG);
+        pdf.roundedRect(M, y-3.5, pdf.getTextWidth(fnNome.toUpperCase())+6, 5, 1, 1, 'F');
+        pdf.setFont('helvetica','bold').setFontSize(8).setTextColor(...C_GOLD);
+        pdf.text(fnNome.toUpperCase(), M+3, y);
+        y += 5;
+
+        // Nomes
+        pdf.setFont('helvetica','normal').setFontSize(10.5).setTextColor(...C_INK);
         const nomesStr = nomes.join(' · ');
-        const linhas = pdf.splitTextToSize(nomesStr, W-(M*2)-6);
+        const linhas = pdf.splitTextToSize(nomesStr, W-(M*2)-4);
         for(const ln of linhas) {
           if(y > H - 14) { pdf.addPage(); y = 18; }
-          pdf.text('  ' + ln, M+2, y);
+          pdf.text(ln, M+2, y);
           y += 4.2;
         }
-        y += 1.5;
+        y += 2.5;
       }
-      y += 4; // gap entre seções de função
-    }
 
-    // Sem dados?
-    if(nomesFns.length === 0) {
-      pdf.setFont('helvetica','italic').setFontSize(11).setTextColor(120);
-      pdf.text('Nenhuma escala criada pros próximos trabalhos.', M, 30);
+      y += 6; // gap entre trabalhos
     }
 
     // ── Rodapé numeração ──────────────────────────────────────────────
     const total = pdf.internal.getNumberOfPages();
     for(let i=1; i<=total; i++) {
       pdf.setPage(i);
-      pdf.setFont('helvetica','normal').setFontSize(8).setTextColor(150);
+      pdf.setFont('helvetica','normal').setFontSize(8).setTextColor(...C_MUTED);
       pdf.text('Terreiro do Candieiro · terreirodocandieiro.com.br', M, H-8);
       pdf.text(`${i}/${total}`, W-M, H-8, { align:'right' });
     }
@@ -2588,6 +2624,9 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
       if(d.funcoes_indisponivel?.includes(fn.id)) return false;
       return true;
     });
+    // Filhos isentos de limpeza não entram em escalas de limpeza
+    const ehLimpeza = (fn.nome||'').toLowerCase().includes('limpeza');
+    if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
     const tipoSp = tipoEsp(fn);
     elegiveis.sort((a,b) => {
       // 1. Menos vezes nessa função específica (fairness por função)
@@ -2856,6 +2895,9 @@ function openEscalaForm(evId, escId='') {
         if(d.funcoes_indisponivel?.includes(fn.id)) return false;
         return true;
       });
+      // Filhos isentos de limpeza não entram em escalas de limpeza
+      const ehLimpeza = (fn.nome||'').toLowerCase().includes('limpeza');
+      if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
       const tipoSp = tipoEspacial(fn);
       elegiveis.sort((a,b) => {
         const cafn_a = contagemFn[`${a.id}__${fn.id}`] || 0;
