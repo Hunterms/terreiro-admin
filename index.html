@@ -598,17 +598,49 @@ function gcalDisconnect() {
 }
 
 // Cria evento no Google Calendar do user autenticado
+// Monta título + descrição do evento Google Calendar
+function gcalEventBody(atend) {
+  const ehBuzios = atend.tipo_oraculo === 'buzios';
+  const pago = (atend.status_pagamento||'').startsWith('pago');
+  const cancelado = atend.status_atendimento === 'cancelado';
+  const isento = atend.status_pagamento === 'isento';
+  // Emoji de status no título — vê de relance no calendar
+  let statusEmoji;
+  if(cancelado) statusEmoji = '❌';
+  else if(isento) statusEmoji = '🆓';
+  else if(pago) statusEmoji = '✅';
+  else statusEmoji = '🟡';
+  const tituloServico = ehBuzios ? 'Atendimento privado' : (atend.servico_nome || 'Consulta');
+  const sufixoNome = ehBuzios ? '' : ` — ${atend.consulente_nome||'?'}`;
+  const summary = `${statusEmoji} ${tituloServico}${sufixoNome}`;
+
+  // Descrição
+  const pagLabel = {
+    pendente: 'Pendente',
+    pago_pix: 'Pago via PIX',
+    pago_dinheiro: 'Pago em dinheiro',
+    pago_cartao: 'Pago no cartão',
+    isento: 'Isento'
+  }[atend.status_pagamento] || atend.status_pagamento || 'Pendente';
+
+  const linhas = [];
+  if(ehBuzios) linhas.push('🔒 Atendimento privado (búzios)');
+  else linhas.push(`🪷 ${atend.servico_nome || 'Consulta'}`);
+  if(!ehBuzios && atend.consulente_nome) linhas.push(`👤 ${atend.consulente_nome}${atend.consulente_tel?' · '+atend.consulente_tel:''}`);
+  linhas.push(`💰 R$ ${atend.valor||0} · ${pagLabel}`);
+  if(atend.modalidade) linhas.push(`📍 ${atend.modalidade === 'online' ? 'Online (videochamada)' : 'Presencial'}`);
+  if(atend.observacao) linhas.push(`\n📝 ${atend.observacao}`);
+  return { summary, description: linhas.join('\n') };
+}
+
 async function gcalCreateEvent(atend) {
   const tk = gcalToken();
   if(!tk) return null;
-  const ehBuzios = atend.tipo_oraculo === 'buzios';
-  const summary = ehBuzios ? 'Atendimento privado' : `Consulta — ${atend.consulente_nome||'?'}`;
-  const startISO = `${atend.data}T${atend.hora}:00`;
-  const startDate = new Date(startISO);
+  const startDate = new Date(`${atend.data}T${atend.hora}:00`);
   const endDate = new Date(startDate.getTime() + (atend.duracao_min||60)*60000);
+  const { summary, description } = gcalEventBody(atend);
   const body = {
-    summary,
-    description: `${ehBuzios?'(privado)':''}\nValor: R$ ${atend.valor||0}\nTel: ${atend.consulente_tel||''}\n${atend.observacao||''}`.trim(),
+    summary, description,
     start: { dateTime: startDate.toISOString(), timeZone: 'America/Sao_Paulo' },
     end:   { dateTime: endDate.toISOString(),   timeZone: 'America/Sao_Paulo' }
   };
@@ -627,13 +659,11 @@ async function gcalCreateEvent(atend) {
 async function gcalUpdateEvent(eventId, atend) {
   const tk = gcalToken();
   if(!tk || !eventId) return false;
-  const ehBuzios = atend.tipo_oraculo === 'buzios';
-  const summary = ehBuzios ? 'Atendimento privado' : `Consulta — ${atend.consulente_nome||'?'}`;
   const startDate = new Date(`${atend.data}T${atend.hora}:00`);
   const endDate = new Date(startDate.getTime() + (atend.duracao_min||60)*60000);
+  const { summary, description } = gcalEventBody(atend);
   const body = {
-    summary,
-    description: `${ehBuzios?'(privado)':''}\nValor: R$ ${atend.valor||0}\nTel: ${atend.consulente_tel||''}\n${atend.observacao||''}`.trim(),
+    summary, description,
     start: { dateTime: startDate.toISOString(), timeZone: 'America/Sao_Paulo' },
     end:   { dateTime: endDate.toISOString(),   timeZone: 'America/Sao_Paulo' }
   };
@@ -4167,7 +4197,37 @@ function renderSolicitacoes(c) {
 async function aprovarSolicitacao(id) {
   const s = S.solicitacoes.find(x => x.id === id);
   if(!s) return;
-  confirmar(`Aprovar agendamento de <strong>${s.nome}</strong> em ${fmt.data(s.data)} às ${s.hora}? Vou criar o consulente e o atendimento automaticamente.`, async () => {
+  const metPag = METODO_PAG_LABEL[s.metodo_pagamento] || s.metodo_pagamento || '—';
+  const dataBr = fmt.data(s.data);
+  openModal(`
+    <div class="modal-h">
+      <h3>Aprovar agendamento</h3>
+      <button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-c">
+      <div style="padding:12px 14px;background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:16px;font-size:13.5px;line-height:1.6">
+        <div><strong style="color:var(--text)">${s.nome}</strong> · ${s.servico_nome||'Consulta'}</div>
+        <div>${dataBr} às ${s.hora} · R$ ${s.valor_proposto||0}</div>
+        <div>Modalidade: <strong>${s.modalidade==='online'?'Online':'Presencial'}</strong></div>
+        <div>Método indicado: ${metPag}</div>
+        ${s.comprovante_anexado?'<div style="margin-top:6px"><span class="chip chip-green">comprovante anexado</span></div>':''}
+      </div>
+      <div class="fi-group">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;text-transform:none;letter-spacing:0;color:var(--text)">
+          <input type="checkbox" id="ap-pago" ${s.comprovante_anexado?'checked':''} style="width:18px;height:18px;cursor:pointer"/>
+          <span>Pagamento já confirmado (recebi PIX/dinheiro/etc)</span>
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Se ainda não recebeu, deixa desmarcado. Dá pra mudar depois editando o atendimento.</div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="ap-ok">Aprovar</button>
+    </div>
+  `);
+  $('#ap-ok').onclick = async () => {
+    const jaPago = $('#ap-pago').checked;
+    closeModal();
     try {
       // 1. Verifica se consulente já existe (pelo tel)
       let consId = null;
@@ -4191,7 +4251,18 @@ async function aprovarSolicitacao(id) {
         });
         consId = ref.id;
       }
-      // 3. Cria atendimento agendado
+      // Determina status_pagamento a partir do checkbox + método indicado
+      let status_pagamento = 'pendente';
+      let pago_em = null;
+      if(jaPago) {
+        const m = (s.metodo_pagamento||'').toLowerCase();
+        if(m.includes('pix')) status_pagamento = 'pago_pix';
+        else if(m.includes('dinheiro')) status_pagamento = 'pago_dinheiro';
+        else if(m.includes('cartao') || m.includes('cartão') || m.includes('credito') || m.includes('debito')) status_pagamento = 'pago_cartao';
+        else status_pagamento = 'pago_pix'; // fallback razoável
+        pago_em = serverTimestamp();
+      }
+      // 3. Cria atendimento agendado (com servico_nome + modalidade pra calendar)
       const atendPayload = {
         consulente_id: consId,
         consulente_nome: s.nome,
@@ -4200,10 +4271,13 @@ async function aprovarSolicitacao(id) {
         hora: s.hora,
         duracao_min: s.duracao_min || 60,
         tipo_oraculo: s.tipo_oraculo || 'baralho_cigano',
+        servico_nome: s.servico_nome || null,
+        servico_id: s.servico_id || null,
+        modalidade: s.modalidade || 'presencial',
         publico: true,
         valor: s.valor_proposto || 0,
-        status_pagamento: 'pendente',
-        pago_em: null,
+        status_pagamento,
+        pago_em,
         status_atendimento: 'agendado',
         observacao: s.observacao || '',
         origem_solicitacao_id: id,
@@ -4228,9 +4302,10 @@ async function aprovarSolicitacao(id) {
         status: 'aprovada',
         atualizadoEm: serverTimestamp()
       });
-      toast(gcalIsConnected() ? 'Aprovado · atendimento + calendar criado' : 'Aprovado · atendimento criado','ok');
+      const sufixo = jaPago ? ' (marcado pago)' : '';
+      toast((gcalIsConnected() ? 'Aprovado · atendimento + calendar criado' : 'Aprovado · atendimento criado')+sufixo,'ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
-  });
+  };
 }
 
 async function rejeitarSolicitacao(id) {
