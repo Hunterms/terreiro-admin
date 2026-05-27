@@ -94,6 +94,8 @@ h1 .accent{color:var(--gold)}
 .slot.busy{opacity:.3;cursor:not-allowed;color:var(--text3);text-decoration:line-through;background:transparent}
 .slot.busy:hover{transform:none;background:transparent;border-color:var(--border2)}
 .slots-empty{text-align:center;padding:24px;color:var(--text3);font-size:14px}
+.slot.selected{background:var(--gold);color:#1a1209;border-color:var(--gold)}
+.slot.selected:hover{background:var(--gold);transform:none}
 
 /* Form & modal */
 .modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s}
@@ -338,11 +340,9 @@ function renderStepper() {
   const steps = [
     { n:1, lbl:'Serviço' },
     { n:2, lbl:'Modalidade' },
-    { n:3, lbl:'Data' },
-    { n:4, lbl:'Horário' },
-    { n:5, lbl:'Dados' }
+    { n:3, lbl:'Data e horário' },
+    { n:4, lbl:'Confirmar' }
   ];
-  // Pula passo 2 se serviço só tem uma modalidade
   const pulaMod = APP.servico && !(APP.servico.online && APP.servico.presencial !== false);
   $('#stepper').innerHTML = steps
     .filter(s => !(s.n === 2 && pulaMod))
@@ -359,8 +359,7 @@ function renderPasso() {
   if(APP.passo === 1) renderPasso1();
   else if(APP.passo === 2) renderPasso2();
   else if(APP.passo === 3) renderPasso3();
-  else if(APP.passo === 4) renderPasso4();
-  else if(APP.passo === 5) abrirModalDados();
+  else if(APP.passo === 4) abrirModalDados();
 }
 
 // ── PASSO 1: serviço ──────────────────────────────────────────────────────
@@ -445,21 +444,40 @@ function renderPasso3() {
       <div class="resumo-row"><span>Modalidade</span><strong>${APP.modalidade==='online'?'Online':'Presencial'}</strong></div>
     </div>
     <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Escolha a data</h2>
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Escolha data e horário</h2>
       <div class="week-nav">
         <button class="cal-btn" id="cal-prev">◀ Anterior</button>
         <h3 id="cal-range">—</h3>
         <button class="cal-btn" id="cal-next">Próxima ▶</button>
       </div>
       <div class="day-strip" id="day-strip"></div>
-      <div style="display:flex;justify-content:space-between;margin-top:18px">
+
+      <div id="slots-section" style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
+        <div id="slots-title" style="font-size:13px;color:var(--text3);margin-bottom:12px">Clica numa data acima pra ver os horários</div>
+        <div class="slots" id="slots-grid"></div>
+      </div>
+
+      <div id="resumo-final" style="margin-top:18px;padding:14px;background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.3);border-radius:10px;display:none">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Você escolheu:</div>
+        <div id="resumo-quando" style="font-size:15px;font-weight:700;color:var(--gold);text-transform:capitalize"></div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:18px;gap:10px">
         <button class="btn" onclick="window._app.voltar()">← Voltar</button>
+        <button class="btn btn-primary" id="btn-agendar" disabled style="opacity:.5;cursor:not-allowed">Agendar →</button>
       </div>
     </div>
   `;
   renderDayStrip();
   $('#cal-prev').onclick = () => navSemana(-1);
   $('#cal-next').onclick = () => navSemana(1);
+  $('#btn-agendar').onclick = () => {
+    if(!APP.dataSel || !APP.horaSel) return;
+    APP.passo = 4;
+    renderPasso();
+  };
+  // Se já tinha data selecionada, restaura slots
+  if(APP.dataSel) atualizarSlots();
 }
 
 function renderDayStrip() {
@@ -499,11 +517,68 @@ function renderDayStrip() {
   document.querySelectorAll('.day-card[data-d]').forEach(el => {
     el.onclick = () => {
       APP.dataSel = el.dataset.d;
-      APP.passo = 4;
-      renderPasso();
-      window.scrollTo({top:0,behavior:'smooth'});
+      APP.horaSel = null; // reset hora ao trocar dia
+      // Update somente o strip + slots, sem re-render geral (anti-flicker)
+      atualizarStripSelecao();
+      atualizarSlots();
     };
   });
+}
+
+// Atualiza só a classe 'selected' nos cards do strip (sem re-render)
+function atualizarStripSelecao() {
+  document.querySelectorAll('.day-card').forEach(el => {
+    el.classList.toggle('selected', el.dataset.d === APP.dataSel);
+  });
+}
+
+// Atualiza só a área de slots (sem flicker)
+function atualizarSlots() {
+  const sec = $('#slots-section');
+  if(!sec || !APP.dataSel) return;
+  const dur = APP.servico.duracao_min || 60;
+  const slots = gerarSlots(APP.dataSel, dur);
+  const titulo = `<strong style="color:var(--text);text-transform:capitalize">${fmtData(APP.dataSel)}</strong> · slots de ${dur} min`;
+  if(slots.length === 0) {
+    $('#slots-title').innerHTML = titulo;
+    $('#slots-grid').innerHTML = '<div class="slots-empty">Nenhum horário nesse dia.</div>';
+  } else if(slots.every(s => s.busy)) {
+    $('#slots-title').innerHTML = titulo;
+    $('#slots-grid').innerHTML = '<div class="slots-empty">Tudo ocupado nesse dia.</div>';
+  } else {
+    $('#slots-title').innerHTML = titulo;
+    $('#slots-grid').innerHTML = slots.map(s => {
+      const sel = APP.horaSel === s.hora;
+      return `<button class="slot ${s.busy?'busy':''} ${sel?'selected':''}" ${s.busy?'disabled':''} data-h="${s.hora}">${s.hora}</button>`;
+    }).join('');
+    document.querySelectorAll('#slots-grid .slot[data-h]:not(.busy)').forEach(b => {
+      b.onclick = () => {
+        APP.horaSel = b.dataset.h;
+        // Atualiza só visual dos slots + resumo final
+        document.querySelectorAll('#slots-grid .slot').forEach(el => el.classList.toggle('selected', el.dataset.h === APP.horaSel));
+        atualizarResumoFinal();
+      };
+    });
+  }
+  atualizarResumoFinal();
+}
+
+function atualizarResumoFinal() {
+  const box = $('#resumo-final');
+  const btn = $('#btn-agendar');
+  if(!box || !btn) return;
+  if(APP.dataSel && APP.horaSel) {
+    box.style.display = '';
+    $('#resumo-quando').textContent = `${fmtData(APP.dataSel)} · ${APP.horaSel}`;
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+  } else {
+    box.style.display = 'none';
+    btn.disabled = true;
+    btn.style.opacity = '.5';
+    btn.style.cursor = 'not-allowed';
+  }
 }
 
 function navSemana(delta) {
@@ -511,40 +586,24 @@ function navSemana(delta) {
   d.setDate(d.getDate() + delta*7);
   APP.viewStart = d.toISOString().slice(0,10);
   renderDayStrip();
+  // Se data atual saiu da janela, limpa seleção + slots
+  const inView = (() => {
+    const start = new Date(APP.viewStart+'T00:00:00');
+    const end = new Date(start); end.setDate(start.getDate()+6);
+    if(!APP.dataSel) return false;
+    const sel = new Date(APP.dataSel+'T00:00:00');
+    return sel >= start && sel <= end;
+  })();
+  if(!inView) {
+    APP.dataSel = null;
+    APP.horaSel = null;
+    $('#slots-title').innerHTML = 'Clica numa data acima pra ver os horários';
+    $('#slots-grid').innerHTML = '';
+    atualizarResumoFinal();
+  }
 }
 
-// ── PASSO 4: horário ──────────────────────────────────────────────────────
-function renderPasso4() {
-  const dur = APP.servico.duracao_min || 60;
-  const slots = gerarSlots(APP.dataSel, dur);
-  $('#passo').innerHTML = `
-    <div class="resumo">
-      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
-      <div class="resumo-row"><span>Modalidade</span><strong>${APP.modalidade==='online'?'Online':'Presencial'}</strong></div>
-      <div class="resumo-row"><span>Data</span><strong style="text-transform:capitalize">${fmtData(APP.dataSel)}</strong></div>
-    </div>
-    <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Escolha o horário (${dur}min)</h2>
-      ${slots.length === 0 ? '<div class="slots-empty">Nenhum horário nesse dia.</div>' : slots.every(s => s.busy) ? '<div class="slots-empty">Tudo ocupado nesse dia.</div>' : `
-        <div class="slots">
-          ${slots.map(s => `<button class="slot ${s.busy?'busy':''}" ${s.busy?'disabled':''} data-h="${s.hora}">${s.hora}</button>`).join('')}
-        </div>
-      `}
-      <div style="display:flex;justify-content:space-between;margin-top:18px">
-        <button class="btn" onclick="window._app.voltar()">← Voltar</button>
-      </div>
-    </div>
-  `;
-  document.querySelectorAll('.slot[data-h]:not(.busy)').forEach(b => {
-    b.onclick = () => {
-      APP.horaSel = b.dataset.h;
-      APP.passo = 5;
-      renderPasso();
-    };
-  });
-}
-
-// ── PASSO 5: dados (modal) ────────────────────────────────────────────────
+// ── PASSO 4: dados (modal) ────────────────────────────────────────────────
 function abrirModalDados() {
   $('#modal-c').innerHTML = `
     <h3 style="font-size:17px;font-weight:700;margin-bottom:6px">Confirmar agendamento</h3>
@@ -556,6 +615,22 @@ function abrirModalDados() {
     <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
     <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
     <div class="fi-group"><label>Email (opcional)</label><input class="fi" id="b-email" type="email" autocomplete="email"/></div>
+    <div class="fi-group">
+      <label>Método de pagamento <span class="req">*</span></label>
+      <select class="fi" id="b-pag" required>
+        <option value="">— Selecione —</option>
+        <option value="pix">PIX</option>
+        <option value="dinheiro">Dinheiro (no dia)</option>
+        <option value="cartao_credito">Cartão de crédito</option>
+        <option value="cartao_debito">Cartão de débito</option>
+        <option value="transferencia">Transferência bancária</option>
+      </select>
+    </div>
+    <div class="fi-group">
+      <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
+      <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
+      <div id="b-comprov-info" style="font-size:12px;color:var(--text3);margin-top:6px">Pode anexar agora ou enviar pelo WhatsApp depois.</div>
+    </div>
     <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Algo que queira contar?"></textarea></div>
     <button class="btn btn-primary btn-block" id="b-submit">Confirmar agendamento</button>
     <button class="btn btn-block" style="margin-top:10px" onclick="window._app.voltar()">← Voltar</button>
@@ -564,20 +639,37 @@ function abrirModalDados() {
   $('#modal-bd').classList.add('show');
   $('#modal-bd').onclick = e => { if(e.target.id === 'modal-bd') closeModal(); };
 
+  // Feedback visual ao anexar comprovante (sem upload — só placebo)
+  $('#b-comprov').onchange = e => {
+    const f = e.target.files[0];
+    const info = $('#b-comprov-info');
+    if(f) {
+      const mb = (f.size/1024/1024).toFixed(2);
+      info.innerHTML = `<span style="color:var(--green)">✓ Anexado: <strong>${f.name}</strong> (${mb}MB) — envie também pelo WhatsApp após confirmar.</span>`;
+    } else {
+      info.innerHTML = 'Pode anexar agora ou enviar pelo WhatsApp depois.';
+    }
+  };
+
   $('#b-submit').onclick = async () => {
     const nome = $('#b-nome').value.trim();
     const tel = $('#b-tel').value.replace(/\D/g,'');
     const email = $('#b-email').value.trim();
     const obs = $('#b-obs').value.trim();
+    const pag = $('#b-pag').value;
+    const comprovFile = $('#b-comprov').files[0]; // só pra UI, não salvamos
     const err = $('#b-err');
     err.style.display = 'none';
     if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
     if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
+    if(!pag) { err.textContent='Selecione o método de pagamento'; err.style.display='block'; return; }
 
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = 'Enviando...';
 
     try {
+      // NÃO salvamos o arquivo do comprovante no banco (decisão: floda storage).
+      // Apenas o flag "anexou" pra admin saber que cliente vai mandar via WhatsApp.
       await addDoc(collection(db,'adm_solicitacoes'), {
         nome, tel, email: email||null,
         observacao: obs,
@@ -587,6 +679,8 @@ function abrirModalDados() {
         servico_id: APP.servico.id,
         servico_nome: APP.servico.nome,
         modalidade: APP.modalidade,
+        metodo_pagamento: pag,
+        comprovante_anexado: !!comprovFile, // só boolean, não o arquivo
         tipo_oraculo: APP.servico.nome.toLowerCase().includes('baralho') ? 'baralho_cigano' : (APP.servico.nome.toLowerCase().includes('búzio')||APP.servico.nome.toLowerCase().includes('buzio') ? 'buzios' : 'outro'),
         valor_proposto: APP.servico.valor || 0,
         status: 'pendente',
@@ -594,7 +688,7 @@ function abrirModalDados() {
         criadoEm: serverTimestamp()
       });
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
-      mostrarSucesso(nome);
+      mostrarSucesso(nome, !!comprovFile);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
@@ -605,8 +699,8 @@ function abrirModalDados() {
   };
 }
 
-function mostrarSucesso(nome) {
-  const msg = `Olá! Acabei de pedir um agendamento:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}\n\nAguardo confirmação.`;
+function mostrarSucesso(nome, temComprovante) {
+  const msg = `Olá! Acabei de pedir um agendamento:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}\n\nAguardo confirmação.`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
   $('#modal-c').innerHTML = `
     <div class="success-box">
@@ -614,12 +708,13 @@ function mostrarSucesso(nome) {
       <div class="success-t">Pedido recebido!</div>
       <div class="success-d">
         <strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
+        ${temComprovante ? '<strong style="color:var(--green)">⚠️ Não esqueça de enviar o comprovante pelo WhatsApp</strong> — ele não fica anexado aqui, só serve pra você confirmar que tem.<br><br>' : ''}
         O Pai Nando vai entrar em contato pelo WhatsApp pra confirmar.
         Se preferir, mande mensagem agora pra agilizar:
       </div>
       <a class="success-whats" href="${link}" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
-        Mandar pelo WhatsApp
+        ${temComprovante ? 'Mandar comprovante pelo WhatsApp' : 'Mandar pelo WhatsApp'}
       </a>
       <div style="margin-top:24px"><button class="btn" onclick="closeModal();location.reload()">Fechar</button></div>
     </div>
@@ -628,10 +723,8 @@ function mostrarSucesso(nome) {
 
 function voltar() {
   closeModal();
-  if(APP.passo === 5) { APP.passo = 4; renderPasso(); return; }
   if(APP.passo === 4) { APP.passo = 3; renderPasso(); return; }
   if(APP.passo === 3) {
-    // Se não tem passo de modalidade pra esse serviço, volta direto pro 1
     const hasBoth = APP.servico && APP.servico.online && APP.servico.presencial !== false;
     APP.passo = hasBoth ? 2 : 1;
     renderPasso();
