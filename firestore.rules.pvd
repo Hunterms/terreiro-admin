@@ -1,0 +1,134 @@
+// ============================================================================
+// FIRESTORE SECURITY RULES — Projeto: terreiro-pvd
+// ============================================================================
+// Como deployar:
+//   Firebase Console → Projeto terreiro-pvd → Firestore Database → Rules
+//   Cole o conteúdo abaixo (sem este header de comentário) e publique.
+//
+// Modelo de segurança:
+// - Tudo escrita/leitura admin: precisa auth (usuário logado no admin)
+// - Páginas públicas (agendar, disponibilidade, confirma-rega): leituras
+//   específicas + writes validados por shape
+//
+// ⚠️ AVISOS DE PRIVACIDADE (LGPD):
+// As rules abaixo permitem leitura pública de fin_filhos, adm_atendimentos
+// e adm_solicitacoes porque o agendar.html e disponibilidade.html dependem
+// disso. Isso EXPÕE telefones, emails e nomes pra quem souber consultar a
+// API direto (não só via interface). Ver "Hardening sugerido" no final.
+// ============================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── ADMIN: tudo aberto pra usuário autenticado ────────────────────────
+    // Esta regra cobre todas as collections (atendimentos, consulentes,
+    // kanban, despensa, servicos, config, etc.) sob o pressuposto de que
+    // só pessoas com login têm acesso.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ── PÚBLICO: leitura de config + serviços (necessário pro agendar) ────
+    match /adm_config/agendamento {
+      allow read: if true;
+    }
+    match /adm_servicos/{id} {
+      allow read: if true;
+    }
+
+    // ── PÚBLICO: leitura de atendimentos/solicitações (busy slots) ────────
+    // ⚠️ Expõe PII. Melhor solução: ver "Hardening" no fim.
+    match /adm_atendimentos/{id} {
+      allow read: if true;
+    }
+    match /adm_solicitacoes/{id} {
+      allow read: if true;
+
+      // Criação pública (vinda do agendar.html) — validada por shape
+      allow create: if request.resource.data.status == 'pendente'
+                    && request.resource.data.origem == 'agendar_publico'
+                    && request.resource.data.nome is string
+                    && request.resource.data.nome.size() > 1
+                    && request.resource.data.nome.size() < 200
+                    && request.resource.data.tel is string
+                    && request.resource.data.tel.size() > 0
+                    && request.resource.data.tel.size() < 30
+                    && request.resource.data.data is string
+                    && request.resource.data.hora is string
+                    && request.resource.data.valor_proposto is number
+                    && request.resource.data.valor_proposto >= 0
+                    && request.resource.data.valor_proposto < 100000;
+      // update/delete NÃO permitidos publicamente
+    }
+
+    // ── PÚBLICO: dados pro disponibilidade.html ───────────────────────────
+    // Lista de filhos + funções + escalas — usado na tela do filho
+    // ⚠️ Expõe tel e PIN (se houver). Trust-based: admin assume risco.
+    match /fin_filhos/{id} {
+      allow read: if true;
+    }
+    match /adm_funcoes/{id} {
+      allow read: if true;
+    }
+    match /adm_escalas/{id} {
+      allow read: if true;
+    }
+    match /adm_avisos/{id} {
+      allow read: if true;
+    }
+
+    // Disponibilidade: leitura + write público (trust-based)
+    // Quem tem o ID do filho pode marcar/desmarcar a disponibilidade dele.
+    match /adm_disponibilidade/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.filho_id is string
+                            && request.resource.data.filho_id.size() > 0;
+      // delete só admin (não permito publicamente)
+    }
+
+    // Rega diária: confirmação via QR + tracking via disponibilidade
+    // Trust-based: qualquer um com acesso ao QR pode confirmar
+    match /adm_rega_diaria/{date} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAny(
+        ['reserva', 'realizadoEm', 'filhos_marcaram', 'data']
+      );
+    }
+  }
+}
+
+// ============================================================================
+// HARDENING SUGERIDO (futuro)
+// ============================================================================
+// PROBLEMA: leitura pública de adm_atendimentos / adm_solicitacoes / fin_filhos
+// expõe PII (nome, tel, email, valor). LGPD desconfortável.
+//
+// SOLUÇÃO RECOMENDADA: criar collection `pub_slots_ocupados` com docs
+// minimalistas só com {data, hora, dur} (sem nome/tel/email).
+//
+// Implementação client-side (sem Cloud Functions):
+//   1. Toda vez que admin cria/atualiza atendimento → escreve também em
+//      pub_slots_ocupados/{atendimentoId} com {data, hora, dur, tipo:'atend'}
+//   2. Toda vez que admin aprova/cria solicitação → idem com tipo:'sol'
+//   3. Cancelamento/delete → delete em pub_slots_ocupados
+//   4. agendar.html lê APENAS pub_slots_ocupados, nunca os originais
+//
+// Rule resultante:
+//   match /pub_slots_ocupados/{id} {
+//     allow read: if true;
+//     allow write: if request.auth != null;  // só admin escreve
+//   }
+//   match /adm_atendimentos/{id} { allow read, write: if request.auth != null; }
+//   match /adm_solicitacoes/{id} {
+//     allow read: if request.auth != null;
+//     allow create: if (shape validation acima);
+//   }
+//   match /fin_filhos/{id} {
+//     allow read: if request.auth != null
+//                 || resource.data.publico == true;  // opt-in por filho
+//   }
+//
+// Estimativa de esforço: 2-3h de edição no index.html (4-5 funções que
+// salvam/deletam atendimento ou solicitação).
+// ============================================================================
