@@ -4145,7 +4145,7 @@ async function aprovarSolicitacao(id) {
         consId = ref.id;
       }
       // 3. Cria atendimento agendado
-      const atendRef = await addDoc(collection(dbPvd,'adm_atendimentos'), {
+      const atendPayload = {
         consulente_id: consId,
         consulente_nome: s.nome,
         consulente_tel: s.tel || '',
@@ -4162,16 +4162,26 @@ async function aprovarSolicitacao(id) {
         origem_solicitacao_id: id,
         criadoEm: serverTimestamp(),
         atualizadoEm: serverTimestamp()
-      });
+      };
+      const atendRef = await addDoc(collection(dbPvd,'adm_atendimentos'), atendPayload);
       // 4. Transfere slot público: sol_ → atend_
       await syncSlotPub('atend_'+atendRef.id, s.data, s.hora, s.duracao_min||60, 'atendimento');
       await delSlotPub('sol_'+id);
-      // 5. Marca solicitação como aprovada
+      // 5. Cria evento no Google Calendar (se conectado)
+      if(gcalIsConnected()) {
+        try {
+          const gevId = await gcalCreateEvent(atendPayload);
+          if(gevId) {
+            await updateDoc(doc(dbPvd,'adm_atendimentos', atendRef.id), { google_event_id: gevId });
+          }
+        } catch(e) { console.warn('gcal create falhou na aprovação:', e); }
+      }
+      // 6. Marca solicitação como aprovada
       await updateDoc(doc(dbPvd,'adm_solicitacoes',id), {
         status: 'aprovada',
         atualizadoEm: serverTimestamp()
       });
-      toast('Aprovado · agendamento criado','ok');
+      toast(gcalIsConnected() ? 'Aprovado · atendimento + calendar criado' : 'Aprovado · atendimento criado','ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
   });
 }
