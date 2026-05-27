@@ -1396,6 +1396,13 @@ function openFilhoForm(id=null) {
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra filhos mais velhos, gestantes ou com restrição. Não entra na auto-geração das escalas de limpeza, mas continua aparecendo como filho ativo em tudo mais.</div>
       </div>
       <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-clt" ${f?.trabalha_clt?'checked':''}/>
+          Trabalha em horário comercial (CLT)
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Quando marcado, não entra em limpezas de giras em dias úteis (seg-sex). Em fins de semana (sáb/dom) entra normal.</div>
+      </div>
+      <div class="fi-group">
         <label>Mora junto com (grupo de carona)</label>
         <input class="fi" id="ff-casa" list="casas-existentes" value="${f?.casa_id||''}" placeholder="Ex: casa-rose-elis (deixe vazio se mora sozinho)" autocomplete="off"/>
         <datalist id="casas-existentes">
@@ -1430,6 +1437,7 @@ function openFilhoForm(id=null) {
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
       mora_perto: $('#ff-perto').checked,
       isento_limpeza: $('#ff-isento-limpeza').checked,
+      trabalha_clt: $('#ff-clt').checked,
       casa_id: ($('#ff-casa').value||'').trim().toLowerCase().replace(/\s+/g,'-') || null,
       obs: $('#ff-obs').value.trim(),
       atualizadoEm: serverTimestamp()
@@ -2667,6 +2675,10 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
     if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
     // Limpeza DEPOIS: só mora perto. Quem mora longe é hard-excluído.
     if(ehLimpeza && ehDepois) elegiveis = elegiveis.filter(f => f.mora_perto);
+    // CLT não entra em limpezas de dias úteis (seg-sex)
+    const dow = new Date(ev.data+'T00:00:00').getDay();
+    const ehDiaUtil = dow >= 1 && dow <= 5;
+    if(ehLimpeza && ehDiaUtil) elegiveis = elegiveis.filter(f => !f.trabalha_clt);
     const tipoSp = tipoEsp(fn);
     elegiveis.sort((a,b) => {
       // 0. Boost: casa já no evento (caronas)
@@ -2959,6 +2971,10 @@ function openEscalaForm(evId, escId='') {
       if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
       // Limpeza DEPOIS: só mora perto entra. Quem mora longe é hard-excluído.
       if(ehLimpeza && ehDepois) elegiveis = elegiveis.filter(f => f.mora_perto);
+      // CLT não entra em limpezas de dias úteis (seg-sex) — horário comercial conflita
+      const dow = new Date(ev.data+'T00:00:00').getDay();
+      const ehDiaUtil = dow >= 1 && dow <= 5;
+      if(ehLimpeza && ehDiaUtil) elegiveis = elegiveis.filter(f => !f.trabalha_clt);
       const tipoSp = tipoEspacial(fn);
       elegiveis.sort((a,b) => {
         // 0. Boost: casa já presente no evento (economia de carona)
@@ -3028,6 +3044,10 @@ function openEscalaForm(evId, escId='') {
         const ehDepoisFn = (fn.nome||'').toLowerCase().includes('depois');
         if(ehLimpezaFn) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
         if(ehLimpezaFn && ehDepoisFn) elegiveis = elegiveis.filter(f => f.mora_perto);
+        // CLT não entra em limpezas de dias úteis
+        const dowPicker = new Date(ev.data+'T00:00:00').getDay();
+        const ehDiaUtilPicker = dowPicker >= 1 && dowPicker <= 5;
+        if(ehLimpezaFn && ehDiaUtilPicker) elegiveis = elegiveis.filter(f => !f.trabalha_clt);
         const tipoSp = tipoEspacial(fn);
         // Ordena por regra espacial pra os preferidos aparecerem primeiro
         if(tipoSp === 'perto') elegiveis = [...elegiveis].sort((a,b) => (b.mora_perto?1:0) - (a.mora_perto?1:0));
