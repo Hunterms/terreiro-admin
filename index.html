@@ -2200,12 +2200,13 @@ function renderEscalasAnalise() {
   const subcarregados = filhosOrd.filter(f => (stats[f.id]?.total||0) < pisoSubcarga && totalGeral > 0);
 
   const janelaAtual = S.cfgEscalas?.janela_semanas || 8;
+  const maxMesAtual = S.cfgEscalas?.max_por_mes ?? 2;
   body.innerHTML = `
     <div class="card" style="margin-bottom:14px;border-color:var(--gold-bg)">
       <div class="card-h">
         <div class="card-title">⚖️ Janela do gerador de escalas</div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
         <div style="font-size:13.5px;color:var(--text2);flex:1;min-width:240px">
           O gerador olha as últimas <strong style="color:var(--gold)">${janelaAtual} semanas</strong> de escalas pra balancear (quem foi escalado menos vezes vai primeiro).
         </div>
@@ -2215,6 +2216,18 @@ function renderEscalasAnalise() {
           <option value="12" ${janelaAtual===12?'selected':''}>12 semanas (3 meses)</option>
           <option value="24" ${janelaAtual===24?'selected':''}>24 semanas (6 meses)</option>
           <option value="52" ${janelaAtual===52?'selected':''}>52 semanas (1 ano)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:13.5px;color:var(--text2);flex:1;min-width:240px">
+          Cada filho pode ser escalado no <strong style="color:var(--gold)">máximo ${maxMesAtual} vez${maxMesAtual===1?'':'es'}</strong> no mesmo mês. Acima disso fica injusto.
+        </div>
+        <select class="fi" id="maxmes-sel" style="width:auto">
+          <option value="0" ${maxMesAtual===0?'selected':''}>Sem limite</option>
+          <option value="1" ${maxMesAtual===1?'selected':''}>1× / mês</option>
+          <option value="2" ${maxMesAtual===2?'selected':''}>2× / mês · padrão</option>
+          <option value="3" ${maxMesAtual===3?'selected':''}>3× / mês</option>
+          <option value="4" ${maxMesAtual===4?'selected':''}>4× / mês</option>
         </select>
       </div>
     </div>
@@ -2307,6 +2320,22 @@ function renderEscalasAnalise() {
         }, { merge: true });
         S.cfgEscalas = { ...S.cfgEscalas, janela_semanas: novo };
         toast(`Janela do gerador agora é ${novo} semanas`,'ok');
+        renderRoute();
+      } catch(e) { toast('Erro: '+e.message,'err'); }
+    };
+  }
+  // Bind do select de max por mês
+  const selMaxMes = $('#maxmes-sel');
+  if(selMaxMes) {
+    selMaxMes.onchange = async (e) => {
+      const novo = parseInt(e.target.value);
+      try {
+        await setDoc(doc(dbPvd,'adm_config','escalas'), {
+          max_por_mes: novo,
+          atualizadoEm: serverTimestamp()
+        }, { merge: true });
+        S.cfgEscalas = { ...S.cfgEscalas, max_por_mes: novo };
+        toast(novo === 0 ? 'Sem limite mensal' : `Máximo ${novo}× por mês`,'ok');
         renderRoute();
       } catch(e) { toast('Erro: '+e.message,'err'); }
     };
@@ -2653,6 +2682,21 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
     return null;
   };
 
+  // Contagem do mês do evento — pra limitar X escalas por filho por mês
+  // (regra de justiça: ninguém escala demais)
+  const maxPorMes = S.cfgEscalas?.max_por_mes ?? 2; // 0 = sem limite
+  const contMes = {};
+  if(maxPorMes > 0) {
+    S.escalas
+      .filter(es => es.tipo === 'gira' && (es.data||'').slice(0,7) === mesEv && es.evento_id !== ev.id)
+      .forEach(es => (es.alocacoes||[]).forEach(a => {
+        contMes[a.filho_id] = (contMes[a.filho_id]||0) + 1;
+      }));
+    pendentes.filter(p => (p.data||'').slice(0,7) === mesEv && p.evento_id !== ev.id).forEach(p => {
+      contMes[p.filho_id] = (contMes[p.filho_id]||0) + 1;
+    });
+  }
+
   const usados = new Set();
   const sug = {};
   // Casas já alocadas neste evento — pra parear caronas dentro da mesma gira
@@ -2675,6 +2719,8 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
     if(ehLimpeza) elegiveis = elegiveis.filter(f => !f.isento_limpeza);
     // Limpeza DEPOIS: só mora perto. Quem mora longe é hard-excluído.
     if(ehLimpeza && ehDepois) elegiveis = elegiveis.filter(f => f.mora_perto);
+    // Cap: filhos que já bateram o teto mensal ficam fora
+    if(maxPorMes > 0) elegiveis = elegiveis.filter(f => (contMes[f.id]||0) < maxPorMes);
     // CLT não entra em limpezas de dias úteis (seg-sex)
     const dow = new Date(ev.data+'T00:00:00').getDay();
     const ehDiaUtil = dow >= 1 && dow <= 5;
@@ -2953,6 +2999,18 @@ function openEscalaForm(evId, escId='') {
     const sug = {};
     // Casas (grupos de moradia) já alocadas neste evento — pra parear caronas
     const casasNoEvento = new Set();
+    // Contagem do mês — pra cap mensal (justiça). Inclui todas as outras
+    // escalas no mês, excluindo a própria que tá sendo regerada.
+    const mesEvSt = (ev.data||'').slice(0,7);
+    const maxPorMes = S.cfgEscalas?.max_por_mes ?? 2;
+    const contMes = {};
+    if(maxPorMes > 0) {
+      S.escalas
+        .filter(es => es.tipo === 'gira' && (es.data||'').slice(0,7) === mesEvSt && (!esc || es.id !== esc.id))
+        .forEach(es => (es.alocacoes||[]).forEach(a => {
+          contMes[a.filho_id] = (contMes[a.filho_id]||0) + 1;
+        }));
+    }
     funcoesAtivas.forEach(fn => {
       const qtd = qtdParaFuncao(fn);
       let elegiveis = (fn.restrito_a_filhos && fn.restrito_a_filhos.length>0)
@@ -2975,6 +3033,8 @@ function openEscalaForm(evId, escId='') {
       const dow = new Date(ev.data+'T00:00:00').getDay();
       const ehDiaUtil = dow >= 1 && dow <= 5;
       if(ehLimpeza && ehDiaUtil) elegiveis = elegiveis.filter(f => !f.trabalha_clt);
+      // Cap mensal — filho que já bateu o teto fica fora
+      if(maxPorMes > 0) elegiveis = elegiveis.filter(f => (contMes[f.id]||0) < maxPorMes);
       const tipoSp = tipoEspacial(fn);
       elegiveis.sort((a,b) => {
         // 0. Boost: casa já presente no evento (economia de carona)
