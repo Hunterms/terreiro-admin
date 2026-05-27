@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Agendar consulta — Terreiro do Candieiro</title>
-<meta name="description" content="Agende sua consulta de Baralho Cigano no Terreiro do Candieiro em Barão Geraldo, Campinas."/>
-<meta property="og:title" content="Agendar consulta — Terreiro do Candieiro"/>
-<meta property="og:description" content="Consultas de Baralho Cigano em Barão Geraldo, Campinas. Escolha data e horário."/>
+<title>Agendar — Terreiro do Candieiro</title>
+<meta name="description" content="Agende sua consulta no Terreiro do Candieiro em Barão Geraldo, Campinas."/>
+<meta property="og:title" content="Agendar — Terreiro do Candieiro"/>
+<meta property="og:description" content="Atendimentos com Pai Nando em Barão Geraldo, Campinas. Escolha o serviço, dia e horário."/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -19,57 +19,61 @@
   --gold:#d4a843;--gold2:#b8922a;
   --green:#2ecc71;
   --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --blue:#3498db;--blue-bg:rgba(52,152,219,0.1);
   --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
   --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   --rad:10px;--radlg:14px;
 }
 html,body{background:var(--bg);min-height:100vh}
-body{
-  font-family:var(--font);color:var(--text);
-  background-image:
-    radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),
-    radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);
-  padding:24px 16px 60px;
-}
-
+body{font-family:var(--font);color:var(--text);background-image:radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);padding:24px 16px 60px}
 .container{max-width:780px;margin:0 auto}
-
-/* HEADER */
-header{text-align:center;margin-bottom:36px;padding:20px 0}
+header{text-align:center;margin-bottom:30px;padding:14px 0}
 .flame{width:54px;height:54px;color:var(--red);margin:0 auto 14px;display:block}
 h1{font-size:26px;font-weight:700;letter-spacing:.02em;margin-bottom:8px}
 h1 .accent{color:var(--gold)}
-.subtitle{font-size:14px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px}
+.subtitle{font-size:12px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:18px}
 .intro{font-size:15px;color:var(--text2);line-height:1.55;max-width:560px;margin:0 auto}
 
-/* CARD */
 .card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:22px;margin-bottom:18px}
 .card h2{font-size:16px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .card h2 svg{width:18px;height:18px;color:var(--gold)}
 
-/* WEEK STRIP (estilo Google Calendar Appointment) */
+/* Stepper */
+.stepper{display:flex;gap:6px;margin-bottom:18px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;justify-content:center;flex-wrap:wrap}
+.step{padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:var(--glass2)}
+.step.active{background:var(--gold);color:#1a1209;border-color:var(--gold);font-weight:700}
+.step.done{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+
+/* Service cards */
+.servicos{display:grid;gap:10px}
+.servico{padding:16px 18px;background:var(--glass2);border:2px solid var(--border);border-radius:var(--radlg);cursor:pointer;transition:all .15s}
+.servico:hover{border-color:var(--gold);background:rgba(212,168,67,0.1)}
+.servico.sel{border-color:var(--gold);background:rgba(212,168,67,0.15)}
+.servico-nome{font-size:16px;font-weight:700;margin-bottom:4px}
+.servico-meta{font-size:13px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.servico-meta strong{color:var(--gold)}
+.servico-desc{font-size:13px;color:var(--text3);line-height:1.45}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.chip-green{background:var(--green-bg);color:var(--green)}
+.chip-blue{background:var(--blue-bg);color:var(--blue)}
+
+/* Modalidade */
+.modalidade-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mod-opt{padding:18px;background:var(--glass2);border:2px solid var(--border);border-radius:var(--radlg);cursor:pointer;text-align:center;transition:all .15s}
+.mod-opt:hover{border-color:var(--gold)}
+.mod-opt.sel{border-color:var(--gold);background:rgba(212,168,67,0.12)}
+.mod-icon{font-size:30px;margin-bottom:6px;display:block}
+.mod-nome{font-size:15px;font-weight:700}
+.mod-desc{font-size:12px;color:var(--text3);margin-top:4px}
+
+/* Week strip */
 .week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px}
 .week-nav h3{font-size:14px;font-weight:600;color:var(--text2);text-align:center;flex:1}
 .cal-btn{background:var(--glass2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;color:var(--text);cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600;white-space:nowrap}
 .cal-btn:hover:not(:disabled){background:var(--glass);border-color:var(--gold)}
 .cal-btn:disabled{opacity:.3;cursor:not-allowed}
 .day-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
-.day-card{
-  background:var(--glass2);
-  border:2px solid transparent;
-  border-radius:10px;
-  padding:11px 4px;
-  cursor:pointer;
-  transition:all .14s;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:3px;
-  min-height:84px;
-  justify-content:center;
-  text-align:center;
-  position:relative;
-}
+.day-card{background:var(--glass2);border:2px solid transparent;border-radius:10px;padding:11px 4px;cursor:pointer;transition:all .14s;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:84px;justify-content:center;text-align:center;position:relative}
 .day-card:hover:not(.disabled){background:rgba(212,168,67,0.15);border-color:var(--gold);transform:translateY(-1px)}
 .day-card .dow{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
 .day-card .day{font-size:21px;font-weight:700;color:var(--text);line-height:1}
@@ -79,15 +83,9 @@ h1 .accent{color:var(--gold)}
 .day-card.today .day{color:var(--red)}
 .day-card.selected{background:var(--gold);border-color:var(--gold)}
 .day-card.selected .day,.day-card.selected .dow,.day-card.selected .month{color:#1a1209}
-.day-card.has-slots:not(.disabled):not(.selected)::after{
-  content:'';position:absolute;bottom:7px;left:50%;transform:translateX(-50%);
-  width:5px;height:5px;border-radius:50%;background:var(--green)
-}
+.day-card.has-slots:not(.disabled):not(.selected)::after{content:'';position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--green)}
 
-/* SLOTS */
-.slots-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
-.slots-title{font-size:14px;color:var(--text2);text-transform:capitalize}
-.slots-title strong{color:var(--text)}
+/* Slots */
 .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .slot{padding:11px 14px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text);text-align:center;font-family:var(--font);transition:all .12s}
 .slot:hover{background:rgba(212,168,67,0.18);border-color:var(--gold);transform:translateY(-1px)}
@@ -95,7 +93,7 @@ h1 .accent{color:var(--gold)}
 .slot.busy:hover{transform:none;background:transparent;border-color:var(--border2)}
 .slots-empty{text-align:center;padding:24px;color:var(--text3);font-size:14px}
 
-/* MODAL */
+/* Form & modal */
 .modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s}
 .modal-bd.show{display:flex}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -104,28 +102,21 @@ h1 .accent{color:var(--gold)}
 .modal-h h3{font-size:16px;font-weight:700}
 .modal-h .when{font-size:13px;color:var(--gold);margin-top:4px;text-transform:capitalize}
 .modal-c{padding:20px 24px}
-.modal-f{padding:14px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
 .btn-close{background:transparent;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex}
 .btn-close svg{width:20px;height:20px}
 .btn-close:hover{color:var(--text)}
-
-/* FORM */
 .fi-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .fi-group label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
 .fi{padding:11px 13px;background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:15px;font-family:var(--font);outline:none;width:100%}
 .fi:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,0.15)}
 textarea.fi{min-height:70px;resize:vertical}
 .req{color:var(--red)}
-
-/* BUTTONS */
 .btn{display:inline-flex;align-items:center;gap:7px;padding:11px 18px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)}
 .btn:hover{background:var(--glass2)}
 .btn-primary{background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 100%);border-color:transparent;color:#1a1209}
 .btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}
 .btn-primary:disabled{opacity:.55;cursor:wait}
 .btn-block{width:100%;justify-content:center;padding:14px}
-
-/* SUCCESS */
 .success-box{text-align:center;padding:34px 24px}
 .success-icon{width:64px;height:64px;color:var(--green);margin:0 auto 14px;display:block}
 .success-t{font-size:18px;font-weight:700;margin-bottom:10px}
@@ -133,31 +124,26 @@ textarea.fi{min-height:70px;resize:vertical}
 .success-whats{display:inline-flex;align-items:center;gap:8px;padding:14px 22px;background:#25d366;color:#fff;border-radius:var(--rad);text-decoration:none;font-weight:700;font-size:15px}
 .success-whats:hover{transform:translateY(-1px)}
 
-/* LEGEND */
-.legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--text3)}
-.legend-item{display:flex;align-items:center;gap:6px}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-
-/* FOOTER */
-footer{text-align:center;margin-top:36px;color:var(--text3);font-size:13px;line-height:1.6}
-footer a{color:var(--gold);text-decoration:none}
-
-/* LOADING / ERR */
 #loading{text-align:center;padding:40px;color:var(--text3)}
 .spinner{width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+footer{text-align:center;margin-top:36px;color:var(--text3);font-size:13px;line-height:1.6}
+footer a{color:var(--gold);text-decoration:none}
+
 @media (max-width:560px){
   body{padding:18px 12px 40px}
   h1{font-size:22px}
-  .intro{font-size:14px}
-  .card{padding:18px}
   .day-strip{gap:4px}
   .day-card{padding:8px 2px;min-height:70px;gap:2px}
   .day-card .day{font-size:18px}
-  .week-nav h3{font-size:13px}
-  .cal-btn{padding:7px 10px;font-size:12px}
+  .modalidade-opts{grid-template-columns:1fr}
 }
+
+/* Resumo na lateral */
+.resumo{padding:12px 14px;background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:14px;font-size:13px}
+.resumo-row{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+.resumo-row strong{color:var(--gold)}
 </style>
 </head>
 <body>
@@ -165,63 +151,29 @@ footer a{color:var(--gold);text-decoration:none}
 <div class="container">
   <header>
     <svg class="flame" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C12 2 6 8 6 14a6 6 0 0012 0c0-6-6-12-6-12zm0 18a4 4 0 01-4-4c0-2.5 2-5 4-7 2 2 4 4.5 4 7a4 4 0 01-4 4z"/></svg>
-    <h1>Agendar consulta <span class="accent">Baralho Cigano</span></h1>
+    <h1>Agendar <span class="accent">consulta</span></h1>
     <div class="subtitle">Terreiro do Candieiro</div>
-    <p class="intro" id="intro-text">
-      Atendimentos individuais com Pai Nando em Barão Geraldo, Campinas.
-      Escolha uma data e horário disponível abaixo. Confirmamos o agendamento pelo WhatsApp.
-    </p>
+    <p class="intro" id="intro-text">Atendimentos individuais com Pai Nando em Barão Geraldo, Campinas.</p>
   </header>
 
-  <div id="loading">
-    <div class="spinner"></div>
-    Carregando agenda...
-  </div>
+  <div id="loading"><div class="spinner"></div>Carregando agenda...</div>
 
   <div id="content" style="display:none">
-    <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Escolha a data</h2>
-      <div class="week-nav">
-        <button class="cal-btn" id="cal-prev">◀ Anterior</button>
-        <h3 id="cal-range">—</h3>
-        <button class="cal-btn" id="cal-next">Próxima ▶</button>
-      </div>
-      <div class="day-strip" id="day-strip"></div>
-    </div>
-
-    <div class="card" id="slots-card" style="display:none">
-      <div class="slots-h">
-        <div class="slots-title">Horários disponíveis — <strong id="slots-dia">—</strong></div>
-      </div>
-      <div class="slots" id="slots"></div>
-      <div class="slots-empty" id="slots-empty" style="display:none">Nenhum horário disponível neste dia.</div>
-    </div>
+    <div class="stepper" id="stepper"></div>
+    <div id="passo"></div>
   </div>
 
-  <footer>
-    <div>Terreiro do Candieiro · R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP</div>
-    <div style="margin-top:6px">Dúvidas? <a id="footer-whats" href="#" target="_blank">Fala com a gente no WhatsApp</a></div>
+  <footer>Terreiro do Candieiro · R. Angelo Vicentim 236 · Barão Geraldo, Campinas-SP<br>
+  <a id="footer-whats" href="#" target="_blank">Dúvidas? Fala com a gente no WhatsApp</a>
   </footer>
 </div>
 
-<!-- BOOKING MODAL -->
-<div class="modal-bd" id="modal-bd">
-  <div class="modal" id="modal">
-    <div class="modal-h">
-      <div>
-        <h3>Confirmar agendamento</h3>
-        <div class="when" id="m-when">—</div>
-      </div>
-      <button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div class="modal-c" id="modal-c"></div>
-  </div>
-</div>
+<div class="modal-bd" id="modal-bd"><div class="modal" id="modal"><div class="modal-c" id="modal-c"></div></div></div>
 
 <script type="module">
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, serverTimestamp
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 
 const cfg = {
@@ -232,34 +184,33 @@ const cfg = {
   messagingSenderId: "365180068240",
   appId: "1:365180068240:web:7b2fe25ca670781f585315"
 };
-const app = initializeApp(cfg);
-const db = getFirestore(app);
+const db = getFirestore(initializeApp(cfg));
 
-// ── CONFIG DEFAULTS (sobrescritos por adm_config/agendamento se existir) ───
 const cfgDefault = {
-  dias_atendimento: [2, 3, 4, 5, 6],  // 0=dom, 1=seg, ..., 6=sáb. Default: terça a sábado
-  hora_inicio: "10:00",
-  hora_fim: "18:00",
-  duracao_slot: 60,                    // minutos
-  valor_padrao: 150,
+  horarios_semana: { '0':[], '1':[], '2':[{inicio:'10:00',fim:'18:00'}], '3':[{inicio:'10:00',fim:'18:00'}], '4':[{inicio:'10:00',fim:'18:00'}], '5':[{inicio:'10:00',fim:'18:00'}], '6':[{inicio:'10:00',fim:'18:00'}] },
   whatsapp: "5519992494267",
   texto_intro: null,
   ativa: true,
-  antecedencia_min_horas: 24           // não permite agendar pra hoje ou pra menos de X horas
+  antecedencia_min_horas: 24
 };
 
 let APP = {
   cfg: cfgDefault,
-  ocupados: new Set(),                 // 'YYYY-MM-DD HH:MM'
-  viewStart: null,                     // primeiro dia visível na strip (ISO YYYY-MM-DD)
-  diaSelecionado: null
+  servicos: [],
+  ocupados: new Set(),
+  servico: null,
+  modalidade: null,
+  dataSel: null,
+  horaSel: null,
+  viewStart: null,
+  passo: 1
 };
 
-// ── UTIL ───────────────────────────────────────────────────────────────────
 const $ = q => document.querySelector(q);
 const pad = n => String(n).padStart(2,'0');
-const fmtData = d => new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
-const toMin = hhmm => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
+const fmtCurto = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '—';
+const toMin = h => { const [a,b] = h.split(':').map(Number); return a*60+b; };
 const fromMin = m => `${pad(Math.floor(m/60))}:${pad(m%60)}`;
 
 function closeModal() {
@@ -271,35 +222,52 @@ window.closeModal = closeModal;
 // ── BOOT ───────────────────────────────────────────────────────────────────
 (async function boot() {
   try {
-    // 1. Carrega config customizado (se existir)
+    // Config
     try {
       const snap = await getDoc(doc(db,'adm_config','agendamento'));
-      if(snap.exists()) APP.cfg = { ...cfgDefault, ...snap.data() };
-    } catch(e) { /* ignora — usa default */ }
+      if(snap.exists()) {
+        const dados = snap.data();
+        APP.cfg = { ...cfgDefault, ...dados };
+        // Migration: se tem só dias_atendimento + horas, converte
+        if(dados.dias_atendimento && dados.hora_inicio && dados.hora_fim && !dados.horarios_semana) {
+          APP.cfg.horarios_semana = {};
+          for(let i=0;i<7;i++) APP.cfg.horarios_semana[String(i)] = dados.dias_atendimento.includes(i) ? [{ inicio: dados.hora_inicio, fim: dados.hora_fim }] : [];
+        }
+      }
+    } catch(e) {}
 
-    // 2. Carrega atendimentos do mês atual + próximo (slots ocupados)
+    // Serviços (só públicos + ativos)
+    try {
+      const snap = await getDocs(collection(db,'adm_servicos'));
+      APP.servicos = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .filter(s => s.publico !== false && s.ativo !== false)
+        .sort((a,b) => (a.ordem||999) - (b.ordem||999));
+    } catch(e) { console.warn('Erro servicos', e); }
+
+    // Slots ocupados
     await carregarOcupados();
 
-    // 3. UI
     if(APP.cfg.texto_intro) $('#intro-text').textContent = APP.cfg.texto_intro;
     $('#footer-whats').href = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Tenho dúvidas sobre o agendamento.')}`;
 
     if(!APP.cfg.ativa) {
-      $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Agendamentos temporariamente fechados. <a style="color:var(--gold)" href="${$('#footer-whats').href}">Fale com a gente no WhatsApp</a> pra outros horários.</div>`;
+      $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Agendamentos temporariamente fechados. <a style="color:var(--gold)" href="${$('#footer-whats').href}">Fale com a gente no WhatsApp</a>.</div>`;
+      return;
+    }
+    if(APP.servicos.length === 0) {
+      $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Nenhum serviço disponível pra agendar agora. <a style="color:var(--gold)" href="${$('#footer-whats').href}">Fala com a gente</a>.</div>`;
       return;
     }
 
-    $('#loading').style.display = 'none';
-    $('#content').style.display = '';
-    // Inicializa viewStart no início da semana atual (domingo)
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     APP.viewStart = hoje.toISOString().slice(0,10);
-    renderCalendario();
-    $('#cal-prev').onclick = () => navSemana(-1);
-    $('#cal-next').onclick = () => navSemana(1);
+
+    $('#loading').style.display = 'none';
+    $('#content').style.display = '';
+    renderPasso();
   } catch(e) {
-    $('#loading').innerHTML = `<div style="color:var(--red)">Erro ao carregar. Recarregue a página.</div>`;
     console.error(e);
+    $('#loading').innerHTML = `<div style="color:var(--red)">Erro ao carregar. Recarregue a página.</div>`;
   }
 })();
 
@@ -309,42 +277,190 @@ async function carregarOcupados() {
   const limite = new Date(); limite.setMonth(hoje.getMonth() + 3);
   const inicio = hoje.toISOString().slice(0,10);
   const fim = limite.toISOString().slice(0,10);
-
-  // Pega de adm_atendimentos (slots já confirmados)
   try {
     const q1 = query(collection(db,'adm_atendimentos'), where('data','>=',inicio), where('data','<=',fim));
-    const snap1 = await getDocs(q1);
-    snap1.forEach(d => {
+    (await getDocs(q1)).forEach(d => {
       const a = d.data();
       if(a.status_atendimento === 'cancelado') return;
-      marcarOcupado(a.data, a.hora, a.duracao_min || APP.cfg.duracao_slot);
+      marcarOcupado(a.data, a.hora, a.duracao_min || 60);
     });
-  } catch(e) { console.warn('Sem acesso a adm_atendimentos (rules?)', e); }
-
-  // Pega de adm_solicitacoes (pedidos pendentes — também bloqueiam slots)
+  } catch(e) {}
   try {
     const q2 = query(collection(db,'adm_solicitacoes'), where('data','>=',inicio), where('data','<=',fim));
-    const snap2 = await getDocs(q2);
-    snap2.forEach(d => {
+    (await getDocs(q2)).forEach(d => {
       const a = d.data();
       if(a.status === 'rejeitada' || a.status === 'cancelada') return;
-      marcarOcupado(a.data, a.hora, a.duracao_min || APP.cfg.duracao_slot);
+      marcarOcupado(a.data, a.hora, a.duracao_min || 60);
     });
-  } catch(e) { console.warn('Sem acesso a adm_solicitacoes (rules?)', e); }
+  } catch(e) {}
 }
 
 function marcarOcupado(data, hora, dur) {
   if(!data || !hora) return;
-  const minStart = toMin(hora);
-  const slotSize = APP.cfg.duracao_slot;
-  // bloqueia todos os slots que sobrepõem o intervalo [start, start+dur)
-  for(let m = minStart; m < minStart + dur; m += slotSize) {
-    APP.ocupados.add(`${data} ${fromMin(m)}`);
-  }
+  const start = toMin(hora);
+  // Bloqueia em janelas de 15min pra resolução fina
+  for(let m = start; m < start + dur; m += 15) APP.ocupados.add(`${data} ${fromMin(m)}`);
 }
 
-// ── CALENDÁRIO (strip de 7 dias estilo Google Appointment) ────────────────
-function renderCalendario() {
+// Verifica se um slot [hora, hora+dur) está livre
+function slotLivre(data, hora, dur) {
+  const start = toMin(hora);
+  for(let m = start; m < start + dur; m += 15) {
+    if(APP.ocupados.has(`${data} ${fromMin(m)}`)) return false;
+  }
+  return true;
+}
+
+// Gera todos os slots de um dia, respeitando janelas e duração do serviço
+function gerarSlots(dataStr, dur) {
+  const dow = new Date(dataStr+'T00:00:00').getDay();
+  const janelas = APP.cfg.horarios_semana[String(dow)] || [];
+  if(janelas.length === 0) return [];
+  const slots = [];
+  const minBookable = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
+  for(const j of janelas) {
+    const ini = toMin(j.inicio);
+    const fim = toMin(j.fim);
+    for(let m = ini; m + dur <= fim; m += dur) {
+      const hora = fromMin(m);
+      const ts = new Date(`${dataStr}T${hora}:00`).getTime();
+      const busy = !slotLivre(dataStr, hora, dur) || ts < minBookable;
+      slots.push({ hora, busy });
+    }
+  }
+  return slots;
+}
+
+// ── STEPPER ────────────────────────────────────────────────────────────────
+function renderStepper() {
+  const steps = [
+    { n:1, lbl:'Serviço' },
+    { n:2, lbl:'Modalidade' },
+    { n:3, lbl:'Data' },
+    { n:4, lbl:'Horário' },
+    { n:5, lbl:'Dados' }
+  ];
+  // Pula passo 2 se serviço só tem uma modalidade
+  const pulaMod = APP.servico && !(APP.servico.online && APP.servico.presencial !== false);
+  $('#stepper').innerHTML = steps
+    .filter(s => !(s.n === 2 && pulaMod))
+    .map(s => {
+      let cls = 'step';
+      if(APP.passo === s.n) cls += ' active';
+      else if(APP.passo > s.n) cls += ' done';
+      return `<span class="${cls}">${s.lbl}</span>`;
+    }).join('');
+}
+
+function renderPasso() {
+  renderStepper();
+  if(APP.passo === 1) renderPasso1();
+  else if(APP.passo === 2) renderPasso2();
+  else if(APP.passo === 3) renderPasso3();
+  else if(APP.passo === 4) renderPasso4();
+  else if(APP.passo === 5) abrirModalDados();
+}
+
+// ── PASSO 1: serviço ──────────────────────────────────────────────────────
+function renderPasso1() {
+  $('#passo').innerHTML = `
+    <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Escolha o serviço</h2>
+      <div class="servicos">
+        ${APP.servicos.map(s => `
+          <div class="servico" data-id="${s.id}">
+            <div class="servico-nome">${s.nome}</div>
+            <div class="servico-meta">
+              <span><strong>R$ ${(s.valor||0).toFixed(0)}</strong></span>
+              <span>${s.duracao_min||60} min</span>
+              ${s.presencial!==false?'<span class="chip chip-green">presencial</span>':''}
+              ${s.online?'<span class="chip chip-blue">online</span>':''}
+            </div>
+            ${s.descricao?`<div class="servico-desc">${s.descricao}</div>`:''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.querySelectorAll('.servico').forEach(el => {
+    el.onclick = () => {
+      const sid = el.dataset.id;
+      APP.servico = APP.servicos.find(s => s.id === sid);
+      const hasOnline = !!APP.servico.online;
+      const hasPres = APP.servico.presencial !== false;
+      if(hasOnline && hasPres) {
+        APP.passo = 2;
+      } else {
+        APP.modalidade = hasPres ? 'presencial' : 'online';
+        APP.passo = 3;
+      }
+      renderPasso();
+      window.scrollTo({top:0,behavior:'smooth'});
+    };
+  });
+}
+
+// ── PASSO 2: modalidade ───────────────────────────────────────────────────
+function renderPasso2() {
+  $('#passo').innerHTML = `
+    <div class="resumo">
+      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+    </div>
+    <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Como prefere o atendimento?</h2>
+      <div class="modalidade-opts">
+        <div class="mod-opt" data-mod="presencial">
+          <span class="mod-icon">🏛️</span>
+          <div class="mod-nome">Presencial</div>
+          <div class="mod-desc">No terreiro, Barão Geraldo</div>
+        </div>
+        <div class="mod-opt" data-mod="online">
+          <span class="mod-icon">💻</span>
+          <div class="mod-nome">Online</div>
+          <div class="mod-desc">Por videochamada</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:18px">
+        <button class="btn" onclick="window._app.voltar()">← Voltar</button>
+      </div>
+    </div>
+  `;
+  document.querySelectorAll('.mod-opt').forEach(el => {
+    el.onclick = () => {
+      APP.modalidade = el.dataset.mod;
+      APP.passo = 3;
+      renderPasso();
+      window.scrollTo({top:0,behavior:'smooth'});
+    };
+  });
+}
+
+// ── PASSO 3: data ─────────────────────────────────────────────────────────
+function renderPasso3() {
+  $('#passo').innerHTML = `
+    <div class="resumo">
+      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>Modalidade</span><strong>${APP.modalidade==='online'?'Online':'Presencial'}</strong></div>
+    </div>
+    <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Escolha a data</h2>
+      <div class="week-nav">
+        <button class="cal-btn" id="cal-prev">◀ Anterior</button>
+        <h3 id="cal-range">—</h3>
+        <button class="cal-btn" id="cal-next">Próxima ▶</button>
+      </div>
+      <div class="day-strip" id="day-strip"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:18px">
+        <button class="btn" onclick="window._app.voltar()">← Voltar</button>
+      </div>
+    </div>
+  `;
+  renderDayStrip();
+  $('#cal-prev').onclick = () => navSemana(-1);
+  $('#cal-next').onclick = () => navSemana(1);
+}
+
+function renderDayStrip() {
   const startD = new Date(APP.viewStart+'T00:00:00');
   const dias = [];
   for(let i=0; i<7; i++) {
@@ -352,128 +468,95 @@ function renderCalendario() {
     d.setDate(startD.getDate()+i);
     dias.push(d);
   }
-
-  // Label do range
   $('#cal-range').textContent = `${dias[0].toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${dias[6].toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}`;
-
-  // Limites de navegação: não pode voltar pro passado, vai até 60 dias adiante
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const startMs = startD.getTime();
   $('#cal-prev').disabled = startMs <= hoje.getTime();
-  $('#cal-next').disabled = startMs >= hoje.getTime() + 60 * 86400000;
-
+  $('#cal-next').disabled = startMs >= hoje.getTime() + 60*86400000;
   const hojeStr = hoje.toISOString().slice(0,10);
-  const minBookableTs = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
-  const dowAbrev = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-
+  const dowAb = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const dur = APP.servico.duracao_min || 60;
   let html = '';
   for(const dt of dias) {
     const dStr = dt.toISOString().slice(0,10);
-    const dow = dt.getDay();
-    const ehAtendido = APP.cfg.dias_atendimento.includes(dow);
-    const ehPassado = dt.getTime() + 86400000 < minBookableTs;
     const ehHoje = dStr === hojeStr;
-    const slotsDoDia = gerarSlotsDoDia(dStr);
-    const algumLivre = slotsDoDia.some(s => !s.busy);
-    const disabled = ehPassado || !ehAtendido || !algumLivre;
-    const sel = APP.diaSelecionado === dStr;
-
+    const slots = gerarSlots(dStr, dur);
+    const algumLivre = slots.some(s => !s.busy);
+    const passado = dStr < hojeStr;
+    const disabled = passado || slots.length === 0 || !algumLivre;
+    const sel = APP.dataSel === dStr;
     const klass = ['day-card'];
     if(disabled) klass.push('disabled');
     if(ehHoje) klass.push('today');
     if(sel) klass.push('selected');
     if(!disabled && algumLivre) klass.push('has-slots');
-
-    const mesAbrev = dt.toLocaleDateString('pt-BR',{month:'short'}).replace('.','').toLowerCase();
-    html += `
-      <div class="${klass.join(' ')}" ${disabled?'':`data-d="${dStr}"`}>
-        <div class="dow">${dowAbrev[dow]}</div>
-        <div class="day">${dt.getDate()}</div>
-        <div class="month">${mesAbrev}</div>
-      </div>
-    `;
+    const mesAb = dt.toLocaleDateString('pt-BR',{month:'short'}).replace('.','').toLowerCase();
+    html += `<div class="${klass.join(' ')}" ${disabled?'':`data-d="${dStr}"`}><div class="dow">${dowAb[dt.getDay()]}</div><div class="day">${dt.getDate()}</div><div class="month">${mesAb}</div></div>`;
   }
   $('#day-strip').innerHTML = html;
-
   document.querySelectorAll('.day-card[data-d]').forEach(el => {
-    el.onclick = () => selecionarDia(el.dataset.d);
+    el.onclick = () => {
+      APP.dataSel = el.dataset.d;
+      APP.passo = 4;
+      renderPasso();
+      window.scrollTo({top:0,behavior:'smooth'});
+    };
   });
-
-  // Mantém seleção apenas se ela está visível na semana atual
-  if(APP.diaSelecionado) {
-    const inView = dias.some(d => d.toISOString().slice(0,10) === APP.diaSelecionado);
-    if(inView) renderSlots();
-    else { APP.diaSelecionado = null; $('#slots-card').style.display = 'none'; }
-  } else {
-    $('#slots-card').style.display = 'none';
-  }
 }
 
 function navSemana(delta) {
   const d = new Date(APP.viewStart+'T00:00:00');
   d.setDate(d.getDate() + delta*7);
   APP.viewStart = d.toISOString().slice(0,10);
-  renderCalendario();
+  renderDayStrip();
 }
 
-function selecionarDia(d) {
-  APP.diaSelecionado = d;
-  renderCalendario();
-  // Scroll suave pra mostrar os slots
-  setTimeout(() => {
-    const card = $('#slots-card');
-    if(card && card.style.display !== 'none') card.scrollIntoView({behavior:'smooth',block:'nearest'});
-  }, 50);
+// ── PASSO 4: horário ──────────────────────────────────────────────────────
+function renderPasso4() {
+  const dur = APP.servico.duracao_min || 60;
+  const slots = gerarSlots(APP.dataSel, dur);
+  $('#passo').innerHTML = `
+    <div class="resumo">
+      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>Modalidade</span><strong>${APP.modalidade==='online'?'Online':'Presencial'}</strong></div>
+      <div class="resumo-row"><span>Data</span><strong style="text-transform:capitalize">${fmtData(APP.dataSel)}</strong></div>
+    </div>
+    <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Escolha o horário (${dur}min)</h2>
+      ${slots.length === 0 ? '<div class="slots-empty">Nenhum horário nesse dia.</div>' : slots.every(s => s.busy) ? '<div class="slots-empty">Tudo ocupado nesse dia.</div>' : `
+        <div class="slots">
+          ${slots.map(s => `<button class="slot ${s.busy?'busy':''}" ${s.busy?'disabled':''} data-h="${s.hora}">${s.hora}</button>`).join('')}
+        </div>
+      `}
+      <div style="display:flex;justify-content:space-between;margin-top:18px">
+        <button class="btn" onclick="window._app.voltar()">← Voltar</button>
+      </div>
+    </div>
+  `;
+  document.querySelectorAll('.slot[data-h]:not(.busy)').forEach(b => {
+    b.onclick = () => {
+      APP.horaSel = b.dataset.h;
+      APP.passo = 5;
+      renderPasso();
+    };
+  });
 }
 
-// ── SLOTS ──────────────────────────────────────────────────────────────────
-function gerarSlotsDoDia(dStr) {
-  const minStart = toMin(APP.cfg.hora_inicio);
-  const minEnd = toMin(APP.cfg.hora_fim);
-  const dur = APP.cfg.duracao_slot;
-  const slots = [];
-  const minBookableTs = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
-  for(let m = minStart; m + dur <= minEnd; m += dur) {
-    const hora = fromMin(m);
-    const ts = new Date(`${dStr}T${hora}:00`).getTime();
-    const busy = APP.ocupados.has(`${dStr} ${hora}`) || ts < minBookableTs;
-    slots.push({ hora, busy });
-  }
-  return slots;
-}
-
-function renderSlots() {
-  if(!APP.diaSelecionado) { $('#slots-card').style.display = 'none'; return; }
-  $('#slots-card').style.display = '';
-  $('#slots-dia').textContent = fmtData(APP.diaSelecionado);
-  const slots = gerarSlotsDoDia(APP.diaSelecionado);
-  const livres = slots.filter(s => !s.busy);
-  if(livres.length === 0) {
-    $('#slots').innerHTML = '';
-    $('#slots-empty').style.display = '';
-  } else {
-    $('#slots-empty').style.display = 'none';
-    $('#slots').innerHTML = slots.map(s => `
-      <button class="slot ${s.busy?'busy':''}" ${s.busy?'disabled':''} data-h="${s.hora}">${s.hora}</button>
-    `).join('');
-    document.querySelectorAll('.slot[data-h]:not(.busy)').forEach(b => {
-      b.onclick = () => abrirAgendamento(APP.diaSelecionado, b.dataset.h);
-    });
-  }
-}
-
-// ── AGENDAMENTO ────────────────────────────────────────────────────────────
-function abrirAgendamento(data, hora) {
-  $('#m-when').textContent = `${fmtData(data)} · ${hora}`;
+// ── PASSO 5: dados (modal) ────────────────────────────────────────────────
+function abrirModalDados() {
   $('#modal-c').innerHTML = `
+    <h3 style="font-size:17px;font-weight:700;margin-bottom:6px">Confirmar agendamento</h3>
+    <div style="font-size:13px;color:var(--gold);margin-bottom:14px;text-transform:capitalize">${fmtData(APP.dataSel)} · ${APP.horaSel}</div>
+    <div class="resumo" style="margin-bottom:14px">
+      <div class="resumo-row"><span>${APP.servico.nome}</span><strong>R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>${APP.modalidade==='online'?'Online':'Presencial'}</span><span>${APP.servico.duracao_min||60} min</span></div>
+    </div>
     <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
     <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
     <div class="fi-group"><label>Email (opcional)</label><input class="fi" id="b-email" type="email" autocomplete="email"/></div>
     <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Algo que queira contar?"></textarea></div>
-    <div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:11px 14px;font-size:13px;color:var(--green);margin-bottom:14px">
-      Valor da consulta: <strong>R$ ${APP.cfg.valor_padrao}</strong> · pago no dia
-    </div>
     <button class="btn btn-primary btn-block" id="b-submit">Confirmar agendamento</button>
+    <button class="btn btn-block" style="margin-top:10px" onclick="window._app.voltar()">← Voltar</button>
     <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
   `;
   $('#modal-bd').classList.add('show');
@@ -486,29 +569,30 @@ function abrirAgendamento(data, hora) {
     const obs = $('#b-obs').value.trim();
     const err = $('#b-err');
     err.style.display = 'none';
-
-    if(!nome) { err.textContent = 'Informe seu nome'; err.style.display = 'block'; return; }
-    if(!tel || tel.length < 10) { err.textContent = 'Telefone inválido'; err.style.display = 'block'; return; }
+    if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
+    if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
 
     const btn = $('#b-submit');
-    btn.disabled = true;
-    btn.textContent = 'Enviando...';
+    btn.disabled = true; btn.textContent = 'Enviando...';
 
     try {
-      const ref = await addDoc(collection(db,'adm_solicitacoes'), {
-        nome, tel, email: email || null,
+      await addDoc(collection(db,'adm_solicitacoes'), {
+        nome, tel, email: email||null,
         observacao: obs,
-        data, hora,
-        duracao_min: APP.cfg.duracao_slot,
-        tipo_oraculo: 'baralho_cigano',
-        valor_proposto: APP.cfg.valor_padrao,
-        status: 'pendente',          // admin aprova/rejeita
+        data: APP.dataSel,
+        hora: APP.horaSel,
+        duracao_min: APP.servico.duracao_min || 60,
+        servico_id: APP.servico.id,
+        servico_nome: APP.servico.nome,
+        modalidade: APP.modalidade,
+        tipo_oraculo: APP.servico.nome.toLowerCase().includes('baralho') ? 'baralho_cigano' : (APP.servico.nome.toLowerCase().includes('búzio')||APP.servico.nome.toLowerCase().includes('buzio') ? 'buzios' : 'outro'),
+        valor_proposto: APP.servico.valor || 0,
+        status: 'pendente',
         origem: 'agendar_publico',
         criadoEm: serverTimestamp()
       });
-      // Marca slot como ocupado localmente pra evitar dupla reserva nessa sessão
-      marcarOcupado(data, hora, APP.cfg.duracao_slot);
-      mostrarSucesso(nome, data, hora);
+      marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
+      mostrarSucesso(nome);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
@@ -519,16 +603,15 @@ function abrirAgendamento(data, hora) {
   };
 }
 
-function mostrarSucesso(nome, data, hora) {
-  const msg = `Olá! Acabei de pedir um agendamento de baralho cigano:\n\n📅 ${fmtData(data)}\n🕐 ${hora}\n👤 ${nome}\n\nAguardo confirmação.`;
+function mostrarSucesso(nome) {
+  const msg = `Olá! Acabei de pedir um agendamento:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}\n\nAguardo confirmação.`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
   $('#modal-c').innerHTML = `
     <div class="success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       <div class="success-t">Pedido recebido!</div>
       <div class="success-d">
-        Recebemos seu pedido de agendamento.<br>
-        <strong style="color:var(--gold);text-transform:capitalize">${fmtData(data)} · ${hora}</strong><br><br>
+        <strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
         O Pai Nando vai entrar em contato pelo WhatsApp pra confirmar.
         Se preferir, mande mensagem agora pra agilizar:
       </div>
@@ -540,6 +623,22 @@ function mostrarSucesso(nome, data, hora) {
     </div>
   `;
 }
+
+function voltar() {
+  closeModal();
+  if(APP.passo === 5) { APP.passo = 4; renderPasso(); return; }
+  if(APP.passo === 4) { APP.passo = 3; renderPasso(); return; }
+  if(APP.passo === 3) {
+    // Se não tem passo de modalidade pra esse serviço, volta direto pro 1
+    const hasBoth = APP.servico && APP.servico.online && APP.servico.presencial !== false;
+    APP.passo = hasBoth ? 2 : 1;
+    renderPasso();
+    return;
+  }
+  if(APP.passo === 2) { APP.passo = 1; renderPasso(); return; }
+}
+
+window._app = { voltar };
 </script>
 </body>
 </html>
