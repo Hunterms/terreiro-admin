@@ -148,6 +148,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       </div>
 
       <div id="filho-area" style="display:none">
+        <div id="afilhados-container"></div>
         <div class="tabs" style="margin-top:14px">
           <button id="tab-disp" class="active" onclick="setSubTab('disp')">Minha disponibilidade</button>
           <button id="tab-esc" onclick="setSubTab('esc')">Minhas escalas</button>
@@ -304,7 +305,25 @@ async function selecionarFilho(id) {
     $('#filho-area').style.display = 'none';
     return;
   }
-  APP.filhoAtual = APP.filhos.find(f => f.id === id);
+  const filho = APP.filhos.find(f => f.id === id);
+  if(!filho) return;
+
+  // Se tem PIN cadastrado, exige autenticação (cache em sessionStorage)
+  if(filho.pin) {
+    const cached = sessionStorage.getItem(`pin_ok_${id}`);
+    if(cached !== '1') {
+      const pin = prompt(`Olá ${filho.nome.split(' ')[0]}! Digite seu PIN de 4 dígitos pra acessar sua área pessoal:`);
+      if(!pin) { $('#filho-sel').value = ''; return; }
+      if(pin.replace(/\D/g,'').slice(0,4) !== filho.pin) {
+        alert('PIN incorreto. Se esqueceu, fala com o pai ou com a administração.');
+        $('#filho-sel').value = '';
+        return;
+      }
+      sessionStorage.setItem(`pin_ok_${id}`, '1');
+    }
+  }
+
+  APP.filhoAtual = filho;
   $('#filho-area').style.display = '';
 
   // Carrega disponibilidade existente do filho (próximos 2 meses)
@@ -327,6 +346,7 @@ async function selecionarFilho(id) {
 
   renderDisp();
   renderEsc();
+  renderAfilhados();
 }
 
 function proxMeses(qtd) {
@@ -516,6 +536,53 @@ function renderEsc() {
         ${passadas.slice(0,15).map(cardEsc).join('')}
       </div>
     `:''}
+  `;
+}
+
+function renderAfilhados() {
+  const cont = $('#afilhados-container');
+  if(!cont) return;
+  const f = APP.filhoAtual;
+  if(!f) { cont.innerHTML = ''; return; }
+  if(!f.e_padrinho) { cont.innerHTML = ''; return; }
+
+  const afilhados = APP.filhos.filter(x => x.padrinho_id === f.id);
+  if(afilhados.length === 0) {
+    cont.innerHTML = `
+      <div class="card" style="margin-top:14px;border-color:var(--gold)">
+        <h2 style="color:var(--gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M3 21v-2a4 4 0 014-4h2"/></svg>Você é padrinho/madrinha</h2>
+        <div style="font-size:14px;color:var(--text2)">Ainda não há filhos vinculados a você como afilhados.</div>
+      </div>
+    `;
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="card" style="margin-top:14px;border-color:var(--gold)">
+      <h2 style="color:var(--gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M3 21v-2a4 4 0 014-4h2"/></svg>Meus afilhados (${afilhados.length})</h2>
+      ${afilhados.map(a => {
+        const tel = a.tel || '';
+        const wpp = tel ? `https://wa.me/55${tel}` : null;
+        const hoje = new Date().toISOString().slice(0,10);
+        const proxEscala = APP.escalas
+          .filter(es => es.data >= hoje && (es.alocacoes||[]).some(al => al.filho_id === a.id))
+          .sort((x,y)=>x.data.localeCompare(y.data))[0];
+        return `
+          <div class="list-item" style="background:rgba(212,168,67,0.06)">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(a.nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
+            <div>
+              <div class="li-name">${a.nome}</div>
+              <div class="li-meta">
+                ${(a.status||'ativo')==='ativo' ? '<span class="chip" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">ativo</span>' : `<span class="chip">${a.status}</span>`}
+                ${tel?`<span>📱 ${tel}</span>`:''}
+                ${proxEscala?`<span style="color:var(--gold)">próxima escala: ${fmtCurto(proxEscala.data)}</span>`:''}
+                ${wpp?`<a href="${wpp}" target="_blank" style="color:#25d366;font-weight:600">WhatsApp</a>`:''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
 
