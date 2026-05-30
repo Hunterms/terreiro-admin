@@ -259,10 +259,11 @@ function renderProduto(prod) {
   // Mostra box do InfinityPay quando cartão for selecionado
   const cardBox = $('#b-card-box');
   const cardLink = $('#b-card-link');
+  // Formato InfinityPay: https://link.infinitepay.io/<handle>/<tag>-<valor,decimais>
   if(cardLink && CFG_AGENDAMENTO.infinity_handle) {
     const slug2 = slugifyTxt(prod.nome) || 'produto';
-    const valorStr = efetivo.valor.toFixed(2).replace('.',',').replace(',00','');
-    cardLink.href = `https://loja.infinitepay.io/${CFG_AGENDAMENTO.infinity_handle}/${slug2}-${valorStr}`;
+    const valorStr = efetivo.valor.toFixed(2).replace('.',',');
+    cardLink.href = `https://link.infinitepay.io/${CFG_AGENDAMENTO.infinity_handle}/${slug2}-${valorStr}`;
   }
   $('#b-pag').onchange = e => {
     const v = e.target.value;

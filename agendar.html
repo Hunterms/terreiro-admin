@@ -689,10 +689,11 @@ function abrirModalDados() {
   const cardBox = $('#b-card-box');
   const cardLink = $('#b-card-link');
   // Gera o link InfinityPay baseado no serviço selecionado
+  // Formato: https://link.infinitepay.io/<handle>/<tag>-<valor,decimais>
   if(cardLink && APP.cfg.infinity_handle) {
     const slug = slugifyTxt(APP.servico.nome) || 'consulta';
-    const valor = (APP.servico.valor||0).toFixed(2).replace('.',',').replace(',00','');
-    cardLink.href = `https://loja.infinitepay.io/${APP.cfg.infinity_handle}/${slug}-${valor}`;
+    const valor = (APP.servico.valor||0).toFixed(2).replace('.',',');
+    cardLink.href = `https://link.infinitepay.io/${APP.cfg.infinity_handle}/${slug}-${valor}`;
   }
   $('#b-pag').onchange = e => {
     const v = e.target.value;
