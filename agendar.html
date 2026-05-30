@@ -650,7 +650,6 @@ function abrirModalDados() {
         <option value="pix">PIX</option>
         <option value="dinheiro">Dinheiro (no dia)</option>
         <option value="cartao_credito">Cartão de crédito</option>
-        <option value="cartao_debito">Cartão de débito</option>
         <option value="transferencia">Transferência bancária</option>
       </select>
     </div>
@@ -691,7 +690,7 @@ function abrirModalDados() {
   $('#b-pag').onchange = e => {
     const v = e.target.value;
     if(pixBox) pixBox.style.display = v === 'pix' ? '' : 'none';
-    if(cardBox) cardBox.style.display = (v === 'cartao_credito' || v === 'cartao_debito') ? '' : 'none';
+    if(cardBox) cardBox.style.display = v === 'cartao_credito' ? '' : 'none';
   };
   const btnCopy = $('#b-pix-copy');
   if(btnCopy) btnCopy.onclick = () => {
