@@ -199,7 +199,9 @@ const cfgDefault = {
   whatsapp: "5519992494267",
   texto_intro: null,
   ativa: true,
-  antecedencia_min_horas: 24
+  antecedencia_min_horas: 24,
+  pix: null,
+  pix_titular: null
 };
 
 let APP = {
@@ -651,6 +653,15 @@ function abrirModalDados() {
         <option value="transferencia">Transferência bancária</option>
       </select>
     </div>
+    ${APP.cfg.pix ? `
+      <div id="b-pix-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:10px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 PIX pra pagar</div>
+        <div id="b-pix-key" style="font-size:15px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;margin-bottom:4px;user-select:all">${APP.cfg.pix}</div>
+        ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Titular: ${APP.cfg.pix_titular}</div>` : ''}
+        <button type="button" class="btn" id="b-pix-copy" style="padding:9px 14px;font-size:13px;width:auto">📋 Copiar chave</button>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, anexe o comprovante abaixo (ou mande pelo WhatsApp depois).</div>
+      </div>
+    ` : ''}
     <div class="fi-group">
       <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
       <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
@@ -663,6 +674,32 @@ function abrirModalDados() {
   `;
   $('#modal-bd').classList.add('show');
   $('#modal-bd').onclick = e => { if(e.target.id === 'modal-bd') closeModal(); };
+
+  // Mostra a box de PIX quando o método for PIX
+  const pixBox = $('#b-pix-box');
+  if(pixBox) {
+    $('#b-pag').onchange = e => {
+      pixBox.style.display = e.target.value === 'pix' ? '' : 'none';
+    };
+    const btnCopy = $('#b-pix-copy');
+    if(btnCopy) btnCopy.onclick = () => {
+      navigator.clipboard.writeText(APP.cfg.pix).then(() => {
+        const orig = btnCopy.textContent;
+        btnCopy.textContent = '✓ Copiado!';
+        btnCopy.style.background = 'rgba(46,204,113,0.15)';
+        btnCopy.style.borderColor = 'var(--green)';
+        btnCopy.style.color = 'var(--green)';
+        setTimeout(() => {
+          btnCopy.textContent = orig;
+          btnCopy.style.background = '';
+          btnCopy.style.borderColor = '';
+          btnCopy.style.color = '';
+        }, 1800);
+      }).catch(() => {
+        alert('Não consegui copiar. A chave é: ' + APP.cfg.pix);
+      });
+    };
+  }
 
   // Feedback visual ao anexar comprovante (sem upload — só placebo)
   $('#b-comprov').onchange = e => {

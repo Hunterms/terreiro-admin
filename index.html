@@ -943,6 +943,12 @@ function attachListeners() {
     if(S.route === 'escalas') renderRoute();
   }));
 
+  // Config do agendamento (pra mensagens do WhatsApp pegarem o PIX, etc.)
+  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','agendamento'), snap => {
+    if(snap.exists()) S.cfgAgendamento = snap.data();
+    if(S.route === 'solicitacoes') renderRoute();
+  }));
+
   // Atendimentos (só admin)
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
@@ -4347,7 +4353,9 @@ function linkWaConfirmacao(s) {
     `💰 R$ ${valor}${metPag?` · ${metPag.replace(/^[^A-Za-zÀ-ÿ]+/,'')}`:''}`
   ];
   if(s.metodo_pagamento === 'pix') {
-    linhas.push('', 'PIX: 19992494267 (Nando) — pode me mandar o comprovante por aqui pra eu confirmar.');
+    const pixKey = S.cfgAgendamento?.pix || '19992494267';
+    const pixTit = S.cfgAgendamento?.pix_titular || 'Nando';
+    linhas.push('', `PIX: ${pixKey}${pixTit?` (${pixTit})`:''} — pode me mandar o comprovante por aqui pra eu confirmar.`);
   } else if(s.comprovante_anexado) {
     linhas.push('', 'Você disse que tem o comprovante — pode me mandar por aqui?');
   }
@@ -5077,6 +5085,10 @@ async function renderConfigAgendamento(c) {
         <div class="fi-group"><label>Antecedência mínima (horas)</label><input type="number" class="fi" id="cf-ant" value="${cfg.antecedencia_min_horas}" min="0"/></div>
         <div class="fi-group"><label>WhatsApp (com DDI)</label><input class="fi" id="cf-wpp" value="${cfg.whatsapp}" placeholder="5519999999999"/></div>
       </div>
+      <div class="row-2">
+        <div class="fi-group"><label>Chave PIX do terreiro</label><input class="fi" id="cf-pix" value="${cfg.pix||''}" placeholder="ex: 19992494267 ou candieiro@email.com"/></div>
+        <div class="fi-group"><label>Titular do PIX</label><input class="fi" id="cf-pix-titular" value="${cfg.pix_titular||''}" placeholder="ex: Fernando Soares"/></div>
+      </div>
       <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
     </div>
 
@@ -5177,6 +5189,8 @@ async function renderConfigAgendamento(c) {
       ativa: $('#cf-ativa').checked,
       antecedencia_min_horas: parseInt($('#cf-ant').value) || 0,
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
+      pix: $('#cf-pix').value.trim() || null,
+      pix_titular: $('#cf-pix-titular').value.trim() || null,
       texto_intro: $('#cf-intro').value.trim() || null,
       horarios_semana,
       atualizadoEm: serverTimestamp()
