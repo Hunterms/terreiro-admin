@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate"/>
+<title>Comprar — Terreiro do Candieiro</title>
+<meta name="description" content="Reserve sua vaga ou compre o produto do Terreiro do Candieiro."/>
+<meta property="og:title" content="Terreiro do Candieiro"/>
+<meta property="og:description" content="Festas, cursos e produtos do Terreiro do Candieiro."/>
+<link rel="icon" type="image/png" href="/logo-candieiro.png"/>
+<link rel="apple-touch-icon" href="/logo-candieiro.png"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --red:#e63329;--red2:#c0251c;
+  --gold:#d4a843;--gold2:#b8922a;
+  --green:#2ecc71;
+  --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --blue:#3498db;--blue-bg:rgba(52,152,219,0.1);
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html,body{background:var(--bg);min-height:100vh}
+body{font-family:var(--font);color:var(--text);background-image:radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);padding:24px 16px 60px}
+.container{max-width:680px;margin:0 auto}
+header{text-align:center;margin-bottom:24px;padding:14px 0}
+.logo{width:80px;height:80px;display:block;margin:0 auto 16px;object-fit:contain}
+h1{font-size:26px;font-weight:700;letter-spacing:.02em;margin-bottom:8px}
+h1 .accent{color:var(--gold)}
+.subtitle{font-size:11px;color:var(--text3);letter-spacing:.18em;text-transform:uppercase;margin-bottom:18px}
+
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--text3);font-size:13px;text-decoration:none;padding:6px 0;margin-bottom:8px}
+.back-link:hover{color:var(--gold)}
+
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:24px;margin-bottom:18px}
+.card h2{font-size:18px;font-weight:700;margin-bottom:10px;color:var(--gold)}
+.card .desc{font-size:15px;color:var(--text2);line-height:1.6;white-space:pre-wrap;margin-bottom:14px}
+.meta-grid{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:14px;margin-bottom:14px}
+.meta-grid dt{color:var(--text3);text-transform:uppercase;font-size:11px;letter-spacing:.08em;align-self:center}
+.meta-grid dd{color:var(--text);font-weight:600}
+.meta-grid dd.preco{color:var(--gold);font-size:18px}
+
+.pix-box{padding:12px 14px;background:var(--gold-bg,rgba(212,168,67,0.08));border:1px solid rgba(212,168,67,0.3);border-radius:10px;margin-bottom:14px}
+.pix-box .pix-l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pix-box .pix-k{font-size:15px;font-family:monospace;color:var(--gold);user-select:all;cursor:text;font-weight:700;word-break:break-all}
+
+.fi-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fi-group label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.fi{padding:12px 14px;background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:15px;font-family:var(--font);outline:none;width:100%}
+.fi:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,0.15)}
+textarea.fi{min-height:70px;resize:vertical}
+.req{color:var(--red)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:14px 22px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font);width:100%}
+.btn:hover{background:var(--glass2)}
+.btn-primary{background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 100%);border-color:transparent;color:#1a1209}
+.btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}
+.btn-primary:disabled{opacity:.55;cursor:wait;transform:none}
+
+.success-box{text-align:center;padding:34px 24px}
+.success-icon{width:64px;height:64px;color:var(--green);margin:0 auto 14px;display:block}
+.success-t{font-size:18px;font-weight:700;margin-bottom:10px}
+.success-d{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:24px}
+.success-whats{display:inline-flex;align-items:center;gap:8px;padding:14px 22px;background:#25d366;color:#fff;border-radius:var(--rad);text-decoration:none;font-weight:700;font-size:15px}
+.success-whats:hover{transform:translateY(-1px)}
+
+#loading{text-align:center;padding:40px;color:var(--text3)}
+.spinner{width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#estado-erro{text-align:center;padding:40px 16px}
+#estado-erro h2{font-size:18px;margin-bottom:10px;color:var(--text)}
+#estado-erro p{color:var(--text2);font-size:14px;line-height:1.5;margin-bottom:18px}
+
+footer{text-align:center;margin-top:36px;color:var(--text3);font-size:12.5px;line-height:1.6}
+footer a{color:var(--gold);text-decoration:none}
+
+@media (max-width:560px){
+  body{padding:18px 12px 40px}
+  h1{font-size:22px}
+  .card{padding:18px}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <a href="https://terreirodocandieiro.com.br" class="back-link">← Voltar para o site</a>
+  <header>
+    <img class="logo" src="/logo-candieiro.png" alt="Candieiro"/>
+    <h1 id="produto-titulo">Terreiro do <span class="accent">Candieiro</span></h1>
+    <div class="subtitle">Reserve sua vaga</div>
+  </header>
+
+  <div id="loading"><div class="spinner"></div>Carregando...</div>
+  <div id="estado-erro" style="display:none"></div>
+  <div id="content" style="display:none"></div>
+
+  <footer>Terreiro do Candieiro · R. Angelo Vicentim 236 · Barão Geraldo, Campinas-SP<br>
+  <a id="footer-whats" href="https://wa.me/5519992494267" target="_blank">Dúvidas? Fala com a gente no WhatsApp</a>
+  </footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, serverTimestamp
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+const cfg = {
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+};
+const db = getFirestore(initializeApp(cfg));
+
+const $ = q => document.querySelector(q);
+const params = new URLSearchParams(location.search);
+const slug = params.get('p');
+const WHATSAPP = '5519992494267';
+
+const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : null;
+
+function mostrarErro(titulo, msg) {
+  $('#loading').style.display = 'none';
+  $('#content').style.display = 'none';
+  const box = $('#estado-erro');
+  box.style.display = '';
+  box.innerHTML = `<h2>${titulo}</h2><p>${msg}</p><a class="success-whats" href="https://wa.me/${WHATSAPP}?text=${encodeURIComponent('Olá! Vim do link de vendas mas deu um erro.')}" target="_blank"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43s.17-.25.25-.41c.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18s-.22-.16-.47-.28z"/></svg>Fala no WhatsApp</a>`;
+}
+
+(async function boot() {
+  if(!slug) {
+    mostrarErro('Link incompleto', 'Esse link não tem o produto. Pede pra quem te enviou pra mandar de novo.');
+    return;
+  }
+  try {
+    const q1 = query(collection(db,'vendas_produtos'), where('slug','==',slug));
+    const snap = await getDocs(q1);
+    if(snap.empty) {
+      mostrarErro('Produto não encontrado', 'Esse link não existe (ou foi removido). Verifica com quem te enviou.');
+      return;
+    }
+    const prod = { id: snap.docs[0].id, ...snap.docs[0].data() };
+    if(prod.ativo === false) {
+      mostrarErro('Vendas encerradas', `As vendas pra <strong>${prod.nome}</strong> foram encerradas. Em caso de dúvida fala com a gente.`);
+      return;
+    }
+    if(prod.publico === false) {
+      // Continua mostrando — link continua válido mesmo se "privado" (só não lista)
+    }
+    document.title = `${prod.nome} — Terreiro do Candieiro`;
+    $('#produto-titulo').textContent = prod.nome;
+    renderProduto(prod);
+  } catch(e) {
+    console.error(e);
+    mostrarErro('Erro ao carregar', 'Não conseguimos buscar os dados. Tenta recarregar a página.');
+  }
+})();
+
+function renderProduto(prod) {
+  $('#loading').style.display = 'none';
+  const c = $('#content');
+  c.style.display = '';
+
+  const dataBr = prod.data_evento ? fmtData(prod.data_evento) : null;
+  c.innerHTML = `
+    <div class="card">
+      <h2>${prod.nome}</h2>
+      ${prod.descricao ? `<p class="desc">${prod.descricao}</p>` : ''}
+      <dl class="meta-grid">
+        <dt>Valor</dt><dd class="preco">R$ ${(prod.valor||0).toFixed(0)}</dd>
+        ${dataBr ? `<dt>Quando</dt><dd style="text-transform:capitalize">${dataBr}</dd>`:''}
+        ${prod.local ? `<dt>Onde</dt><dd>${prod.local}</dd>`:''}
+      </dl>
+      ${prod.pix ? `
+        <div class="pix-box">
+          <div class="pix-l">💳 PIX pra pagar</div>
+          <div class="pix-k">${prod.pix}</div>
+        </div>
+      `:''}
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;color:var(--text)">Reservar / Comprar</h2>
+      <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
+      <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
+      <div class="fi-group"><label>Email (opcional)</label><input class="fi" id="b-email" type="email" autocomplete="email"/></div>
+      <div class="fi-group">
+        <label>Método de pagamento <span class="req">*</span></label>
+        <select class="fi" id="b-pag" required>
+          <option value="">— Selecione —</option>
+          <option value="pix">PIX</option>
+          <option value="dinheiro">Dinheiro (no dia)</option>
+          <option value="cartao_credito">Cartão de crédito</option>
+          <option value="cartao_debito">Cartão de débito</option>
+          <option value="transferencia">Transferência bancária</option>
+        </select>
+      </div>
+      <div class="fi-group">
+        <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
+        <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
+        <div id="b-comprov-info" style="font-size:12px;color:var(--text3);margin-top:6px">Anexe agora ou envie pelo WhatsApp depois.</div>
+      </div>
+      <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Alguma coisa que queira deixar registrado?"></textarea></div>
+      <button class="btn btn-primary" id="b-submit">Reservar — R$ ${(prod.valor||0).toFixed(0)}</button>
+      <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
+    </div>
+  `;
+
+  $('#b-comprov').onchange = e => {
+    const f = e.target.files?.[0];
+    $('#b-comprov-info').innerHTML = f
+      ? `<strong style="color:var(--green)">✓ ${f.name}</strong> · não armazenamos o arquivo no servidor — só registramos que você anexou. Não esqueça de enviar pelo WhatsApp.`
+      : 'Anexe agora ou envie pelo WhatsApp depois.';
+  };
+
+  $('#b-submit').onclick = async () => {
+    const nome = $('#b-nome').value.trim();
+    const tel = $('#b-tel').value.replace(/\D/g,'');
+    const email = $('#b-email').value.trim();
+    const pag = $('#b-pag').value;
+    const comprovFile = $('#b-comprov').files?.[0] || null;
+    const obs = $('#b-obs').value.trim();
+    const err = $('#b-err');
+    err.style.display = 'none';
+    if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
+    if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
+    if(!pag) { err.textContent='Selecione o método de pagamento'; err.style.display='block'; return; }
+
+    const btn = $('#b-submit');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+
+    try {
+      // NÃO salvamos o arquivo do comprovante no banco — só o flag.
+      await addDoc(collection(db,'vendas_pedidos'), {
+        nome, tel, email: email||null,
+        observacao: obs,
+        produto_id: prod.id,
+        produto_nome: prod.nome,
+        produto_slug: prod.slug,
+        valor: prod.valor || 0,
+        metodo_pagamento: pag,
+        comprovante_anexado: !!comprovFile,
+        status: 'pendente',
+        origem: 'vendas_publico',
+        criadoEm: serverTimestamp()
+      });
+      mostrarSucesso(prod, nome, !!comprovFile);
+    } catch(e) {
+      console.error(e);
+      err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = `Reservar — R$ ${(prod.valor||0).toFixed(0)}`;
+    }
+  };
+}
+
+function mostrarSucesso(prod, nome, temComprovante) {
+  const c = $('#content');
+  const dataBr = prod.data_evento ? fmtData(prod.data_evento) : '';
+  const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${prod.valor||0}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}`;
+  const waLink = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
+  c.innerHTML = `
+    <div class="card success-box">
+      <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="success-t">Reserva recebida!</div>
+      <div class="success-d">
+        <strong style="color:var(--gold)">${prod.nome}</strong><br>
+        Vamos confirmar pelo WhatsApp em breve.<br><br>
+        ${temComprovante ? '<strong style="color:var(--green)">⚠️ Não esqueça de enviar o comprovante pelo WhatsApp</strong> — ele não fica anexado aqui, só serve pra você confirmar que tem.<br><br>' : ''}
+      </div>
+      <a class="success-whats" href="${waLink}" target="_blank" rel="noopener">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43s.17-.25.25-.41c.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18s-.22-.16-.47-.28z"/></svg>
+        Avisar no WhatsApp${temComprovante?' + comprovante':''}
+      </a>
+    </div>
+  `;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+</script>
+
+</body>
+</html>

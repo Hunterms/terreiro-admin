@@ -339,6 +339,16 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         Config. agendamento
       </button>
 
+      <div class="section-label">Vendas externas</div>
+      <button data-route="produtos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Produtos
+      </button>
+      <button data-route="pedidos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        Pedidos <span id="ped-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
+      </button>
+
       <div class="section-label">Comunicação</div>
       <button data-route="avisos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -443,6 +453,8 @@ const S = {
   regas: [],
   despensa: [],
   servicos: [],
+  produtos: [],
+  pedidos: [],
   cfgEscalas: { janela_semanas: 8 },
   route: 'dashboard',
   unsubs: []
@@ -910,6 +922,21 @@ function attachListeners() {
     if(['servicos','config-agendamento','agenda','dashboard'].includes(S.route)) renderRoute();
   }));
 
+  // Produtos de vendas externas (festas, cursos, lojinha pontual…)
+  S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_produtos'), snap => {
+    S.produtos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
+    if(['produtos','pedidos','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Pedidos vindos do form público vendas.html (só admin precisa ver)
+  if(S.role === 'admin') {
+    S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_pedidos'), snap => {
+      S.pedidos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(['pedidos','dashboard'].includes(S.route)) renderRoute();
+      atualizarBadgePedidos();
+    }));
+  }
+
   // Config das escalas (janela histórica do balanceamento)
   S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
     if(snap.exists()) S.cfgEscalas = { janela_semanas: 8, ...snap.data() };
@@ -963,6 +990,8 @@ function renderRoute() {
     case 'consulentes':   return renderConsulentes(c);
     case 'servicos':      return renderServicos(c);
     case 'config-agendamento': return renderConfigAgendamento(c);
+    case 'produtos':      return renderProdutos(c);
+    case 'pedidos':       return renderPedidos(c);
     case 'avisos':        return renderAvisos(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
@@ -4652,6 +4681,283 @@ async function seedServicos() {
   } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ── VENDAS EXTERNAS (produtos + pedidos via form público vendas.html) ────
+// ══════════════════════════════════════════════════════════════════════════
+
+function slugify(txt) {
+  return (txt||'')
+    .toString()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'')
+    .slice(0,60);
+}
+
+const STATUS_PEDIDO_LABEL = {
+  pendente:   { lbl:'Pendente',    chip:'chip-amber' },
+  confirmado: { lbl:'Confirmado',  chip:'chip-green' },
+  cancelado:  { lbl:'Cancelado',   chip:'chip' }
+};
+
+function atualizarBadgePedidos() {
+  const n = S.pedidos.filter(p => (p.status||'pendente') === 'pendente').length;
+  const b = $('#ped-badge');
+  if(!b) return;
+  if(n > 0) { b.textContent = n; b.style.display = ''; }
+  else b.style.display = 'none';
+}
+
+// ── PRODUTOS (CRUD) ──────────────────────────────────────────────────────
+function renderProdutos(c) {
+  const lista = [...S.produtos].sort((a,b) => (a.ordem||999)-(b.ordem||999));
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Produtos de venda</div>
+        <div class="page-sub">${lista.length} produto${lista.length===1?'':'s'} cadastrado${lista.length===1?'':'s'} · usado em vendas.html (festas, cursos, etc.)</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openProdutoForm()">+ Novo produto</button>
+      </div>
+    </div>
+    ${lista.length === 0 ? `
+      <div class="card">
+        <div class="empty">
+          <div class="empty-t">Nenhum produto cadastrado</div>
+          <div class="empty-s">Crie uma festa, curso ou produto pra vender. Cada um vira um link compartilhável.</div>
+        </div>
+      </div>
+    ` : `
+      <div class="card">
+        ${lista.map(p => {
+          const ped = S.pedidos.filter(x => x.produto_id === p.id);
+          const pendentes = ped.filter(x => (x.status||'pendente') === 'pendente').length;
+          const confirmados = ped.filter(x => x.status === 'confirmado').length;
+          const arrecadado = ped.filter(x => x.status === 'confirmado').reduce((s,x) => s+(x.valor||0), 0);
+          const urlPub = `https://terreirodocandieiro.com.br/vendas.html?p=${p.slug}`;
+          return `
+          <div class="list-item" style="${p.ativo===false?'opacity:.55':''}">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:18px">${(p.nome||'?').slice(0,1).toUpperCase()}</div>
+            <div class="li-main">
+              <div class="li-name">${p.nome||'(sem nome)'} ${p.publico===false?'<span class="chip" style="font-size:10px;margin-left:6px">privado</span>':''} ${p.ativo===false?'<span class="chip" style="font-size:10px">inativo</span>':''}</div>
+              <div class="li-meta">
+                <span><strong style="color:var(--gold)">R$ ${(p.valor||0).toFixed(0)}</strong></span>
+                ${p.data_evento?`<span>📅 ${fmt.data(p.data_evento)}</span>`:''}
+                <span>${confirmados} confirmado${confirmados===1?'':'s'} · ${pendentes} pendente${pendentes===1?'':'s'}</span>
+                ${arrecadado>0?`<span style="color:var(--green)">R$ ${arrecadado} arrecadado</span>`:''}
+              </div>
+              <div class="li-meta" style="margin-top:6px">
+                <span style="font-size:11px;font-family:monospace;color:var(--text3);user-select:all;cursor:text">${urlPub}</span>
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn btn-sm" onclick="window._app.copiarLinkProduto('${p.slug}')" title="Copia o link público">📋</button>
+              <a class="btn btn-sm" href="${urlPub}" target="_blank" rel="noopener" title="Abre o link público">↗</a>
+              <button class="btn btn-sm" onclick="window._app.openProdutoForm('${p.id}')">Editar</button>
+            </div>
+          </div>
+        `;}).join('')}
+      </div>
+    `}
+  `;
+}
+
+function copiarLinkProduto(slug) {
+  const url = `https://terreirodocandieiro.com.br/vendas.html?p=${slug}`;
+  navigator.clipboard.writeText(url).then(() => {
+    toast('Link copiado!','ok');
+  }).catch(() => {
+    toast('Não foi possível copiar (use o ↗)','err');
+  });
+}
+
+function openProdutoForm(id=null) {
+  const p = id ? S.produtos.find(x => x.id === id) : null;
+  const isEdit = !!p;
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar produto':'Novo produto'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="pd-nome" value="${p?.nome||''}" placeholder="ex: Festa de Iansã, Curso de Tarot..."/></div>
+      <div class="fi-group">
+        <label>Slug (URL) ${isEdit?'<span style="color:var(--text3);font-weight:400">— não mude se já tem pedido</span>':''}</label>
+        <input class="fi" id="pd-slug" value="${p?.slug||''}" placeholder="auto a partir do nome"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">URL pública: <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px">terreirodocandieiro.com.br/vendas.html?p=<span id="pd-slug-preview">${p?.slug||'...'}</span></code></div>
+      </div>
+      <div class="fi-group"><label>Descrição (aparece pro comprador)</label><textarea class="fi" id="pd-desc" rows="4" placeholder="Detalhe o que está vendendo — data, horário, local, o que inclui...">${p?.descricao||''}</textarea></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Valor (R$) *</label><input type="number" step="0.01" class="fi" id="pd-valor" value="${p?.valor||50}" min="0"/></div>
+        <div class="fi-group"><label>Data do evento (opcional)</label><input type="date" class="fi" id="pd-data" value="${p?.data_evento||''}"/></div>
+      </div>
+      <div class="fi-group"><label>Local (opcional)</label><input class="fi" id="pd-local" value="${p?.local||''}" placeholder="Terreiro do Candieiro · R. Angelo Vicentim 236"/></div>
+      <div class="fi-group">
+        <label>Chave PIX (opcional, aparece no form pro comprador pagar)</label>
+        <input class="fi" id="pd-pix" value="${p?.pix||''}" placeholder="ex: 19992494267 ou contato@..."/>
+      </div>
+      <div class="row-2">
+        <div class="fi-group" style="justify-content:flex-end">
+          <label class="checkbox-row" style="margin-top:24px"><input type="checkbox" id="pd-pub" ${p?.publico!==false?'checked':''}/> Público</label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Desmarque pra ocultar (link continua funcionando se ativo).</div>
+        </div>
+        <div class="fi-group" style="justify-content:flex-end">
+          <label class="checkbox-row" style="margin-top:24px"><input type="checkbox" id="pd-ativo" ${p?.ativo!==false?'checked':''}/> Ativo</label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Inativo = link mostra "vendas encerradas".</div>
+        </div>
+      </div>
+      <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="pd-ord" value="${p?.ordem||(S.produtos.length+1)}"/></div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="pd-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="pd-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  // Auto-slug do nome se vazio
+  const updatePreview = () => {
+    let s = $('#pd-slug').value.trim();
+    if(!s) s = slugify($('#pd-nome').value);
+    $('#pd-slug-preview').textContent = s || '...';
+  };
+  $('#pd-nome').oninput = updatePreview;
+  $('#pd-slug').oninput = updatePreview;
+
+  $('#pd-save').onclick = async () => {
+    const nome = $('#pd-nome').value.trim();
+    if(!nome) { toast('Informe o nome','err'); return; }
+    let slug = ($('#pd-slug').value || '').trim();
+    if(!slug) slug = slugify(nome);
+    if(!slug) { toast('Slug inválido','err'); return; }
+    // Conflito de slug?
+    const conflito = S.produtos.find(x => x.slug === slug && x.id !== id);
+    if(conflito) { toast('Já existe produto com esse slug','err'); return; }
+    const data = {
+      nome,
+      slug,
+      descricao: $('#pd-desc').value.trim(),
+      valor: parseFloat($('#pd-valor').value) || 0,
+      data_evento: $('#pd-data').value || null,
+      local: $('#pd-local').value.trim() || null,
+      pix: $('#pd-pix').value.trim() || null,
+      publico: $('#pd-pub').checked,
+      ativo: $('#pd-ativo').checked,
+      ordem: parseInt($('#pd-ord').value) || 999,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(isEdit) await updateDoc(doc(dbPvd,'vendas_produtos',id), data);
+      else { data.criadoEm = serverTimestamp(); await addDoc(collection(dbPvd,'vendas_produtos'), data); }
+      toast(isEdit?'Produto atualizado':'Produto criado · use o 📋 pra copiar o link','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if(isEdit) $('#pd-del').onclick = () => {
+    const ped = S.pedidos.filter(x => x.produto_id === id);
+    confirmar(`Excluir produto <strong>${p.nome}</strong>?${ped.length?` <br>Atenção: ${ped.length} pedido${ped.length===1?'':'s'} vinculado${ped.length===1?'':'s'} continuarão existindo.`:''}`, async () => {
+      try { await deleteDoc(doc(dbPvd,'vendas_produtos',id)); toast('Produto excluído','ok'); closeModal(); }
+      catch(e) { toast('Erro: '+e.message,'err'); }
+    });
+  };
+}
+
+// ── PEDIDOS (gerenciamento dos vindos do form público) ──────────────────
+let pedTab = 'pendente'; // pendente | confirmado | cancelado | todos
+
+function renderPedidos(c) {
+  atualizarBadgePedidos();
+  const todos = [...S.pedidos].sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
+  const filtrados = pedTab === 'todos' ? todos : todos.filter(p => (p.status||'pendente') === pedTab);
+
+  const contagem = {
+    pendente: todos.filter(p => (p.status||'pendente') === 'pendente').length,
+    confirmado: todos.filter(p => p.status === 'confirmado').length,
+    cancelado: todos.filter(p => p.status === 'cancelado').length
+  };
+  const arrecadado = todos.filter(p => p.status === 'confirmado').reduce((s,p) => s+(p.valor||0), 0);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Pedidos de venda</div>
+        <div class="page-sub">${contagem.pendente} pendente${contagem.pendente===1?'':'s'} · ${contagem.confirmado} confirmado${contagem.confirmado===1?'':'s'} · <strong style="color:var(--green)">R$ ${arrecadado.toFixed(0)} arrecadado</strong></div>
+      </div>
+      <div class="page-actions">
+        <button class="btn" onclick="window._app.navigate('produtos')">Ver produtos</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${pedTab==='pendente'?'active':''}" onclick="window._app.setPedTab('pendente')">Pendentes (${contagem.pendente})</button>
+      <button class="${pedTab==='confirmado'?'active':''}" onclick="window._app.setPedTab('confirmado')">Confirmados (${contagem.confirmado})</button>
+      <button class="${pedTab==='cancelado'?'active':''}" onclick="window._app.setPedTab('cancelado')">Cancelados (${contagem.cancelado})</button>
+      <button class="${pedTab==='todos'?'active':''}" onclick="window._app.setPedTab('todos')">Todos</button>
+    </div>
+
+    ${filtrados.length === 0 ? `
+      <div class="card"><div class="empty"><div class="empty-t">Nenhum pedido aqui</div><div class="empty-s">${pedTab==='pendente'?'Pedidos novos via vendas.html aparecem como pendente.':'Mude de aba ou aguarde novos pedidos.'}</div></div></div>
+    ` : `
+      <div class="card">
+        ${filtrados.map(p => {
+          const status = p.status || 'pendente';
+          const cfg = STATUS_PEDIDO_LABEL[status] || STATUS_PEDIDO_LABEL.pendente;
+          const tel = (p.tel||'').replace(/\D/g,'');
+          const waNum = tel.length === 10 || tel.length === 11 ? '55'+tel : tel;
+          const dataBr = p.criadoEm ? fmt.rel(p.criadoEm) : '';
+          const msgConfirm = `Oi ${(p.nome||'').split(' ')[0]}, recebemos seu pedido pra *${p.produto_nome||'compra'}* (R$ ${p.valor||0}). Tô confirmando aqui!`;
+          const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(msgConfirm)}` : null;
+          return `
+          <div class="list-item" style="align-items:flex-start">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${fmt.initials(p.nome||'?')}</div>
+            <div class="li-main">
+              <div class="li-name">${p.nome||'(sem nome)'} <span class="chip ${cfg.chip}" style="margin-left:6px">${cfg.lbl}</span></div>
+              <div class="li-meta" style="margin-top:4px">
+                <strong style="color:var(--text)">${p.produto_nome||'?'}</strong>
+                <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong></span>
+                ${p.metodo_pagamento?`<span>${p.metodo_pagamento}</span>`:''}
+                ${p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
+              </div>
+              <div class="li-meta" style="margin-top:4px">
+                ${p.tel?`<span>📱 ${p.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
+                ${p.email?`<span>✉️ ${p.email}</span>`:''}
+                <span style="font-size:11px;color:var(--text3);margin-left:auto">${dataBr}</span>
+              </div>
+              ${p.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${p.observacao}"</div>`:''}
+            </div>
+            <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:130px">
+              ${waLink?`<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}
+              ${status!=='confirmado'?`<button class="btn btn-sm btn-primary" onclick="window._app.setPedidoStatus('${p.id}','confirmado')">Confirmar</button>`:''}
+              ${status!=='cancelado'?`<button class="btn btn-sm" onclick="window._app.setPedidoStatus('${p.id}','cancelado')">Cancelar</button>`:''}
+              <button class="btn btn-sm" onclick="window._app.deletarPedido('${p.id}','${(p.nome||'').replace(/'/g,'')}')" title="Apagar permanente">🗑</button>
+            </div>
+          </div>
+        `;}).join('')}
+      </div>
+    `}
+  `;
+}
+
+function setPedTab(t) { pedTab = t; renderRoute(); }
+
+async function setPedidoStatus(id, status) {
+  try {
+    await updateDoc(doc(dbPvd,'vendas_pedidos',id), {
+      status,
+      atualizadoEm: serverTimestamp(),
+      confirmadoEm: status === 'confirmado' ? serverTimestamp() : null
+    });
+    toast(status === 'confirmado' ? 'Confirmado' : (status === 'cancelado' ? 'Cancelado' : 'Atualizado'),'ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+async function deletarPedido(id, nome) {
+  confirmar(`Apagar pedido de <strong>${nome||'?'}</strong>? Irreversível.`, async () => {
+    try { await deleteDoc(doc(dbPvd,'vendas_pedidos',id)); toast('Pedido apagado','ok'); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
 // ── CONFIG AGENDAMENTO ─────────────────────────────────────────────────────
 let configAgCarregado = null;
 
@@ -5140,7 +5446,13 @@ window._app = {
   arquivarAviso,
   calNav,
   salvarDisp,
-  openEvento: (id) => openEventoForm(id)
+  openEvento: (id) => openEventoForm(id),
+  // Vendas externas
+  openProdutoForm,
+  copiarLinkProduto,
+  setPedTab,
+  setPedidoStatus,
+  deletarPedido
 };
 
 // Mantém badge de solicitações atualizado mesmo quando não está na rota
