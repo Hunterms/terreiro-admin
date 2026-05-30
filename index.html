@@ -4709,6 +4709,14 @@ function atualizarBadgePedidos() {
   else b.style.display = 'none';
 }
 
+// Calcula o preço efetivo HOJE: se promo ativa e dentro da data, retorna o promo
+function precoEfetivoProduto(p) {
+  if(!p.promo_ativa || !p.promo_valor || !p.promo_ate) return { valor: p.valor||0, ehPromo: false };
+  const hoje = new Date().toISOString().slice(0,10);
+  if(hoje <= p.promo_ate) return { valor: p.promo_valor, ehPromo: true, label: p.promo_label, ate: p.promo_ate, valorCheio: p.valor||0 };
+  return { valor: p.valor||0, ehPromo: false };
+}
+
 // ── PRODUTOS (CRUD) ──────────────────────────────────────────────────────
 function renderProdutos(c) {
   const lista = [...S.produtos].sort((a,b) => (a.ordem||999)-(b.ordem||999));
@@ -4737,13 +4745,22 @@ function renderProdutos(c) {
           const confirmados = ped.filter(x => x.status === 'confirmado').length;
           const arrecadado = ped.filter(x => x.status === 'confirmado').reduce((s,x) => s+(x.valor||0), 0);
           const urlPub = `https://terreirodocandieiro.com.br/vendas.html?p=${p.slug}`;
+          const efetivo = precoEfetivoProduto(p);
+          // Promo configurada mas já vencida
+          const promoVencida = p.promo_ativa && p.promo_ate && new Date().toISOString().slice(0,10) > p.promo_ate;
+          const precoStr = efetivo.ehPromo
+            ? `<span><strong style="color:var(--gold)">R$ ${efetivo.valor.toFixed(0)}</strong> <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${(p.valor||0).toFixed(0)}</span></span>`
+            : `<span><strong style="color:var(--gold)">R$ ${(p.valor||0).toFixed(0)}</strong></span>`;
+          const promoChip = efetivo.ehPromo
+            ? `<span class="chip chip-green" style="font-size:10px">${efetivo.label||'Promo'} até ${fmt.data(p.promo_ate)}</span>`
+            : (promoVencida ? `<span class="chip" style="font-size:10px;color:var(--text3)">Promo encerrada</span>` : '');
           return `
           <div class="list-item" style="${p.ativo===false?'opacity:.55':''}">
             <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:18px">${(p.nome||'?').slice(0,1).toUpperCase()}</div>
             <div class="li-main">
-              <div class="li-name">${p.nome||'(sem nome)'} ${p.publico===false?'<span class="chip" style="font-size:10px;margin-left:6px">privado</span>':''} ${p.ativo===false?'<span class="chip" style="font-size:10px">inativo</span>':''}</div>
+              <div class="li-name">${p.nome||'(sem nome)'} ${p.publico===false?'<span class="chip" style="font-size:10px;margin-left:6px">privado</span>':''} ${p.ativo===false?'<span class="chip" style="font-size:10px">inativo</span>':''} ${promoChip}</div>
               <div class="li-meta">
-                <span><strong style="color:var(--gold)">R$ ${(p.valor||0).toFixed(0)}</strong></span>
+                ${precoStr}
                 ${p.data_evento?`<span>📅 ${fmt.data(p.data_evento)}</span>`:''}
                 <span>${confirmados} confirmado${confirmados===1?'':'s'} · ${pendentes} pendente${pendentes===1?'':'s'}</span>
                 ${arrecadado>0?`<span style="color:var(--green)">R$ ${arrecadado} arrecadado</span>`:''}
@@ -4787,8 +4804,20 @@ function openProdutoForm(id=null) {
       </div>
       <div class="fi-group"><label>Descrição (aparece pro comprador)</label><textarea class="fi" id="pd-desc" rows="4" placeholder="Detalhe o que está vendendo — data, horário, local, o que inclui...">${p?.descricao||''}</textarea></div>
       <div class="row-2">
-        <div class="fi-group"><label>Valor (R$) *</label><input type="number" step="0.01" class="fi" id="pd-valor" value="${p?.valor||50}" min="0"/></div>
+        <div class="fi-group"><label>Valor cheio (R$) *</label><input type="number" step="0.01" class="fi" id="pd-valor" value="${p?.valor||50}" min="0"/></div>
         <div class="fi-group"><label>Data do evento (opcional)</label><input type="date" class="fi" id="pd-data" value="${p?.data_evento||''}"/></div>
+      </div>
+      <div class="fi-group" style="padding:14px;background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.2);border-radius:10px">
+        <label class="checkbox-row" style="margin-bottom:8px">
+          <input type="checkbox" id="pd-promo-on" ${p?.promo_ativa?'checked':''}/>
+          <strong>Tem promoção / 1º lote</strong>
+        </label>
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">Preço promocional vale até a data abaixo. Depois disso, volta pro valor cheio automaticamente.</div>
+        <div class="row-2">
+          <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Valor promo (R$)</label><input type="number" step="0.01" class="fi" id="pd-promo-valor" value="${p?.promo_valor||''}" min="0" placeholder="ex: 30"/></div>
+          <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Vale até (último dia)</label><input type="date" class="fi" id="pd-promo-ate" value="${p?.promo_ate||''}"/></div>
+        </div>
+        <div style="margin-top:8px"><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Rótulo (opcional)</label><input class="fi" id="pd-promo-lbl" value="${p?.promo_label||''}" placeholder="ex: 1º lote, Early-bird, Aniversário..."/></div>
       </div>
       <div class="fi-group"><label>Local (opcional)</label><input class="fi" id="pd-local" value="${p?.local||''}" placeholder="Terreiro do Candieiro · R. Angelo Vicentim 236"/></div>
       <div class="fi-group">
@@ -4832,11 +4861,21 @@ function openProdutoForm(id=null) {
     // Conflito de slug?
     const conflito = S.produtos.find(x => x.slug === slug && x.id !== id);
     if(conflito) { toast('Já existe produto com esse slug','err'); return; }
+    const promoOn = $('#pd-promo-on').checked;
+    const promoValor = parseFloat($('#pd-promo-valor').value);
+    const promoAte = $('#pd-promo-ate').value;
+    if(promoOn && (!promoValor || !promoAte)) {
+      toast('Pra ativar promoção precisa do valor + data limite','err'); return;
+    }
     const data = {
       nome,
       slug,
       descricao: $('#pd-desc').value.trim(),
       valor: parseFloat($('#pd-valor').value) || 0,
+      promo_ativa: promoOn,
+      promo_valor: promoOn ? promoValor : null,
+      promo_ate: promoOn ? promoAte : null,
+      promo_label: promoOn ? ($('#pd-promo-lbl').value.trim() || null) : null,
       data_evento: $('#pd-data').value || null,
       local: $('#pd-local').value.trim() || null,
       pix: $('#pd-pix').value.trim() || null,
@@ -4914,7 +4953,8 @@ function renderPedidos(c) {
               <div class="li-name">${p.nome||'(sem nome)'} <span class="chip ${cfg.chip}" style="margin-left:6px">${cfg.lbl}</span></div>
               <div class="li-meta" style="margin-top:4px">
                 <strong style="color:var(--text)">${p.produto_nome||'?'}</strong>
-                <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong></span>
+                <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${p.valor_cheio}</span>`:''}</span>
+                ${p.promo_aplicada?`<span class="chip chip-green" style="font-size:10px">${p.promo_label||'promo'}</span>`:''}
                 ${p.metodo_pagamento?`<span>${p.metodo_pagamento}</span>`:''}
                 ${p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
               </div>

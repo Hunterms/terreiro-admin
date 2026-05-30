@@ -168,18 +168,42 @@ function mostrarErro(titulo, msg) {
   }
 })();
 
+function precoEfetivo(prod) {
+  if(!prod.promo_ativa || !prod.promo_valor || !prod.promo_ate) {
+    return { valor: prod.valor||0, ehPromo: false };
+  }
+  const hoje = new Date().toISOString().slice(0,10);
+  if(hoje <= prod.promo_ate) {
+    return { valor: prod.promo_valor, ehPromo: true, label: prod.promo_label, ate: prod.promo_ate, valorCheio: prod.valor||0 };
+  }
+  return { valor: prod.valor||0, ehPromo: false };
+}
+
 function renderProduto(prod) {
   $('#loading').style.display = 'none';
   const c = $('#content');
   c.style.display = '';
 
   const dataBr = prod.data_evento ? fmtData(prod.data_evento) : null;
+  const efetivo = precoEfetivo(prod);
+  const promoAteBr = efetivo.ehPromo ? new Date(efetivo.ate+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long'}) : null;
+
   c.innerHTML = `
     <div class="card">
       <h2>${prod.nome}</h2>
       ${prod.descricao ? `<p class="desc">${prod.descricao}</p>` : ''}
+      ${efetivo.ehPromo ? `
+        <div style="padding:10px 14px;background:linear-gradient(135deg,rgba(46,204,113,0.15),rgba(46,204,113,0.05));border:1px solid rgba(46,204,113,0.35);border-radius:10px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="background:var(--green);color:#0d0d0d;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">${efetivo.label || 'Promoção'}</span>
+          <span style="color:var(--green);font-size:13px;font-weight:600">⏰ Vale até ${promoAteBr}</span>
+        </div>
+      ` : ''}
       <dl class="meta-grid">
-        <dt>Valor</dt><dd class="preco">R$ ${(prod.valor||0).toFixed(0)}</dd>
+        <dt>Valor</dt>
+        <dd class="preco">
+          R$ ${efetivo.valor.toFixed(0)}
+          ${efetivo.ehPromo ? `<span style="color:var(--text3);text-decoration:line-through;font-size:14px;font-weight:400;margin-left:8px">R$ ${efetivo.valorCheio.toFixed(0)}</span>` : ''}
+        </dd>
         ${dataBr ? `<dt>Quando</dt><dd style="text-transform:capitalize">${dataBr}</dd>`:''}
         ${prod.local ? `<dt>Onde</dt><dd>${prod.local}</dd>`:''}
       </dl>
@@ -213,7 +237,7 @@ function renderProduto(prod) {
         <div id="b-comprov-info" style="font-size:12px;color:var(--text3);margin-top:6px">Anexe agora ou envie pelo WhatsApp depois.</div>
       </div>
       <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Alguma coisa que queira deixar registrado?"></textarea></div>
-      <button class="btn btn-primary" id="b-submit">Reservar — R$ ${(prod.valor||0).toFixed(0)}</button>
+      <button class="btn btn-primary" id="b-submit">Reservar — R$ ${efetivo.valor.toFixed(0)}${efetivo.ehPromo?` <span style="font-weight:400;opacity:.7;font-size:13px;margin-left:4px">(promo)</span>`:''}</button>
       <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
     </div>
   `;
@@ -243,34 +267,40 @@ function renderProduto(prod) {
     btn.disabled = true; btn.textContent = 'Enviando...';
 
     try {
-      // NÃO salvamos o arquivo do comprovante no banco — só o flag.
+      // Re-calcula o preço efetivo agora (caso a promo tenha mudado durante a sessão)
+      const efetivoAgora = precoEfetivo(prod);
       await addDoc(collection(db,'vendas_pedidos'), {
         nome, tel, email: email||null,
         observacao: obs,
         produto_id: prod.id,
         produto_nome: prod.nome,
         produto_slug: prod.slug,
-        valor: prod.valor || 0,
+        valor: efetivoAgora.valor,
+        valor_cheio: prod.valor || 0,
+        promo_aplicada: efetivoAgora.ehPromo,
+        promo_label: efetivoAgora.ehPromo ? (efetivoAgora.label||null) : null,
         metodo_pagamento: pag,
         comprovante_anexado: !!comprovFile,
         status: 'pendente',
         origem: 'vendas_publico',
         criadoEm: serverTimestamp()
       });
-      mostrarSucesso(prod, nome, !!comprovFile);
+      mostrarSucesso(prod, nome, !!comprovFile, efetivoAgora);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
       err.style.display = 'block';
-      btn.disabled = false; btn.textContent = `Reservar — R$ ${(prod.valor||0).toFixed(0)}`;
+      btn.disabled = false; btn.textContent = `Reservar — R$ ${efetivo.valor.toFixed(0)}`;
     }
   };
 }
 
-function mostrarSucesso(prod, nome, temComprovante) {
+function mostrarSucesso(prod, nome, temComprovante, efetivo) {
   const c = $('#content');
   const dataBr = prod.data_evento ? fmtData(prod.data_evento) : '';
-  const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${prod.valor||0}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}`;
+  const valorPago = (efetivo && efetivo.valor) || (prod.valor||0);
+  const labelPromo = (efetivo && efetivo.ehPromo) ? ` (${efetivo.label||'promo'})` : '';
+  const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${valorPago}${labelPromo}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}`;
   const waLink = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
   c.innerHTML = `
     <div class="card success-box">
