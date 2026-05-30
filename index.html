@@ -5089,6 +5089,11 @@ async function renderConfigAgendamento(c) {
         <div class="fi-group"><label>Chave PIX do terreiro</label><input class="fi" id="cf-pix" value="${cfg.pix||''}" placeholder="ex: 19992494267 ou candieiro@email.com"/></div>
         <div class="fi-group"><label>Titular do PIX</label><input class="fi" id="cf-pix-titular" value="${cfg.pix_titular||''}" placeholder="ex: Fernando Soares"/></div>
       </div>
+      <div class="fi-group">
+        <label>Handle da InfinityPay (pra cartão de crédito/débito)</label>
+        <input class="fi" id="cf-infinity" value="${cfg.infinity_handle||''}" placeholder="ex: candieiro (sem URL, só o nome da loja)"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Quando preenchido, agendar.html e vendas.html geram link de pagamento automático no formato <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px">loja.infinitepay.io/&lt;handle&gt;/...</code> pra quem escolher cartão. Vazio = não mostra o botão.</div>
+      </div>
       <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
     </div>
 
@@ -5191,6 +5196,7 @@ async function renderConfigAgendamento(c) {
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       pix: $('#cf-pix').value.trim() || null,
       pix_titular: $('#cf-pix-titular').value.trim() || null,
+      infinity_handle: $('#cf-infinity').value.trim().replace(/^https?:\/\/[^/]+\//,'').replace(/\/$/,'') || null,
       texto_intro: $('#cf-intro').value.trim() || null,
       horarios_semana,
       atualizadoEm: serverTimestamp()

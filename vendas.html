@@ -128,8 +128,10 @@ const $ = q => document.querySelector(q);
 const params = new URLSearchParams(location.search);
 const slug = params.get('p');
 const WHATSAPP = '5519992494267';
+let CFG_AGENDAMENTO = {}; // PIX + InfinityPay handle compartilhado
 
 const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : null;
+const slugifyTxt = txt => (txt||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 
 function mostrarErro(titulo, msg) {
   $('#loading').style.display = 'none';
@@ -145,13 +147,17 @@ function mostrarErro(titulo, msg) {
     return;
   }
   try {
-    const q1 = query(collection(db,'vendas_produtos'), where('slug','==',slug));
-    const snap = await getDocs(q1);
-    if(snap.empty) {
+    // Busca o produto + o config do agendamento (compartilhamos PIX/InfinityPay)
+    const [snapProd, snapCfg] = await Promise.all([
+      getDocs(query(collection(db,'vendas_produtos'), where('slug','==',slug))),
+      getDoc(doc(db,'adm_config','agendamento')).catch(() => null)
+    ]);
+    if(snapCfg && snapCfg.exists()) CFG_AGENDAMENTO = snapCfg.data();
+    if(snapProd.empty) {
       mostrarErro('Produto não encontrado', 'Esse link não existe (ou foi removido). Verifica com quem te enviou.');
       return;
     }
-    const prod = { id: snap.docs[0].id, ...snap.docs[0].data() };
+    const prod = { id: snapProd.docs[0].id, ...snapProd.docs[0].data() };
     if(prod.ativo === false) {
       mostrarErro('Vendas encerradas', `As vendas pra <strong>${prod.nome}</strong> foram encerradas. Em caso de dúvida fala com a gente.`);
       return;
@@ -231,6 +237,14 @@ function renderProduto(prod) {
           <option value="transferencia">Transferência bancária</option>
         </select>
       </div>
+      ${CFG_AGENDAMENTO.infinity_handle ? `
+        <div id="b-card-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:10px;margin-bottom:14px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 Pagar com cartão</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Clique no botão pra abrir o checkout seguro da <strong>InfinityPay</strong> com o valor já preenchido.</div>
+          <a id="b-card-link" href="#" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${efetivo.valor.toFixed(0)} com cartão</a>
+          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volta aqui e clica em "Reservar" pra confirmar. Pode também anexar o comprovante abaixo.</div>
+        </div>
+      ` : ''}
       <div class="fi-group">
         <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
         <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
@@ -241,6 +255,19 @@ function renderProduto(prod) {
       <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
     </div>
   `;
+
+  // Mostra box do InfinityPay quando cartão for selecionado
+  const cardBox = $('#b-card-box');
+  const cardLink = $('#b-card-link');
+  if(cardLink && CFG_AGENDAMENTO.infinity_handle) {
+    const slug2 = slugifyTxt(prod.nome) || 'produto';
+    const valorStr = efetivo.valor.toFixed(2).replace('.',',').replace(',00','');
+    cardLink.href = `https://loja.infinitepay.io/${CFG_AGENDAMENTO.infinity_handle}/${slug2}-${valorStr}`;
+  }
+  $('#b-pag').onchange = e => {
+    const v = e.target.value;
+    if(cardBox) cardBox.style.display = (v === 'cartao_credito' || v === 'cartao_debito') ? '' : 'none';
+  };
 
   $('#b-comprov').onchange = e => {
     const f = e.target.files?.[0];
