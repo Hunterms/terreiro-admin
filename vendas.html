@@ -237,12 +237,12 @@ function renderProduto(prod) {
           <option value="transferencia">Transferência bancária</option>
         </select>
       </div>
-      ${CFG_AGENDAMENTO.infinity_handle ? `
+      ${(efetivo.ehPromo ? prod.infinity_link_promo : null) || prod.infinity_link ? `
         <div id="b-card-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:10px;margin-bottom:14px">
           <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 Pagar com cartão</div>
           <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Clique no botão pra abrir o checkout seguro da <strong>InfinityPay</strong> com o valor já preenchido.</div>
-          <a id="b-card-link" href="#" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${efetivo.valor.toFixed(0)} com cartão</a>
-          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volta aqui e clica em "Reservar" pra confirmar. Pode também anexar o comprovante abaixo.</div>
+          <a id="b-card-link" href="${(efetivo.ehPromo && prod.infinity_link_promo) || prod.infinity_link}" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${efetivo.valor.toFixed(0)} com cartão</a>
+          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volta aqui e clica em "Reservar" pra confirmar.</div>
         </div>
       ` : ''}
       <div class="fi-group">
@@ -256,15 +256,11 @@ function renderProduto(prod) {
     </div>
   `;
 
-  // Mostra box do InfinityPay quando cartão for selecionado
+  // Mostra box do InfinityPay quando cartão for selecionado.
+  // O href já vem renderizado direto de prod.infinity_link (ou infinity_link_promo
+  // se a promo tiver ativa) — InfinityPay precisa de link pré-criado, não dá
+  // pra gerar dinamicamente.
   const cardBox = $('#b-card-box');
-  const cardLink = $('#b-card-link');
-  // Formato InfinityPay: https://link.infinitepay.io/<handle>/<tag>-<valor,decimais>
-  if(cardLink && CFG_AGENDAMENTO.infinity_handle) {
-    const slug2 = slugifyTxt(prod.nome) || 'produto';
-    const valorStr = efetivo.valor.toFixed(2).replace('.',',');
-    cardLink.href = `https://link.infinitepay.io/${CFG_AGENDAMENTO.infinity_handle}/${slug2}-${valorStr}`;
-  }
   $('#b-pag').onchange = e => {
     const v = e.target.value;
     if(cardBox) cardBox.style.display = (v === 'cartao_credito' || v === 'cartao_debito') ? '' : 'none';

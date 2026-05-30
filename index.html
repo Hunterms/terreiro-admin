@@ -4632,6 +4632,11 @@ function openServicoForm(id=null) {
           <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Desmarque pra serviços só do admin (ex: búzios)</div>
         </div>
       </div>
+      <div class="fi-group">
+        <label>Link InfinityPay (cartão de crédito/débito)</label>
+        <input class="fi" id="sv-infinity" value="${s?.infinity_link||''}" placeholder="ex: https://link.infinitepay.io/candieiro/XXXXXX-150,00"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Crie o link de pagamento na <strong>InfinityPay app</strong> com o valor exato desse serviço e cole a URL aqui. Vazio = botão de cartão não aparece pro cliente.</div>
+      </div>
       <div class="row-2">
         <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="sv-ord" value="${s?.ordem||(S.servicos.length+1)}"/></div>
         <div class="fi-group" style="justify-content:flex-end"><label class="checkbox-row" style="margin-top:24px"><input type="checkbox" id="sv-ativo" ${s?.ativo!==false?'checked':''}/> Ativo</label></div>
@@ -4657,6 +4662,7 @@ function openServicoForm(id=null) {
       publico: $('#sv-pub').checked,
       ativo: $('#sv-ativo').checked,
       ordem: parseInt($('#sv-ord').value) || 999,
+      infinity_link: $('#sv-infinity').value.trim() || null,
       atualizadoEm: serverTimestamp()
     };
     try {
@@ -4832,6 +4838,16 @@ function openProdutoForm(id=null) {
         <label>Chave PIX (opcional, aparece no form pro comprador pagar)</label>
         <input class="fi" id="pd-pix" value="${p?.pix||''}" placeholder="ex: 19992494267 ou contato@..."/>
       </div>
+      <div class="fi-group">
+        <label>Link InfinityPay — cheio (cartão de crédito/débito)</label>
+        <input class="fi" id="pd-infinity" value="${p?.infinity_link||''}" placeholder="ex: https://link.infinitepay.io/candieiro/XXXXXX-50,00"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Crie o link de pagamento na InfinityPay com o <strong>valor cheio</strong> desse produto e cole aqui. Vazio = botão de cartão não aparece.</div>
+      </div>
+      <div class="fi-group">
+        <label>Link InfinityPay — promo (opcional)</label>
+        <input class="fi" id="pd-infinity-promo" value="${p?.infinity_link_promo||''}" placeholder="ex: https://link.infinitepay.io/candieiro/XXXXXX-30,00"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Se a promo tiver valor diferente, crie outro link InfinityPay com o <strong>valor promo</strong> e cole aqui. Usado automaticamente enquanto a promo tá ativa.</div>
+      </div>
       <div class="row-2">
         <div class="fi-group" style="justify-content:flex-end">
           <label class="checkbox-row" style="margin-top:24px"><input type="checkbox" id="pd-pub" ${p?.publico!==false?'checked':''}/> Público</label>
@@ -4887,6 +4903,8 @@ function openProdutoForm(id=null) {
       data_evento: $('#pd-data').value || null,
       local: $('#pd-local').value.trim() || null,
       pix: $('#pd-pix').value.trim() || null,
+      infinity_link: $('#pd-infinity').value.trim() || null,
+      infinity_link_promo: $('#pd-infinity-promo').value.trim() || null,
       publico: $('#pd-pub').checked,
       ativo: $('#pd-ativo').checked,
       ordem: parseInt($('#pd-ord').value) || 999,
@@ -5089,10 +5107,8 @@ async function renderConfigAgendamento(c) {
         <div class="fi-group"><label>Chave PIX do terreiro</label><input class="fi" id="cf-pix" value="${cfg.pix||''}" placeholder="ex: 19992494267 ou candieiro@email.com"/></div>
         <div class="fi-group"><label>Titular do PIX</label><input class="fi" id="cf-pix-titular" value="${cfg.pix_titular||''}" placeholder="ex: Fernando Soares"/></div>
       </div>
-      <div class="fi-group">
-        <label>Handle da InfinityPay (pra cartão de crédito/débito)</label>
-        <input class="fi" id="cf-infinity" value="${cfg.infinity_handle||''}" placeholder="ex: candieiro (sem URL, só o nome da loja)"/>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Quando preenchido, agendar.html e vendas.html geram link de pagamento automático no formato <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px">link.infinitepay.io/&lt;handle&gt;/&lt;tag&gt;-&lt;valor,centavos&gt;</code> pra quem escolher cartão. Vazio = não mostra o botão.</div>
+      <div style="padding:12px 14px;background:rgba(52,152,219,0.06);border:1px solid rgba(52,152,219,0.2);border-radius:10px;font-size:12.5px;color:var(--text2);line-height:1.55">
+        💳 <strong>Pagamento com cartão (InfinityPay)</strong>: cada serviço e cada produto agora tem campo próprio pra colar o link da InfinityPay (já que cada link tem ID gerado por eles + valor fixo). Crie o link no app da InfinityPay com o valor exato e cole no formulário do serviço/produto.
       </div>
       <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
     </div>
@@ -5196,7 +5212,6 @@ async function renderConfigAgendamento(c) {
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       pix: $('#cf-pix').value.trim() || null,
       pix_titular: $('#cf-pix-titular').value.trim() || null,
-      infinity_handle: $('#cf-infinity').value.trim().replace(/^https?:\/\/[^/]+\//,'').replace(/\/$/,'') || null,
       texto_intro: $('#cf-intro').value.trim() || null,
       horarios_semana,
       atualizadoEm: serverTimestamp()

@@ -663,12 +663,12 @@ function abrirModalDados() {
         <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, anexe o comprovante abaixo (ou mande pelo WhatsApp depois).</div>
       </div>
     ` : ''}
-    ${APP.cfg.infinity_handle ? `
+    ${APP.servico.infinity_link ? `
       <div id="b-card-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:10px;margin-bottom:14px">
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 Pagar com cartão</div>
         <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Clique no botão pra abrir o checkout seguro da <strong>InfinityPay</strong> com o valor já preenchido.</div>
-        <a id="b-card-link" href="#" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${(APP.servico.valor||0).toFixed(0)} com cartão</a>
-        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Anexe o comprovante depois (a página da InfinityPay mostra ele) ou só mande pelo WhatsApp.</div>
+        <a id="b-card-link" href="${APP.servico.infinity_link}" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${(APP.servico.valor||0).toFixed(0)} com cartão</a>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volte aqui e clique em "Confirmar agendamento" pra finalizar.</div>
       </div>
     ` : ''}
     <div class="fi-group">
@@ -687,14 +687,7 @@ function abrirModalDados() {
   // Mostra PIX box quando método=PIX, InfinityPay box quando método=cartão_*
   const pixBox = $('#b-pix-box');
   const cardBox = $('#b-card-box');
-  const cardLink = $('#b-card-link');
-  // Gera o link InfinityPay baseado no serviço selecionado
-  // Formato: https://link.infinitepay.io/<handle>/<tag>-<valor,decimais>
-  if(cardLink && APP.cfg.infinity_handle) {
-    const slug = slugifyTxt(APP.servico.nome) || 'consulta';
-    const valor = (APP.servico.valor||0).toFixed(2).replace('.',',');
-    cardLink.href = `https://link.infinitepay.io/${APP.cfg.infinity_handle}/${slug}-${valor}`;
-  }
+  // O href do botão de cartão já vem renderizado direto do APP.servico.infinity_link
   $('#b-pag').onchange = e => {
     const v = e.target.value;
     if(pixBox) pixBox.style.display = v === 'pix' ? '' : 'none';
