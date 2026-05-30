@@ -639,7 +639,7 @@ function abrirModalDados() {
     </div>
     <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
     <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
-    <div class="fi-group"><label>Email (opcional)</label><input class="fi" id="b-email" type="email" autocomplete="email"/></div>
+    <div class="fi-group"><label>Email <span class="req">*</span></label><input class="fi" id="b-email" type="email" placeholder="seu@email.com" autocomplete="email" required/></div>
     <div class="fi-group">
       <label>Método de pagamento <span class="req">*</span></label>
       <select class="fi" id="b-pag" required>
@@ -687,6 +687,7 @@ function abrirModalDados() {
     err.style.display = 'none';
     if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
     if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
+    if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent='Informe um email válido pra contato'; err.style.display='block'; return; }
     if(!pag) { err.textContent='Selecione o método de pagamento'; err.style.display='block'; return; }
 
     const btn = $('#b-submit');
