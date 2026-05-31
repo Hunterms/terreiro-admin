@@ -236,14 +236,9 @@ function renderProduto(prod) {
           <option value="transferencia">Transferência bancária</option>
         </select>
       </div>
-      ${(efetivo.ehPromo ? prod.infinity_link_promo : null) || prod.infinity_link ? `
-        <div id="b-card-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:10px;margin-bottom:14px">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 Pagar com cartão</div>
-          <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Clique no botão pra abrir o checkout seguro da <strong>InfinityPay</strong> com o valor já preenchido.</div>
-          <a id="b-card-link" href="${(efetivo.ehPromo && prod.infinity_link_promo) || prod.infinity_link}" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${efetivo.valor.toFixed(0)} com cartão</a>
-          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volta aqui e clica em "Reservar" pra confirmar.</div>
-        </div>
-      ` : ''}
+      <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55">
+        💡 <strong>Primeiro confirme a reserva</strong> — depois mostramos como pagar. Assim a gente garante sua vaga antes.
+      </div>
       <div class="fi-group">
         <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
         <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
@@ -255,15 +250,8 @@ function renderProduto(prod) {
     </div>
   `;
 
-  // Mostra box do InfinityPay quando cartão for selecionado.
-  // O href já vem renderizado direto de prod.infinity_link (ou infinity_link_promo
-  // se a promo tiver ativa) — InfinityPay precisa de link pré-criado, não dá
-  // pra gerar dinamicamente.
-  const cardBox = $('#b-card-box');
-  $('#b-pag').onchange = e => {
-    const v = e.target.value;
-    if(cardBox) cardBox.style.display = v === 'cartao_credito' ? '' : 'none';
-  };
+  // (Pagamento agora aparece SÓ na tela de sucesso, após salvar a reserva.
+  //  Assim a pessoa não corre o risco de pagar sem o lead estar registrado.)
 
   $('#b-comprov').onchange = e => {
     const f = e.target.files?.[0];
@@ -308,7 +296,7 @@ function renderProduto(prod) {
         origem: 'vendas_publico',
         criadoEm: serverTimestamp()
       });
-      mostrarSucesso(prod, nome, !!comprovFile, efetivoAgora);
+      mostrarSucesso(prod, nome, !!comprovFile, efetivoAgora, pag);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
@@ -318,28 +306,72 @@ function renderProduto(prod) {
   };
 }
 
-function mostrarSucesso(prod, nome, temComprovante, efetivo) {
+function mostrarSucesso(prod, nome, temComprovante, efetivo, pag) {
   const c = $('#content');
   const dataBr = prod.data_evento ? fmtData(prod.data_evento) : '';
   const valorPago = (efetivo && efetivo.valor) || (prod.valor||0);
   const labelPromo = (efetivo && efetivo.ehPromo) ? ` (${efetivo.label||'promo'})` : '';
   const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${valorPago}${labelPromo}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}`;
   const waLink = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
+
+  // Box de pagamento conforme método escolhido
+  let pagBox = '';
+  const cardLink = (efetivo && efetivo.ehPromo && prod.infinity_link_promo) || prod.infinity_link;
+  const pixKey = prod.pix || CFG_AGENDAMENTO.pix;
+  const pixTit = CFG_AGENDAMENTO.pix_titular;
+  if(pag === 'pix' && pixKey) {
+    pagBox = `
+      <div style="padding:16px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin:20px 0;text-align:left">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;text-align:center">💳 Pague agora via PIX</div>
+        <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:6px;user-select:all">${pixKey}</div>
+        ${pixTit ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${pixTit}</div>` : ''}
+        <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:10px 16px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font)">📋 Copiar chave</button>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;text-align:center;line-height:1.5">Após pagar, envia o comprovante pelo WhatsApp ↓</div>
+      </div>
+    `;
+  } else if(pag === 'cartao_credito' && cardLink) {
+    pagBox = `
+      <div style="padding:16px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:12px;margin:20px 0;text-align:center">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">💳 Pague agora com cartão</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay com o valor já preenchido.</div>
+        <a href="${cardLink}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;font-size:14px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">🔒 Pagar R$ ${valorPago} com cartão</a>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, avise pelo WhatsApp ↓</div>
+      </div>
+    `;
+  } else if(pag === 'transferencia') {
+    pagBox = `<div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">🏦 Combine os dados da <strong>transferência bancária</strong> pelo WhatsApp ↓</div>`;
+  } else if(pag === 'dinheiro') {
+    pagBox = `<div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">💵 Pagamento em <strong>dinheiro</strong>. Combine quando e onde pelo WhatsApp ↓</div>`;
+  }
+
   c.innerHTML = `
     <div class="card success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <div class="success-t">Reserva recebida!</div>
+      <div class="success-t">Reserva garantida!</div>
       <div class="success-d">
-        <strong style="color:var(--gold)">${prod.nome}</strong><br>
-        Vamos confirmar pelo WhatsApp em breve.<br><br>
-        ${temComprovante ? '<strong style="color:var(--green)">⚠️ Não esqueça de enviar o comprovante pelo WhatsApp</strong> — ele não fica anexado aqui, só serve pra você confirmar que tem.<br><br>' : ''}
+        <strong style="color:var(--gold)">${prod.nome}</strong> · R$ ${valorPago}${labelPromo}<br>
+        Sua vaga foi reservada. Agora é só pagar:
       </div>
+      ${pagBox}
       <a class="success-whats" href="${waLink}" target="_blank" rel="noopener">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43s.17-.25.25-.41c.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18s-.22-.16-.47-.28z"/></svg>
-        Avisar no WhatsApp${temComprovante?' + comprovante':''}
+        ${temComprovante ? 'Mandar comprovante pelo WhatsApp' : 'Avisar pelo WhatsApp'}
       </a>
     </div>
   `;
+
+  // Wire copy button if exists
+  const btnCopy = $('#b-pix-copy-success');
+  if(btnCopy) btnCopy.onclick = () => {
+    navigator.clipboard.writeText(pixKey).then(() => {
+      const orig = btnCopy.textContent;
+      btnCopy.textContent = '✓ Copiado!';
+      btnCopy.style.color = 'var(--green)';
+      btnCopy.style.borderColor = 'var(--green)';
+      setTimeout(() => { btnCopy.textContent = orig; btnCopy.style.color = ''; btnCopy.style.borderColor = ''; }, 1800);
+    }).catch(() => alert('Chave PIX: ' + pixKey));
+  };
+
   window.scrollTo({top:0,behavior:'smooth'});
 }
 </script>

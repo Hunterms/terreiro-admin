@@ -653,23 +653,9 @@ function abrirModalDados() {
         <option value="transferencia">Transferência bancária</option>
       </select>
     </div>
-    ${APP.cfg.pix ? `
-      <div id="b-pix-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:10px;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 PIX pra pagar</div>
-        <div id="b-pix-key" style="font-size:15px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;margin-bottom:4px;user-select:all">${APP.cfg.pix}</div>
-        ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Titular: ${APP.cfg.pix_titular}</div>` : ''}
-        <button type="button" class="btn" id="b-pix-copy" style="padding:9px 14px;font-size:13px;width:auto">📋 Copiar chave</button>
-        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, anexe o comprovante abaixo (ou mande pelo WhatsApp depois).</div>
-      </div>
-    ` : ''}
-    ${APP.servico.infinity_link ? `
-      <div id="b-card-box" style="display:none;padding:14px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:10px;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">💳 Pagar com cartão</div>
-        <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Clique no botão pra abrir o checkout seguro da <strong>InfinityPay</strong> com o valor já preenchido.</div>
-        <a id="b-card-link" href="${APP.servico.infinity_link}" target="_blank" rel="noopener" class="btn" style="padding:11px 16px;font-size:14px;width:auto;background:#3498db;color:#fff;border-color:transparent;font-weight:700">🔒 Pagar R$ ${(APP.servico.valor||0).toFixed(0)} com cartão</a>
-        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Depois de pagar, volte aqui e clique em "Confirmar agendamento" pra finalizar.</div>
-      </div>
-    ` : ''}
+    <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55">
+      💡 <strong>Primeiro confirme o agendamento</strong> — depois mostramos como pagar (PIX, cartão ou outro). Assim a gente garante seu horário antes.
+    </div>
     <div class="fi-group">
       <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
       <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
@@ -683,33 +669,8 @@ function abrirModalDados() {
   $('#modal-bd').classList.add('show');
   $('#modal-bd').onclick = e => { if(e.target.id === 'modal-bd') closeModal(); };
 
-  // Mostra PIX box quando método=PIX, InfinityPay box quando método=cartão_*
-  const pixBox = $('#b-pix-box');
-  const cardBox = $('#b-card-box');
-  // O href do botão de cartão já vem renderizado direto do APP.servico.infinity_link
-  $('#b-pag').onchange = e => {
-    const v = e.target.value;
-    if(pixBox) pixBox.style.display = v === 'pix' ? '' : 'none';
-    if(cardBox) cardBox.style.display = v === 'cartao_credito' ? '' : 'none';
-  };
-  const btnCopy = $('#b-pix-copy');
-  if(btnCopy) btnCopy.onclick = () => {
-    navigator.clipboard.writeText(APP.cfg.pix).then(() => {
-      const orig = btnCopy.textContent;
-      btnCopy.textContent = '✓ Copiado!';
-      btnCopy.style.background = 'rgba(46,204,113,0.15)';
-      btnCopy.style.borderColor = 'var(--green)';
-      btnCopy.style.color = 'var(--green)';
-      setTimeout(() => {
-        btnCopy.textContent = orig;
-        btnCopy.style.background = '';
-        btnCopy.style.borderColor = '';
-        btnCopy.style.color = '';
-      }, 1800);
-    }).catch(() => {
-      alert('Não consegui copiar. A chave é: ' + APP.cfg.pix);
-    });
-  };
+  // (Pagamento agora aparece SÓ na tela de sucesso, após salvar o agendamento.
+  //  Assim a pessoa não corre o risco de pagar sem o lead estar registrado.)
 
   // Feedback visual ao anexar comprovante (sem upload — só placebo)
   $('#b-comprov').onchange = e => {
@@ -771,7 +732,7 @@ function abrirModalDados() {
         });
       } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
-      mostrarSucesso(nome, !!comprovFile);
+      mostrarSucesso(nome, !!comprovFile, pag);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
@@ -782,26 +743,70 @@ function abrirModalDados() {
   };
 }
 
-function mostrarSucesso(nome, temComprovante) {
+function mostrarSucesso(nome, temComprovante, pag) {
   const msg = `Olá! Acabei de pedir um agendamento:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}\n\nAguardo confirmação.`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
+  // Box de pagamento conforme método escolhido
+  let pagBox = '';
+  if(pag === 'pix' && APP.cfg.pix) {
+    pagBox = `
+      <div style="padding:16px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin:20px 0;text-align:left">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;text-align:center">💳 Pague agora via PIX</div>
+        <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:6px;user-select:all">${APP.cfg.pix}</div>
+        ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${APP.cfg.pix_titular}</div>` : ''}
+        <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:10px 16px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font)">📋 Copiar chave</button>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;text-align:center;line-height:1.5">Após pagar, envia o comprovante pelo WhatsApp ↓</div>
+      </div>
+    `;
+  } else if(pag === 'cartao_credito' && APP.servico.infinity_link) {
+    pagBox = `
+      <div style="padding:16px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:12px;margin:20px 0;text-align:center">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">💳 Pague agora com cartão</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay com o valor já preenchido.</div>
+        <a href="${APP.servico.infinity_link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;font-size:14px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">🔒 Pagar R$ ${(APP.servico.valor||0).toFixed(0)} com cartão</a>
+        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, avise pelo WhatsApp ↓</div>
+      </div>
+    `;
+  } else if(pag === 'transferencia') {
+    pagBox = `
+      <div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">
+        🏦 Combine os dados da <strong>transferência bancária</strong> pelo WhatsApp ↓
+      </div>
+    `;
+  } else if(pag === 'dinheiro') {
+    pagBox = `
+      <div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">
+        💵 Pagamento em <strong>dinheiro no dia da consulta</strong>. Avise no WhatsApp pra confirmar tudo ↓
+      </div>
+    `;
+  }
   $('#modal-c').innerHTML = `
     <div class="success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <div class="success-t">Pedido recebido!</div>
+      <div class="success-t">Agendamento garantido!</div>
       <div class="success-d">
         <strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
-        ${temComprovante ? '<strong style="color:var(--green)">⚠️ Não esqueça de enviar o comprovante pelo WhatsApp</strong> — ele não fica anexado aqui, só serve pra você confirmar que tem.<br><br>' : ''}
-        O Pai Nando vai entrar em contato pelo WhatsApp pra confirmar.
-        Se preferir, mande mensagem agora pra agilizar:
+        Seu horário foi reservado. Agora é só pagar:
       </div>
+      ${pagBox}
       <a class="success-whats" href="${link}" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
-        ${temComprovante ? 'Mandar comprovante pelo WhatsApp' : 'Mandar pelo WhatsApp'}
+        ${temComprovante ? 'Mandar comprovante pelo WhatsApp' : 'Avisar pelo WhatsApp'}
       </a>
       <div style="margin-top:24px"><button class="btn" onclick="closeModal();location.reload()">Fechar</button></div>
     </div>
   `;
+  // Wire copy button if exists
+  const btnCopy = $('#b-pix-copy-success');
+  if(btnCopy) btnCopy.onclick = () => {
+    navigator.clipboard.writeText(APP.cfg.pix).then(() => {
+      const orig = btnCopy.textContent;
+      btnCopy.textContent = '✓ Copiado!';
+      btnCopy.style.color = 'var(--green)';
+      btnCopy.style.borderColor = 'var(--green)';
+      setTimeout(() => { btnCopy.textContent = orig; btnCopy.style.color = ''; btnCopy.style.borderColor = ''; }, 1800);
+    }).catch(() => alert('Chave PIX: ' + APP.cfg.pix));
+  };
 }
 
 function voltar() {
