@@ -643,16 +643,6 @@ function abrirModalDados() {
     <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
     <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
     <div class="fi-group"><label>Email <span class="req">*</span></label><input class="fi" id="b-email" type="email" placeholder="seu@email.com" autocomplete="email" required/></div>
-    <div class="fi-group">
-      <label>Método de pagamento <span class="req">*</span></label>
-      <select class="fi" id="b-pag" required>
-        <option value="">— Selecione —</option>
-        <option value="pix">PIX</option>
-        <option value="dinheiro">Dinheiro (no dia)</option>
-        <option value="cartao_credito">Cartão de crédito</option>
-        <option value="transferencia">Transferência bancária</option>
-      </select>
-    </div>
     <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Algo que queira contar?"></textarea></div>
     <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
       ✓ Seu horário é reservado ao confirmar — instruções de pagamento aparecem em seguida.
@@ -672,13 +662,11 @@ function abrirModalDados() {
     const tel = $('#b-tel').value.replace(/\D/g,'');
     const email = $('#b-email').value.trim();
     const obs = $('#b-obs').value.trim();
-    const pag = $('#b-pag').value;
     const err = $('#b-err');
     err.style.display = 'none';
     if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
     if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
     if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent='Informe um email válido pra contato'; err.style.display='block'; return; }
-    if(!pag) { err.textContent='Selecione o método de pagamento'; err.style.display='block'; return; }
 
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = 'Reservando...';
@@ -693,8 +681,8 @@ function abrirModalDados() {
         servico_id: APP.servico.id,
         servico_nome: APP.servico.nome,
         modalidade: APP.modalidade,
-        metodo_pagamento: pag,
-        comprovante_anexado: false, // pagamento acontece DEPOIS da reserva agora
+        metodo_pagamento: null, // cliente escolhe na tela de pagamento
+        comprovante_anexado: false,
         tipo_oraculo: APP.servico.nome.toLowerCase().includes('baralho') ? 'baralho_cigano' : (APP.servico.nome.toLowerCase().includes('búzio')||APP.servico.nome.toLowerCase().includes('buzio') ? 'buzios' : 'outro'),
         valor_proposto: APP.servico.valor || 0,
         status: 'pendente',
@@ -712,7 +700,7 @@ function abrirModalDados() {
         });
       } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
-      mostrarSucesso(nome, pag);
+      mostrarSucesso(nome);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
@@ -723,56 +711,49 @@ function abrirModalDados() {
   };
 }
 
-function mostrarSucesso(nome, pag) {
-  const precisaComprov = pag === 'pix' || pag === 'cartao_credito' || pag === 'transferencia';
-  const msg = `Olá! Acabei de agendar:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}${precisaComprov?'\n\nSegue o comprovante do pagamento.':'\n\nFico no aguardo da confirmação.'}`;
+function mostrarSucesso(nome) {
+  const msg = `Olá! Acabei de agendar:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}\n\nSegue o comprovante do pagamento.`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
-  // Box de pagamento conforme método escolhido
-  let pagBox = '';
-  if(pag === 'pix' && APP.cfg.pix) {
-    pagBox = `
-      <div style="padding:16px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin:20px 0;text-align:left">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;text-align:center">💳 Pague agora via PIX</div>
-        <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:6px;user-select:all">${APP.cfg.pix}</div>
-        ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${APP.cfg.pix_titular}</div>` : ''}
-        <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:10px 16px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font)">📋 Copiar chave</button>
-        <div style="font-size:12px;color:var(--text3);margin-top:10px;text-align:center;line-height:1.5">Após pagar, envia o comprovante pelo WhatsApp ↓</div>
-      </div>
-    `;
-  } else if(pag === 'cartao_credito' && APP.servico.infinity_link) {
-    pagBox = `
-      <div style="padding:16px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:12px;margin:20px 0;text-align:center">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">💳 Pague agora com cartão</div>
-        <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay com o valor já preenchido.</div>
-        <a href="${APP.servico.infinity_link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 20px;font-size:14px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">🔒 Pagar R$ ${(APP.servico.valor||0).toFixed(0)} com cartão</a>
-        <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Após pagar, avise pelo WhatsApp ↓</div>
-      </div>
-    `;
-  } else if(pag === 'transferencia') {
-    pagBox = `
-      <div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">
-        🏦 Combine os dados da <strong>transferência bancária</strong> pelo WhatsApp ↓
-      </div>
-    `;
-  } else if(pag === 'dinheiro') {
-    pagBox = `
-      <div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;margin:20px 0;font-size:13px;color:var(--text2);line-height:1.55;text-align:center">
-        💵 Pagamento em <strong>dinheiro no dia da consulta</strong>. Avise no WhatsApp pra confirmar tudo ↓
-      </div>
-    `;
-  }
+  const valor = (APP.servico.valor||0).toFixed(0);
+  const temPix = !!APP.cfg.pix;
+  const temCard = !!APP.servico.infinity_link;
+
+  const pixBox = temPix ? `
+    <div style="padding:18px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center">💸 Opção 1 · PIX (copia e cola)</div>
+      <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:4px;user-select:all">${APP.cfg.pix}</div>
+      ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${APP.cfg.pix_titular}</div>` : '<div style="margin-bottom:12px"></div>'}
+      <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:11px 18px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font);font-weight:600">📋 Copiar chave PIX</button>
+    </div>
+  ` : '';
+
+  const cardBox = temCard ? `
+    <div style="padding:18px;background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);border-radius:12px;margin-bottom:14px;text-align:center">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">💳 Opção 2 · Cartão de crédito</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay — valor já preenchido.</div>
+      <a href="${APP.servico.infinity_link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;font-size:14px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">🔒 Pagar R$ ${valor} no crédito</a>
+    </div>
+  ` : '';
+
+  const semOpcao = !temPix && !temCard;
+
   $('#modal-c').innerHTML = `
     <div class="success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
       <div class="success-t">Agendamento garantido!</div>
       <div class="success-d">
         <strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
-        Seu horário foi reservado. Agora é só pagar:
+        Seu horário tá reservado. Agora <strong style="color:var(--text)">escolhe como pagar R$ ${valor}</strong>:
       </div>
-      ${pagBox}
+      <div style="margin:20px 0;text-align:left">
+        ${pixBox}
+        ${cardBox}
+        ${semOpcao ? '<div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;text-align:center;font-size:13px;color:var(--text2)">Combinamos o pagamento pelo WhatsApp ↓</div>' : ''}
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;text-align:center">Depois de pagar, manda o comprovante pelo WhatsApp:</div>
       <a class="success-whats" href="${link}" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
-        ${precisaComprov ? 'Enviar comprovante pelo WhatsApp' : 'Avisar pelo WhatsApp'}
+        Enviar comprovante pelo WhatsApp
       </a>
       <div style="margin-top:24px"><button class="btn" onclick="closeModal();location.reload()">Fechar</button></div>
     </div>
