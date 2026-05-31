@@ -653,16 +653,11 @@ function abrirModalDados() {
         <option value="transferencia">Transferência bancária</option>
       </select>
     </div>
-    <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55">
-      💡 <strong>Primeiro confirme o agendamento</strong> — depois mostramos como pagar (PIX, cartão ou outro). Assim a gente garante seu horário antes.
-    </div>
-    <div class="fi-group">
-      <label>Comprovante de pagamento <span style="font-weight:400;color:var(--text3);text-transform:none">(opcional)</span></label>
-      <input type="file" class="fi" id="b-comprov" accept="image/*,application/pdf" style="padding:8px"/>
-      <div id="b-comprov-info" style="font-size:12px;color:var(--text3);margin-top:6px">Pode anexar agora ou enviar pelo WhatsApp depois.</div>
-    </div>
     <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Algo que queira contar?"></textarea></div>
-    <button class="btn btn-primary btn-block" id="b-submit">Confirmar agendamento</button>
+    <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
+      ✓ Seu horário é reservado ao confirmar — instruções de pagamento aparecem em seguida.
+    </div>
+    <button class="btn btn-primary btn-block" id="b-submit">Confirmar agendamento e pagar →</button>
     <button class="btn btn-block" style="margin-top:10px" onclick="window._app.voltar()">← Voltar</button>
     <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
   `;
@@ -672,25 +667,12 @@ function abrirModalDados() {
   // (Pagamento agora aparece SÓ na tela de sucesso, após salvar o agendamento.
   //  Assim a pessoa não corre o risco de pagar sem o lead estar registrado.)
 
-  // Feedback visual ao anexar comprovante (sem upload — só placebo)
-  $('#b-comprov').onchange = e => {
-    const f = e.target.files[0];
-    const info = $('#b-comprov-info');
-    if(f) {
-      const mb = (f.size/1024/1024).toFixed(2);
-      info.innerHTML = `<span style="color:var(--green)">✓ Anexado: <strong>${f.name}</strong> (${mb}MB) — envie também pelo WhatsApp após confirmar.</span>`;
-    } else {
-      info.innerHTML = 'Pode anexar agora ou enviar pelo WhatsApp depois.';
-    }
-  };
-
   $('#b-submit').onclick = async () => {
     const nome = $('#b-nome').value.trim();
     const tel = $('#b-tel').value.replace(/\D/g,'');
     const email = $('#b-email').value.trim();
     const obs = $('#b-obs').value.trim();
     const pag = $('#b-pag').value;
-    const comprovFile = $('#b-comprov').files[0]; // só pra UI, não salvamos
     const err = $('#b-err');
     err.style.display = 'none';
     if(!nome) { err.textContent='Informe seu nome'; err.style.display='block'; return; }
@@ -699,11 +681,9 @@ function abrirModalDados() {
     if(!pag) { err.textContent='Selecione o método de pagamento'; err.style.display='block'; return; }
 
     const btn = $('#b-submit');
-    btn.disabled = true; btn.textContent = 'Enviando...';
+    btn.disabled = true; btn.textContent = 'Reservando...';
 
     try {
-      // NÃO salvamos o arquivo do comprovante no banco (decisão: floda storage).
-      // Apenas o flag "anexou" pra admin saber que cliente vai mandar via WhatsApp.
       const solRef = await addDoc(collection(db,'adm_solicitacoes'), {
         nome, tel, email: email||null,
         observacao: obs,
@@ -714,7 +694,7 @@ function abrirModalDados() {
         servico_nome: APP.servico.nome,
         modalidade: APP.modalidade,
         metodo_pagamento: pag,
-        comprovante_anexado: !!comprovFile, // só boolean, não o arquivo
+        comprovante_anexado: false, // pagamento acontece DEPOIS da reserva agora
         tipo_oraculo: APP.servico.nome.toLowerCase().includes('baralho') ? 'baralho_cigano' : (APP.servico.nome.toLowerCase().includes('búzio')||APP.servico.nome.toLowerCase().includes('buzio') ? 'buzios' : 'outro'),
         valor_proposto: APP.servico.valor || 0,
         status: 'pendente',
@@ -732,19 +712,20 @@ function abrirModalDados() {
         });
       } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
-      mostrarSucesso(nome, !!comprovFile, pag);
+      mostrarSucesso(nome, pag);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
       err.style.display = 'block';
       btn.disabled = false;
-      btn.textContent = 'Confirmar agendamento';
+      btn.textContent = 'Confirmar agendamento e pagar →';
     }
   };
 }
 
-function mostrarSucesso(nome, temComprovante, pag) {
-  const msg = `Olá! Acabei de pedir um agendamento:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}${temComprovante?'\n\n💸 Já tenho o comprovante de pagamento pra enviar.':''}\n\nAguardo confirmação.`;
+function mostrarSucesso(nome, pag) {
+  const precisaComprov = pag === 'pix' || pag === 'cartao_credito' || pag === 'transferencia';
+  const msg = `Olá! Acabei de agendar:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}${precisaComprov?'\n\nSegue o comprovante do pagamento.':'\n\nFico no aguardo da confirmação.'}`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
   // Box de pagamento conforme método escolhido
   let pagBox = '';
@@ -791,7 +772,7 @@ function mostrarSucesso(nome, temComprovante, pag) {
       ${pagBox}
       <a class="success-whats" href="${link}" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
-        ${temComprovante ? 'Mandar comprovante pelo WhatsApp' : 'Avisar pelo WhatsApp'}
+        ${precisaComprov ? 'Enviar comprovante pelo WhatsApp' : 'Avisar pelo WhatsApp'}
       </a>
       <div style="margin-top:24px"><button class="btn" onclick="closeModal();location.reload()">Fechar</button></div>
     </div>
