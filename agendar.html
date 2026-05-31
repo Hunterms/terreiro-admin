@@ -247,12 +247,39 @@ window.closeModal = closeModal;
       }
     } catch(e) {}
 
-    // Serviços (só públicos + ativos)
+    // Slug da URL (?s=<slug>) — pra link direto de serviço privado
+    const urlParams = new URLSearchParams(location.search);
+    const slugDireto = urlParams.get('s');
+
+    // Carrega todos serviços ativos. Se tem ?s=, mantém o privado também.
     try {
       const snap = await getDocs(collection(db,'adm_servicos'));
-      APP.servicos = snap.docs.map(d => ({ id:d.id, ...d.data() }))
-        .filter(s => s.publico !== false && s.ativo !== false)
+      const todos = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .filter(s => s.ativo !== false)
         .sort((a,b) => (a.ordem||999) - (b.ordem||999));
+      if(slugDireto) {
+        // Modo link direto: só mostra o serviço do slug (mesmo se privado)
+        const direto = todos.find(s => s.slug === slugDireto);
+        if(direto) {
+          APP.servicos = [direto];
+          APP.servico = direto; // pré-seleciona
+          // Pula passo 1 (escolha de serviço) e vai pra modalidade ou data
+          const hasOnline = !!direto.online;
+          const hasPres = direto.presencial !== false;
+          if(hasOnline && hasPres) APP.passo = 2;
+          else {
+            APP.modalidade = hasPres ? 'presencial' : 'online';
+            APP.passo = 3;
+          }
+        } else {
+          const wa = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Esse link de agendamento não tá funcionando.')}`;
+          $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Esse link não corresponde a nenhum serviço ativo. <a style="color:var(--gold)" href="${wa}">Fala com a gente no WhatsApp</a>.</div>`;
+          return;
+        }
+      } else {
+        // Modo lista: só públicos
+        APP.servicos = todos.filter(s => s.publico !== false);
+      }
     } catch(e) { console.warn('Erro servicos', e); }
 
     // Slots ocupados

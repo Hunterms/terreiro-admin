@@ -4587,24 +4587,32 @@ function renderServicos(c) {
         <div class="empty-t">Nenhum serviço cadastrado</div>
         <div class="empty-s">Sem serviços, a página pública de agendamento não mostra opções.<br>Clica <strong>"🪷 Sincronizar com config oficial"</strong> pra criar os 6 serviços oficiais do Candieiro com seus links InfinityPay, ou crie um do zero.</div>
       </div>
-    ` : lista.map(s => `
-      <div class="list-item" onclick="window._app.openServicoForm('${s.id}')" style="cursor:pointer;opacity:${s.ativo===false?'.5':'1'}">
-        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);flex-direction:column;font-size:10px;line-height:1.1">
+    ` : lista.map(s => {
+      const slugUrl = s.slug ? `https://terreirodocandieiro.com.br/agendar.html?s=${s.slug}` : null;
+      return `
+      <div class="list-item" style="opacity:${s.ativo===false?'.5':'1'};align-items:flex-start">
+        <div class="li-avatar" onclick="window._app.openServicoForm('${s.id}')" style="background:var(--gold-bg);color:var(--gold);flex-direction:column;font-size:10px;line-height:1.1;cursor:pointer">
           <div style="font-size:14px;font-weight:700">R$</div>
           <div style="font-size:11px;font-weight:700">${(s.valor||0).toFixed(0)}</div>
         </div>
-        <div class="li-main">
+        <div class="li-main" onclick="window._app.openServicoForm('${s.id}')" style="cursor:pointer">
           <div class="li-name">${s.nome}${s.ativo===false?' <span class="chip">inativo</span>':''}</div>
           <div class="li-meta">
             <span>${s.duracao_min||60}min</span>
             ${s.presencial!==false?'<span class="chip chip-green">presencial</span>':''}
             ${s.online?'<span class="chip chip-blue">online</span>':''}
-            ${s.publico===false?'<span class="chip chip-purple">privado (só admin)</span>':'<span class="chip">público</span>'}
+            ${s.publico===false?'<span class="chip chip-purple">privado (link direto)</span>':'<span class="chip">público</span>'}
+            ${s.infinity_link?'<span class="chip" style="background:rgba(52,152,219,0.15);color:var(--blue)">💳 cartão</span>':''}
           </div>
           ${s.descricao?`<div class="li-meta" style="margin-top:4px;color:var(--text2);font-size:12.5px">${s.descricao}</div>`:''}
+          ${slugUrl?`<div class="li-meta" style="margin-top:6px;font-size:11px;font-family:monospace;color:var(--text3);user-select:all">${slugUrl}</div>`:'<div class="li-meta" style="margin-top:6px;font-size:11px;color:var(--red)">⚠ Sem slug — não dá pra compartilhar link direto. Edite e salve.</div>'}
+        </div>
+        <div class="li-actions" style="flex-direction:column;gap:6px">
+          ${slugUrl?`<button class="btn btn-sm" onclick="event.stopPropagation();window._app.copiarLinkServico('${s.slug}')" title="Copia o link direto pra esse serviço">📋 Copiar link</button>`:''}
+          ${slugUrl?`<a class="btn btn-sm" href="${slugUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ Abrir</a>`:''}
         </div>
       </div>
-    `).join('')}
+    `}).join('')}
   `;
 }
 
@@ -4615,6 +4623,11 @@ function openServicoForm(id=null) {
     <div class="modal-h"><h3>${isEdit?'Editar serviço':'Novo serviço'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div class="fi-group"><label>Nome *</label><input class="fi" id="sv-nome" value="${s?.nome||''}" placeholder="ex: Baralho Cigano, Limpeza energética..."/></div>
+      <div class="fi-group">
+        <label>Slug (URL pra compartilhar privadamente)</label>
+        <input class="fi" id="sv-slug" value="${s?.slug||''}" placeholder="auto a partir do nome"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Link direto: <code style="background:rgba(255,255,255,0.05);padding:1px 5px;border-radius:3px">terreirodocandieiro.com.br/agendar.html?s=<span id="sv-slug-preview">${s?.slug||'...'}</span></code><br>Mesmo serviços marcados como "privado" funcionam por esse link — só não aparecem na lista pública.</div>
+      </div>
       <div class="fi-group"><label>Descrição (aparece na página pública)</label><textarea class="fi" id="sv-desc" placeholder="Descreva o que envolve o serviço">${s?.descricao||''}</textarea></div>
       <div class="row-2">
         <div class="fi-group"><label>Valor (R$) *</label><input type="number" step="0.01" class="fi" id="sv-valor" value="${s?.valor||100}" min="0"/></div>
@@ -4649,11 +4662,28 @@ function openServicoForm(id=null) {
     </div>
   `, { lg: true });
 
+  // Auto-preview do slug
+  const updateSlugPreview = () => {
+    let sl = $('#sv-slug').value.trim();
+    if(!sl) sl = slugify($('#sv-nome').value);
+    $('#sv-slug-preview').textContent = sl || '...';
+  };
+  $('#sv-nome').oninput = updateSlugPreview;
+  $('#sv-slug').oninput = updateSlugPreview;
+
   $('#sv-save').onclick = async () => {
     const nome = $('#sv-nome').value.trim();
     if(!nome) { toast('Informe o nome','err'); return; }
+    let slug = ($('#sv-slug').value || '').trim();
+    if(!slug) slug = slugify(nome);
+    // Conflito de slug?
+    if(slug) {
+      const conflito = S.servicos.find(x => x.slug === slug && x.id !== id);
+      if(conflito) { toast('Já existe serviço com esse slug','err'); return; }
+    }
     const data = {
       nome,
+      slug: slug || null,
       descricao: $('#sv-desc').value.trim(),
       valor: parseFloat($('#sv-valor').value) || 0,
       duracao_min: parseInt($('#sv-dur').value) || 60,
@@ -4685,37 +4715,37 @@ function openServicoForm(id=null) {
 // Usada pelo botão 'Sincronizar com config oficial' em Serviços.
 const SERVICOS_CANDIEIRO = [
   {
-    nome: 'Baralho Cigano',
+    nome: 'Baralho Cigano', slug: 'baralho-cigano',
     descricao: 'Consulta de Baralho Cigano com Pai Nando — orientação espiritual através das 36 cartas.',
     valor: 200, duracao_min: 60, presencial: true, online: true, publico: true, ativo: true, ordem: 1,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-CO9BeLAdjv-200,00'
   },
   {
-    nome: 'Jogo de Búzios',
+    nome: 'Jogo de Búzios', slug: 'buzios',
     descricao: 'Jogo de búzios com Pai Nando — atendimento restrito a quem já frequenta a casa.',
     valor: 300, duracao_min: 60, presencial: true, online: false, publico: false, ativo: true, ordem: 2,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-HFbwfGC410-300,00'
   },
   {
-    nome: 'Bori',
+    nome: 'Bori', slug: 'bori',
     descricao: 'Obrigação de bori — fortalecimento e cuidado da cabeça espiritual. Atendimento interno.',
     valor: 200, duracao_min: 120, presencial: true, online: false, publico: false, ativo: true, ordem: 3,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-t7ngMPsiav-200,00'
   },
   {
-    nome: 'Quebra de Egum',
+    nome: 'Quebra de Egum', slug: 'quebra-de-egum',
     descricao: 'Obrigação de quebra de egum — limpeza e corte espiritual. Atendimento interno.',
     valor: 377, duracao_min: 120, presencial: true, online: false, publico: false, ativo: true, ordem: 4,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-4jXBRp8gwq-377,00'
   },
   {
-    nome: 'Orientação Espiritual Particular',
+    nome: 'Orientação Espiritual Particular', slug: 'orientacao',
     descricao: 'Conversa espiritual com Pai Nando — sem oráculo, sem leitura de cartas. Pra quando precisa só de orientação.',
     valor: 150, duracao_min: 45, presencial: true, online: true, publico: true, ativo: true, ordem: 5,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-vwi0MFI49x-150,00'
   },
   {
-    nome: 'Consulta Individual',
+    nome: 'Consulta Individual', slug: 'consulta',
     descricao: 'Atendimento individual completo com Pai Nando — orientação espiritual, leitura e encaminhamentos.',
     valor: 300, duracao_min: 90, presencial: true, online: true, publico: true, ativo: true, ordem: 6,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-XmEXAqaMMt-300,00'
@@ -4736,12 +4766,14 @@ async function syncServicosCandieiro() {
       for(const canonico of SERVICOS_CANDIEIRO) {
         const existente = S.servicos.find(s => (s.nome||'').trim().toLowerCase() === canonico.nome.toLowerCase());
         if(existente) {
-          // Só atualiza valor + link (preserva customizações)
-          await updateDoc(doc(dbPvd,'adm_servicos', existente.id), {
+          // Só atualiza valor + link + slug (preserva customizações)
+          const upd = {
             valor: canonico.valor,
             infinity_link: canonico.infinity_link,
             atualizadoEm: serverTimestamp()
-          });
+          };
+          if(!existente.slug) upd.slug = canonico.slug;
+          await updateDoc(doc(dbPvd,'adm_servicos', existente.id), upd);
           atualizados++;
         } else {
           await addDoc(collection(dbPvd,'adm_servicos'), {
@@ -4871,6 +4903,15 @@ function renderProdutos(c) {
 
 function copiarLinkProduto(slug) {
   const url = `https://terreirodocandieiro.com.br/vendas.html?p=${slug}`;
+  navigator.clipboard.writeText(url).then(() => {
+    toast('Link copiado!','ok');
+  }).catch(() => {
+    toast('Não foi possível copiar (use o ↗)','err');
+  });
+}
+
+function copiarLinkServico(slug) {
+  const url = `https://terreirodocandieiro.com.br/agendar.html?s=${slug}`;
   navigator.clipboard.writeText(url).then(() => {
     toast('Link copiado!','ok');
   }).catch(() => {
@@ -5596,6 +5637,7 @@ window._app = {
   calNav,
   salvarDisp,
   openEvento: (id) => openEventoForm(id),
+  copiarLinkServico,
   // Vendas externas
   openProdutoForm,
   copiarLinkProduto,
