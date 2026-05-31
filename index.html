@@ -4577,7 +4577,7 @@ function renderServicos(c) {
         <div class="page-sub">${lista.length} serviço${lista.length===1?'':'s'} cadastrado${lista.length===1?'':'s'} · usados em agendar.html</div>
       </div>
       <div class="page-actions">
-        ${lista.length === 0 ? `<button class="btn" onclick="window._app.seedServicos()">Criar serviços iniciais</button>` : ''}
+        <button class="btn" onclick="window._app.syncServicosCandieiro()" title="Cria/atualiza os 6 serviços oficiais do Candieiro com seus links InfinityPay. Preserva descrições e configs existentes.">🪷 Sincronizar com config oficial</button>
         <button class="btn btn-primary" onclick="window._app.openServicoForm()">+ Novo serviço</button>
       </div>
     </div>
@@ -4585,7 +4585,7 @@ function renderServicos(c) {
     ${lista.length === 0 ? `
       <div class="empty">
         <div class="empty-t">Nenhum serviço cadastrado</div>
-        <div class="empty-s">Sem serviços, a página pública de agendamento não mostra opções.<br>Clica "Criar serviços iniciais" pra começar com Baralho Cigano + Búzios + Limpeza, ou crie um do zero.</div>
+        <div class="empty-s">Sem serviços, a página pública de agendamento não mostra opções.<br>Clica <strong>"🪷 Sincronizar com config oficial"</strong> pra criar os 6 serviços oficiais do Candieiro com seus links InfinityPay, ou crie um do zero.</div>
       </div>
     ` : lista.map(s => `
       <div class="list-item" onclick="window._app.openServicoForm('${s.id}')" style="cursor:pointer;opacity:${s.ativo===false?'.5':'1'}">
@@ -4681,18 +4681,80 @@ function openServicoForm(id=null) {
   };
 }
 
-async function seedServicos() {
-  const iniciais = [
-    { nome:'Baralho Cigano', descricao:'Consulta de Baralho Cigano com Pai Nando — orientação espiritual via baralho.', valor:150, duracao_min:60, presencial:true, online:false, publico:true, ativo:true, ordem:1 },
-    { nome:'Búzios', descricao:'Jogo de búzios — atendimento restrito.', valor:200, duracao_min:60, presencial:true, online:false, publico:false, ativo:true, ordem:2 },
-    { nome:'Limpeza energética', descricao:'Trabalho de limpeza espiritual e descarrego.', valor:200, duracao_min:90, presencial:true, online:false, publico:true, ativo:true, ordem:3 }
-  ];
-  try {
-    for(const s of iniciais) {
-      await addDoc(collection(dbPvd,'adm_servicos'), { ...s, criadoEm:serverTimestamp(), atualizadoEm:serverTimestamp() });
-    }
-    toast('Serviços iniciais criados','ok');
-  } catch(e) { toast('Erro: '+e.message,'err'); }
+// Lista canônica dos serviços oficiais do Candieiro (com links InfinityPay).
+// Usada pelo botão 'Sincronizar com config oficial' em Serviços.
+const SERVICOS_CANDIEIRO = [
+  {
+    nome: 'Baralho Cigano',
+    descricao: 'Consulta de Baralho Cigano com Pai Nando — orientação espiritual através das 36 cartas.',
+    valor: 200, duracao_min: 60, presencial: true, online: true, publico: true, ativo: true, ordem: 1,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-CO9BeLAdjv-200,00'
+  },
+  {
+    nome: 'Jogo de Búzios',
+    descricao: 'Jogo de búzios com Pai Nando — atendimento restrito a quem já frequenta a casa.',
+    valor: 300, duracao_min: 60, presencial: true, online: false, publico: false, ativo: true, ordem: 2,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-HFbwfGC410-300,00'
+  },
+  {
+    nome: 'Bori',
+    descricao: 'Obrigação de bori — fortalecimento e cuidado da cabeça espiritual. Atendimento interno.',
+    valor: 200, duracao_min: 120, presencial: true, online: false, publico: false, ativo: true, ordem: 3,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-t7ngMPsiav-200,00'
+  },
+  {
+    nome: 'Quebra de Egum',
+    descricao: 'Obrigação de quebra de egum — limpeza e corte espiritual. Atendimento interno.',
+    valor: 377, duracao_min: 120, presencial: true, online: false, publico: false, ativo: true, ordem: 4,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-4jXBRp8gwq-377,00'
+  },
+  {
+    nome: 'Orientação Espiritual Particular',
+    descricao: 'Conversa espiritual com Pai Nando — sem oráculo, sem leitura de cartas. Pra quando precisa só de orientação.',
+    valor: 150, duracao_min: 45, presencial: true, online: true, publico: true, ativo: true, ordem: 5,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-vwi0MFI49x-150,00'
+  },
+  {
+    nome: 'Consulta Individual',
+    descricao: 'Atendimento individual completo com Pai Nando — orientação espiritual, leitura e encaminhamentos.',
+    valor: 300, duracao_min: 90, presencial: true, online: true, publico: true, ativo: true, ordem: 6,
+    infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-XmEXAqaMMt-300,00'
+  }
+];
+
+// Coringas (genéricos) — valores soltos pra produtos esporádicos
+const LINKS_INFINITY_EXTRAS = [
+  { label: 'Pagamento R$ 250', valor: 250, link: 'https://pay.infinitepay.io/candieiro/Ri0x-2bfN5G8fIi-250,00' },
+  { label: 'Pagamento R$ 350', valor: 350, link: 'https://pay.infinitepay.io/candieiro/Ri0x-8IU3Rz8yYB-350,00' }
+];
+
+async function syncServicosCandieiro() {
+  const msg = `Vai criar/atualizar os <strong>${SERVICOS_CANDIEIRO.length} serviços oficiais</strong> do Candieiro com seus links InfinityPay. <br><br>Pra serviços já existentes (match por nome), <strong>só atualiza o valor + link InfinityPay</strong>. Sua descrição, modalidade e configs ficam intactas. Pra serviços novos, cria com todos os dados.<br><br>Continuar?`;
+  confirmar(msg, async () => {
+    try {
+      let criados = 0, atualizados = 0;
+      for(const canonico of SERVICOS_CANDIEIRO) {
+        const existente = S.servicos.find(s => (s.nome||'').trim().toLowerCase() === canonico.nome.toLowerCase());
+        if(existente) {
+          // Só atualiza valor + link (preserva customizações)
+          await updateDoc(doc(dbPvd,'adm_servicos', existente.id), {
+            valor: canonico.valor,
+            infinity_link: canonico.infinity_link,
+            atualizadoEm: serverTimestamp()
+          });
+          atualizados++;
+        } else {
+          await addDoc(collection(dbPvd,'adm_servicos'), {
+            ...canonico,
+            criadoEm: serverTimestamp(),
+            atualizadoEm: serverTimestamp()
+          });
+          criados++;
+        }
+      }
+      toast(`✓ ${criados} criado${criados===1?'':'s'} · ${atualizados} atualizado${atualizados===1?'':'s'}`,'ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4743,6 +4805,18 @@ function renderProdutos(c) {
       <div class="page-actions">
         <button class="btn btn-primary" onclick="window._app.openProdutoForm()">+ Novo produto</button>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;padding:14px;background:rgba(52,152,219,0.06);border-color:rgba(52,152,219,0.25)">
+      <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:8px">💳 Links InfinityPay coringas disponíveis</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:12px">Pra criar um produto novo, copia o link cujo valor bate com o do produto e cola no campo "Link InfinityPay" no form do produto. Se precisar de outro valor, peça à IA da InfinityPay pra gerar.</div>
+      ${LINKS_INFINITY_EXTRAS.map(x => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:8px;margin-bottom:6px;flex-wrap:wrap">
+          <strong style="color:var(--gold);font-size:14px;min-width:90px">R$ ${x.valor},00</strong>
+          <code style="font-size:11px;color:var(--text3);font-family:monospace;flex:1;min-width:240px;user-select:all;word-break:break-all">${x.link}</code>
+          <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${x.link}').then(()=>window._app.toast('Link copiado','ok'))">📋 Copiar</button>
+        </div>
+      `).join('')}
     </div>
     ${lista.length === 0 ? `
       <div class="card">
@@ -5500,7 +5574,7 @@ window._app = {
   gcalDisconnect,
   buscarGcalEventos,
   openServicoForm,
-  seedServicos,
+  syncServicosCandieiro,
   addJanelaDia,
   delJanelaDia,
   openEventoForm,
