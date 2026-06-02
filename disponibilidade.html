@@ -33,7 +33,16 @@ body{
     radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);
   padding:24px 16px 60px;
 }
-.container{max-width:740px;margin:0 auto}
+.container{max-width:1100px;margin:0 auto}
+.painel-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+@media (max-width:880px){.painel-grid{grid-template-columns:1fr;gap:18px}}
+.painel-col{min-width:0}
+.col-titulo{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.col-titulo h2{font-size:13px;font-weight:700;color:var(--gold);margin:0 0 4px 0;letter-spacing:.1em;text-transform:uppercase}
+.col-titulo p{font-size:12px;color:var(--text3);margin:0;line-height:1.4}
+.deadline-banner{padding:10px 12px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;font-size:12.5px;color:var(--red);font-weight:600;text-align:center;margin-bottom:12px}
+.deadline-info{padding:8px 12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.2);border-radius:8px;font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.45}
+.disp-day.locked{opacity:.45;cursor:not-allowed !important}
 
 header{text-align:center;margin-bottom:30px;padding:14px 0}
 .flame{width:48px;height:48px;color:var(--red);margin:0 auto 12px;display:block}
@@ -58,11 +67,7 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 .btn-primary:disabled{opacity:.55;cursor:wait}
 .btn-block{width:100%;justify-content:center}
 
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px}
-.tabs button{padding:10px 16px;border:none;background:transparent;color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--font)}
-.tabs button.active{color:var(--gold);border-bottom-color:var(--gold)}
-
-/* Dashboard sections (Meu painel) — collapsible via <details>/<summary> */
+/* Dashboard sections (chevrons colapsáveis via <details>/<summary>) */
 .dash-secao{margin-bottom:10px;background:var(--glass);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s}
 .dash-secao[open]{border-color:rgba(212,168,67,.32)}
 .dash-secao > summary{padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none;user-select:none;transition:background .15s}
@@ -143,91 +148,118 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
   </div>
 
   <div id="content" style="display:none">
-    <div class="tabs">
-      <button id="tab-mural" class="active" onclick="setTab('mural')">Avisos</button>
-      <button id="tab-indiv" onclick="setTab('indiv')">Meu painel</button>
-      <button id="tab-rega" onclick="setTab('rega')">Rega</button>
-    </div>
+    <div class="painel-grid">
 
-    <!-- TAB 1: Avisos + Próximas giras -->
-    <div id="view-mural">
-      <div id="avisos-container"></div>
-      <div id="giras-container"></div>
-    </div>
-
-    <!-- TAB 2: Disponibilidade individual (precisa selecionar nome) -->
-    <div id="view-indiv" style="display:none">
-      <div class="card">
-        <div class="fi-group" style="margin:0">
-          <label>Quem é você?</label>
-          <select class="fi" id="filho-sel">
-            <option value="">— Selecione seu nome —</option>
-          </select>
-          <div style="font-size:12px;color:var(--text3);margin-top:6px">Marque sua disponibilidade do mês e veja suas escalas.</div>
+      <!-- COLUNA ESQUERDA: Área da comunidade -->
+      <div class="painel-col">
+        <div class="col-titulo">
+          <h2>Área da comunidade</h2>
+          <p>Avisos, próximas atividades e escala de rega.</p>
         </div>
-      </div>
+        <div id="avisos-container"></div>
+        <div id="giras-container"></div>
 
-      <div id="filho-area" style="display:none">
-        <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Conectado como</div>
-            <div id="filho-saudacao-nome" style="font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin-top:2px"></div>
-          </div>
-          <button onclick="trocarFilho()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Trocar</button>
-        </div>
-
-        <div id="afilhados-container"></div>
-
-        <!-- Dashboard: tudo colapsado por padrão — clica no header pra expandir -->
-
-        <!-- Seção 1: Próximas escalas -->
-        <details class="dash-secao" id="dash-sec-escalas">
+        <details class="dash-secao" id="dash-sec-rega">
           <summary>
             <div class="dash-head-text">
-              <h2>📅 Minhas próximas escalas <span class="dash-badge" id="dash-cnt-escalas"></span></h2>
-              <p class="dash-sub">Onde você foi escalado nos próximos dias</p>
+              <h2>💧 Escala de rega <span class="dash-badge muted" id="dash-cnt-rega"></span></h2>
+              <p class="dash-sub">Reserve os dias que você pode regar.</p>
             </div>
             <span class="dash-chevron">▾</span>
           </summary>
           <div class="dash-body">
-            <div id="escalas-container"></div>
-          </div>
-        </details>
-
-        <!-- Seção 2: Disponibilidade do mês -->
-        <details class="dash-secao" id="dash-sec-disp">
-          <summary>
-            <div class="dash-head-text">
-              <h2>📋 Minha disponibilidade <span class="dash-badge muted" id="dash-cnt-disp"></span></h2>
-              <p class="dash-sub">Marque os dias e funções que <strong>NÃO</strong> posso. Vazio = totalmente disponível.</p>
-            </div>
-            <span class="dash-chevron">▾</span>
-          </summary>
-          <div class="dash-body">
-            <div id="meses-container"></div>
-          </div>
-        </details>
-
-        <!-- Seção 3: Reembolso -->
-        <details class="dash-secao" id="dash-sec-reemb">
-          <summary>
-            <div class="dash-head-text">
-              <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
-              <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
-            </div>
-            <span class="dash-chevron">▾</span>
-          </summary>
-          <div class="dash-body">
-            <div id="reemb-form-container"></div>
-            <div id="reemb-historico"></div>
+            <div id="rega-container"></div>
           </div>
         </details>
       </div>
-    </div>
 
-    <!-- TAB 3: Escala de rega -->
-    <div id="view-rega" style="display:none">
-      <div id="rega-container"></div>
+      <!-- COLUNA DIREITA: Meu painel (individual, precisa selecionar nome) -->
+      <div class="painel-col">
+        <div class="col-titulo">
+          <h2>Meu painel</h2>
+          <p>Suas escalas, disponibilidade, afilhados e reembolsos.</p>
+        </div>
+
+        <div class="card" id="filho-sel-card">
+          <div class="fi-group" style="margin:0">
+            <label>Quem é você?</label>
+            <select class="fi" id="filho-sel">
+              <option value="">— Selecione seu nome —</option>
+            </select>
+            <div style="font-size:12px;color:var(--text3);margin-top:6px">Selecione seu nome pra ver sua área pessoal.</div>
+          </div>
+        </div>
+
+        <div id="filho-area" style="display:none">
+          <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Conectado como</div>
+              <div id="filho-saudacao-nome" style="font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin-top:2px"></div>
+            </div>
+            <button onclick="trocarFilho()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Trocar</button>
+          </div>
+
+          <!-- Dashboard: TODOS chevrons, TODOS começam fechados -->
+
+          <!-- Afilhados (só aparece se for padrinho/madrinha) -->
+          <details class="dash-secao" id="dash-sec-afilhados" style="display:none">
+            <summary>
+              <div class="dash-head-text">
+                <h2>👥 Meus afilhados <span class="dash-badge" id="dash-cnt-afilhados"></span></h2>
+                <p class="dash-sub">Acompanhe os filhos vinculados a você como padrinho/madrinha.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="afilhados-container"></div>
+            </div>
+          </details>
+
+          <!-- Próximas escalas -->
+          <details class="dash-secao" id="dash-sec-escalas">
+            <summary>
+              <div class="dash-head-text">
+                <h2>📅 Minhas próximas escalas <span class="dash-badge" id="dash-cnt-escalas"></span></h2>
+                <p class="dash-sub">Onde você foi escalado nos próximos dias.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="escalas-container"></div>
+            </div>
+          </details>
+
+          <!-- Disponibilidade do mês -->
+          <details class="dash-secao" id="dash-sec-disp">
+            <summary>
+              <div class="dash-head-text">
+                <h2>📋 Minha disponibilidade <span class="dash-badge muted" id="dash-cnt-disp"></span></h2>
+                <p class="dash-sub">Marque dias e funções que <strong>NÃO</strong> posso. Vazio = totalmente disponível.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="meses-container"></div>
+            </div>
+          </details>
+
+          <!-- Reembolso -->
+          <details class="dash-secao" id="dash-sec-reemb">
+            <summary>
+              <div class="dash-head-text">
+                <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
+                <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="reemb-form-container"></div>
+              <div id="reemb-historico"></div>
+            </div>
+          </details>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -397,7 +429,7 @@ async function selecionarFilho(id) {
   // Saudação: nome + esconde o seletor (depois reaparece em "Trocar")
   const saudacaoNome = $('#filho-saudacao-nome');
   if(saudacaoNome) saudacaoNome.textContent = filho.nome;
-  const selectorCard = $('#filho-sel')?.closest('.card');
+  const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = 'none';
 
   // Carrega disponibilidade existente do filho (próximos 2 meses)
@@ -434,6 +466,22 @@ function proxMeses(qtd) {
   return meses;
 }
 
+// Disponibilidade só pode ser editada até o último dia do mês ANTERIOR ao mês-alvo.
+// Ex: pra editar julho/2026, prazo = 30/jun/2026 23:59:59.
+function deadlineMes(m) {
+  const [ano, mes] = m.split('-').map(Number);
+  const d = new Date(ano, mes-1, 0); // dia 0 do mês alvo = último dia do mês anterior
+  d.setHours(23,59,59,999);
+  return d;
+}
+function ehEditavelMes(m) {
+  return new Date() <= deadlineMes(m);
+}
+function fmtDeadline(m) {
+  const d = deadlineMes(m);
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+}
+
 function renderDisp() {
   const cont = $('#meses-container');
   const meses = proxMeses(2);
@@ -454,6 +502,8 @@ function renderMes(m) {
   const daysInMonth = last.getDate();
   const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   const hoje = new Date().toISOString().slice(0,10);
+  const editavel = ehEditavelMes(m);
+  const dlStr = fmtDeadline(m);
 
   // Calcula dias importantes desse mês (dia do evento + dia seguinte se requer limpeza)
   const importantes = {};
@@ -491,8 +541,13 @@ function renderMes(m) {
 
   const qtdImportantes = Object.keys(importantes).length;
   const card = $(`#mes-${m}`);
+  const bannerPrazo = editavel
+    ? `<div class="deadline-info">⏰ Prazo pra editar: <strong>${dlStr}</strong> (último dia do mês anterior — como a escala).</div>`
+    : `<div class="deadline-banner">🔒 Prazo encerrado em ${dlStr}. Disponibilidade trancada — fale com o admin se precisar mudar.</div>`;
+
   card.innerHTML = `
     <div class="mes-title">${nomeMes}</div>
+    ${bannerPrazo}
     <div class="disp-cal" style="margin-bottom:8px">
       ${['D','S','T','Q','Q','S','S'].map(d=>`<div class="disp-head">${d}</div>`).join('')}
       ${cells}
@@ -510,43 +565,44 @@ function renderMes(m) {
           if(minhasFuncoes.length === 0) return '<span style="color:var(--text3);font-size:13px">Você não tem funções de escala cadastradas. Se isso estiver errado, fala com o admin.</span>';
           return minhasFuncoes.map(fn => {
             const sel = (disp.funcoes_indisponivel||[]).includes(fn.id);
-            return `<button type="button" class="chip ${sel?'sel':''}" data-fid="${fn.id}" data-m="${m}">${fn.nome}</button>`;
+            return `<button type="button" class="chip ${sel?'sel':''}" data-fid="${fn.id}" data-m="${m}" ${editavel?'':'disabled'}>${fn.nome}</button>`;
           }).join('');
         })()}
       </div>
     </div>
     <div class="fi-group">
       <label>Observação opcional</label>
-      <input class="fi" id="obs-${m}" value="${disp.obs||''}" placeholder="Ex: vou viajar dia X / estou de luto"/>
+      <input class="fi" id="obs-${m}" value="${disp.obs||''}" placeholder="Ex: vou viajar dia X / estou de luto" ${editavel?'':'disabled'}/>
     </div>
-    <button class="btn btn-primary btn-block" onclick="window._app.salvar('${m}')">Salvar disponibilidade de ${nomeMes.split(' de ')[0]}</button>
+    ${editavel
+      ? `<button class="btn btn-primary btn-block" onclick="window._app.salvar('${m}')">Salvar disponibilidade de ${nomeMes.split(' de ')[0]}</button>`
+      : `<button class="btn btn-block" disabled style="opacity:.55;cursor:not-allowed">🔒 Prazo encerrado</button>`}
   `;
 
-  // bind days
+  // bind days (só se editável)
   card.querySelectorAll('.disp-day[data-d]').forEach(el => {
     if(el.dataset.out) return;
+    if(!editavel) { el.classList.add('locked'); return; }
     el.onclick = () => {
       const visivel = !el.classList.contains('indisp');
       el.classList.toggle('indisp');
       el.textContent = visivel ? '' : el.dataset.d.slice(-2).replace(/^0/,'');
-      // Mantém o número quando NÃO indisp; some quando indisp (o ✕ ::before cobre)
-      if(!visivel) {
-        // virou disponível: mostra número
-        el.textContent = parseInt(el.dataset.d.slice(-2),10);
-      } else {
-        el.textContent = '';
-      }
+      if(!visivel) el.textContent = parseInt(el.dataset.d.slice(-2),10);
+      else el.textContent = '';
     };
   });
 
-  // bind funcs
-  card.querySelectorAll(`#funcs-${m} .chip`).forEach(el => {
-    el.onclick = () => el.classList.toggle('sel');
-  });
+  // bind funcs (só se editável)
+  if(editavel) {
+    card.querySelectorAll(`#funcs-${m} .chip`).forEach(el => {
+      el.onclick = () => el.classList.toggle('sel');
+    });
+  }
 }
 
 async function salvar(m) {
   if(!APP.filhoAtual) return;
+  if(!ehEditavelMes(m)) { toast('Prazo encerrado pra esse mês','err'); return; }
   const datas = $$(`#mes-${m} .disp-day.indisp[data-d]`).map(el => el.dataset.d);
   const funcs = $$(`#funcs-${m} .chip.sel`).map(el => el.dataset.fid);
   const obs = $(`#obs-${m}`).value.trim();
@@ -616,56 +672,48 @@ function renderEsc() {
   // Atualiza badge da seção
   const badge = $('#dash-cnt-escalas');
   if(badge) badge.textContent = futuras.length > 0 ? `${futuras.length} próxima${futuras.length===1?'':'s'}` : '';
-  // Abre auto se tem escalas futuras (info importante)
-  const sec = $('#dash-sec-escalas');
-  if(sec && futuras.length > 0) sec.open = true;
 }
 
 function renderAfilhados() {
   const cont = $('#afilhados-container');
-  if(!cont) return;
+  const sec = $('#dash-sec-afilhados');
+  const badge = $('#dash-cnt-afilhados');
+  if(!cont || !sec) return;
   const f = APP.filhoAtual;
-  if(!f) { cont.innerHTML = ''; return; }
-  if(!f.e_padrinho) { cont.innerHTML = ''; return; }
+  // Esconde a seção inteira se não for padrinho
+  if(!f || !f.e_padrinho) { sec.style.display = 'none'; cont.innerHTML = ''; return; }
+  sec.style.display = '';
 
   const afilhados = APP.filhos.filter(x => x.padrinho_id === f.id);
+  if(badge) badge.textContent = afilhados.length > 0 ? `${afilhados.length}` : 'nenhum';
+
   if(afilhados.length === 0) {
-    cont.innerHTML = `
-      <div class="card" style="margin-top:14px;border-color:var(--gold)">
-        <h2 style="color:var(--gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M3 21v-2a4 4 0 014-4h2"/></svg>Você é padrinho/madrinha</h2>
-        <div style="font-size:14px;color:var(--text2)">Ainda não há filhos vinculados a você como afilhados.</div>
-      </div>
-    `;
+    cont.innerHTML = `<div class="empty" style="padding:18px 12px">Ainda não há filhos vinculados a você como afilhados.</div>`;
     return;
   }
 
-  cont.innerHTML = `
-    <div class="card" style="margin-top:14px;border-color:var(--gold)">
-      <h2 style="color:var(--gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M3 21v-2a4 4 0 014-4h2"/></svg>Meus afilhados (${afilhados.length})</h2>
-      ${afilhados.map(a => {
-        const tel = a.tel || '';
-        const wpp = tel ? `https://wa.me/55${tel}` : null;
-        const hoje = new Date().toISOString().slice(0,10);
-        const proxEscala = APP.escalas
-          .filter(es => es.data >= hoje && (es.alocacoes||[]).some(al => al.filho_id === a.id))
-          .sort((x,y)=>x.data.localeCompare(y.data))[0];
-        return `
-          <div class="list-item" style="background:rgba(212,168,67,0.06)">
-            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(a.nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
-            <div>
-              <div class="li-name">${a.nome}</div>
-              <div class="li-meta">
-                ${(a.status||'ativo')==='ativo' ? '<span class="chip" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">ativo</span>' : `<span class="chip">${a.status}</span>`}
-                ${tel?`<span>📱 ${tel}</span>`:''}
-                ${proxEscala?`<span style="color:var(--gold)">próxima escala: ${fmtCurto(proxEscala.data)}</span>`:''}
-                ${wpp?`<a href="${wpp}" target="_blank" style="color:#25d366;font-weight:600">WhatsApp</a>`:''}
-              </div>
-            </div>
+  const hoje = new Date().toISOString().slice(0,10);
+  cont.innerHTML = afilhados.map(a => {
+    const tel = a.tel || '';
+    const wpp = tel ? `https://wa.me/55${tel}` : null;
+    const proxEscala = APP.escalas
+      .filter(es => es.data >= hoje && (es.alocacoes||[]).some(al => al.filho_id === a.id))
+      .sort((x,y)=>x.data.localeCompare(y.data))[0];
+    return `
+      <div class="list-item" style="background:rgba(212,168,67,0.06)">
+        <div class="li-date" style="background:var(--gold-bg);color:var(--gold);font-size:13px;font-weight:700">${(a.nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()}</div>
+        <div>
+          <div class="li-name">${a.nome}</div>
+          <div class="li-meta">
+            ${(a.status||'ativo')==='ativo' ? '<span class="chip" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">ativo</span>' : `<span class="chip">${a.status}</span>`}
+            ${tel?`<span>📱 ${tel}</span>`:''}
+            ${proxEscala?`<span style="color:var(--gold)">próxima escala: ${fmtCurto(proxEscala.data)}</span>`:''}
+            ${wpp?`<a href="${wpp}" target="_blank" style="color:#25d366;font-weight:600">WhatsApp</a>`:''}
           </div>
-        `;
-      }).join('')}
-    </div>
-  `;
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderGiras() {
@@ -771,31 +819,35 @@ function renderRega() {
   })();
   const diasLivres = totalDias - diasCobertos;
 
+  // Badge no chevron
+  const badge = $('#dash-cnt-rega');
+  if(badge) {
+    if(diasLivres === 0) { badge.textContent = '✓ cobertos'; badge.classList.remove('muted'); }
+    else { badge.textContent = `${diasLivres} sem cobertura`; badge.classList.add('muted'); }
+  }
+
   cont.innerHTML = `
-    <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>Escala de rega</h2>
-      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">
-        ${diasLivres === 0 ? '<span style="color:var(--green)">✓ Todos os próximos dias cobertos</span>' : `<span style="color:var(--amber)">${diasLivres} dia${diasLivres===1?'':'s'} sem cobertura</span>`}
-        ${carrinhoSize > 0 ? `<span style="color:var(--gold);font-weight:600"> · ${carrinhoSize} selecionado${carrinhoSize===1?'':'s'}</span>` : ''}
-      </div>
-      <div class="help">
-        Cada dia precisa de <strong>1 pessoa</strong> pra regar. Clique nos dias que você pode assumir — quando terminar, escolha seu nome no final. Dias com nome em verde já estão ocupados.
-      </div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:12px">
+      ${diasLivres === 0 ? '<span style="color:var(--green)">✓ Todos os próximos dias cobertos</span>' : `<span style="color:var(--gold)">${diasLivres} dia${diasLivres===1?'':'s'} sem cobertura</span>`}
+      ${carrinhoSize > 0 ? `<span style="color:var(--gold);font-weight:600"> · ${carrinhoSize} selecionado${carrinhoSize===1?'':'s'}</span>` : ''}
+    </div>
+    <div class="help">
+      Cada dia precisa de <strong>1 pessoa</strong> pra regar. Clique nos dias que você pode assumir — quando terminar, escolha seu nome no final. Dias com nome em verde já estão ocupados.
+    </div>
 
-      ${meses.map(m => renderMesRega(m, hoje)).join('')}
+    ${meses.map(m => renderMesRega(m, hoje)).join('')}
 
-      <div id="rega-checkout" style="margin-top:18px;display:${carrinhoSize?'block':'none'}">
-        <div style="padding:14px;background:var(--gold-bg);border:1px solid rgba(212,168,67,0.3);border-radius:10px">
-          <div style="font-weight:700;margin-bottom:10px;color:var(--gold)">
-            ${carrinhoSize} dia${carrinhoSize===1?'':'s'} selecionado${carrinhoSize===1?'':'s'} — quem é você?
-          </div>
-          <select class="fi" id="rega-quem" style="margin-bottom:10px">
-            <option value="">— Selecione seu nome —</option>
-            ${APP.filhos.map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
-          </select>
-          <button class="btn btn-primary btn-block" onclick="window._app.confirmarRega()">Confirmar reserva</button>
-          <button class="btn btn-block" style="margin-top:8px" onclick="window._app.limparCarrinho()">Limpar seleção</button>
+    <div id="rega-checkout" style="margin-top:18px;display:${carrinhoSize?'block':'none'}">
+      <div style="padding:14px;background:var(--gold-bg);border:1px solid rgba(212,168,67,0.3);border-radius:10px">
+        <div style="font-weight:700;margin-bottom:10px;color:var(--gold)">
+          ${carrinhoSize} dia${carrinhoSize===1?'':'s'} selecionado${carrinhoSize===1?'':'s'} — quem é você?
         </div>
+        <select class="fi" id="rega-quem" style="margin-bottom:10px">
+          <option value="">— Selecione seu nome —</option>
+          ${APP.filhos.map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-block" onclick="window._app.confirmarRega()">Confirmar reserva</button>
+        <button class="btn btn-block" style="margin-top:8px" onclick="window._app.limparCarrinho()">Limpar seleção</button>
       </div>
     </div>
   `;
@@ -895,19 +947,10 @@ async function confirmarRega() {
   if(erros > 0) toast(`${erros} erro(s) ao salvar`,'err');
 }
 
-// Abas principais
-function setTab(t) {
-  ['mural','indiv','rega'].forEach(k => {
-    const b = $(`#tab-${k}`);
-    const v = $(`#view-${k}`);
-    if(b) b.classList.toggle('active', k === t);
-    if(v) v.style.display = k === t ? '' : 'none';
-  });
-}
-
-// setSubTab agora é no-op — a UI virou dashboard linear (escalas + disp + reembolso)
-// stackado. Mantido como função pra compatibilidade com chamadas remanescentes.
-function setSubTab(_t) { /* deprecated com a UI dashboard, mantém pra não quebrar */ }
+// setTab/setSubTab eram da UI antiga (abas). Agora é layout 2-colunas com chevrons.
+// Mantemos no-ops pra não quebrar handlers remanescentes.
+function setTab(_t) { /* deprecated */ }
+function setSubTab(_t) { /* deprecated */ }
 
 // ── REEMBOLSO ─────────────────────────────────────────────────────────────
 async function renderReembolso() {
@@ -1082,10 +1125,15 @@ function trocarFilho() {
   }
   APP.filhoAtual = null;
   $('#filho-area').style.display = 'none';
-  const selectorCard = $('#filho-sel')?.closest('.card');
+  const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = '';
   $('#filho-sel').value = '';
-  setSubTab('disp'); // reset subtab pro default
+  // Fecha todos os chevrons da área pessoal (reset visual)
+  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
+    const d = $(`#${id}`); if(d) d.open = false;
+  });
+  // Esconde seção de afilhados (próximo filho pode não ser padrinho)
+  const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
 }
 
 window.trocarFilho = trocarFilho;
