@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Disponibilidade · Terreiro do Candieiro</title>
+<title>Minha área · Terreiro do Candieiro</title>
 <meta name="robots" content="noindex"/>
 <link rel="icon" type="image/png" href="logocandieiro.png"/>
 <link rel="apple-touch-icon" href="logocandieiro.png"/>
@@ -115,7 +115,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 <div class="container">
   <header>
     <img class="flame" src="logocandieiro.png" alt="Candieiro" style="object-fit:contain;width:72px;height:72px"/>
-    <h1>Disponibilidade dos filhos</h1>
+    <h1>Área do <em style="font-style:italic;color:var(--gold,#d4a843)">filho</em></h1>
     <div class="subtitle">Terreiro do Candieiro</div>
   </header>
 
@@ -126,9 +126,9 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
   <div id="content" style="display:none">
     <div class="tabs">
-      <button id="tab-mural" class="active" onclick="setTab('mural')">Avisos & calendário</button>
-      <button id="tab-indiv" onclick="setTab('indiv')">Minha área pessoal</button>
-      <button id="tab-rega" onclick="setTab('rega')">Escala de rega</button>
+      <button id="tab-mural" class="active" onclick="setTab('mural')">Avisos</button>
+      <button id="tab-indiv" onclick="setTab('indiv')">Meu painel</button>
+      <button id="tab-rega" onclick="setTab('rega')">Rega</button>
     </div>
 
     <!-- TAB 1: Avisos + Próximas giras -->
@@ -150,11 +150,18 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       </div>
 
       <div id="filho-area" style="display:none">
+        <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Conectado como</div>
+            <div id="filho-saudacao-nome" style="font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin-top:2px"></div>
+          </div>
+          <button onclick="trocarFilho()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Trocar</button>
+        </div>
         <div id="afilhados-container"></div>
         <div class="tabs" style="margin-top:14px">
-          <button id="tab-disp" class="active" onclick="setSubTab('disp')">Minha disponibilidade</button>
+          <button id="tab-disp" class="active" onclick="setSubTab('disp')">Disponibilidade</button>
           <button id="tab-esc" onclick="setSubTab('esc')">Minhas escalas</button>
-          <button id="tab-reemb" onclick="setSubTab('reemb')">Pedir reembolso</button>
+          <button id="tab-reemb" onclick="setSubTab('reemb')">Reembolso</button>
         </div>
 
         <div id="view-disp">
@@ -349,6 +356,11 @@ async function selecionarFilho(id) {
 
   APP.filhoAtual = filho;
   $('#filho-area').style.display = '';
+  // Saudação: nome + esconde o seletor (depois reaparece em "Trocar")
+  const saudacaoNome = $('#filho-saudacao-nome');
+  if(saudacaoNome) saudacaoNome.textContent = filho.nome;
+  const selectorCard = $('#filho-sel')?.closest('.card');
+  if(selectorCard) selectorCard.style.display = 'none';
 
   // Carrega disponibilidade existente do filho (próximos 2 meses)
   const meses = proxMeses(2);
@@ -1020,6 +1032,20 @@ async function carregarHistoricoReemb() {
   }
 }
 
+function trocarFilho() {
+  // Limpa auth do filho atual + reset UI pro seletor
+  if(APP.filhoAtual) {
+    try { sessionStorage.removeItem(`auth_${APP.filhoAtual.id}`); } catch(e) {}
+  }
+  APP.filhoAtual = null;
+  $('#filho-area').style.display = 'none';
+  const selectorCard = $('#filho-sel')?.closest('.card');
+  if(selectorCard) selectorCard.style.display = '';
+  $('#filho-sel').value = '';
+  setSubTab('disp'); // reset subtab pro default
+}
+
+window.trocarFilho = trocarFilho;
 window.renderReembolso = renderReembolso;
 window.setTab = setTab;
 window.setSubTab = setSubTab;
