@@ -62,12 +62,23 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 .tabs button{padding:10px 16px;border:none;background:transparent;color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--font)}
 .tabs button.active{color:var(--gold);border-bottom-color:var(--gold)}
 
-/* Dashboard sections (Meu painel) */
-.dash-secao{margin-bottom:28px;padding-bottom:18px;border-bottom:1px solid var(--border)}
-.dash-secao:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
-.dash-head{margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid rgba(212,168,67,.18)}
-.dash-head h2{font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin:0 0 4px 0;letter-spacing:.01em}
-.dash-head p.dash-sub{font-size:12.5px;color:var(--text2);margin:0;line-height:1.55}
+/* Dashboard sections (Meu painel) — collapsible via <details>/<summary> */
+.dash-secao{margin-bottom:10px;background:var(--glass);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s}
+.dash-secao[open]{border-color:rgba(212,168,67,.32)}
+.dash-secao > summary{padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none;user-select:none;transition:background .15s}
+.dash-secao > summary::-webkit-details-marker{display:none}
+.dash-secao > summary:hover{background:rgba(212,168,67,.04)}
+.dash-secao[open] > summary{border-bottom:1px solid var(--border)}
+.dash-head-text{flex:1;min-width:0}
+.dash-head-text h2{font-size:16px;font-weight:700;color:var(--gold,#d4a843);margin:0 0 3px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dash-head-text p.dash-sub{font-size:12.5px;color:var(--text2);margin:0;line-height:1.5}
+.dash-badge{display:inline-flex;align-items:center;background:rgba(212,168,67,.18);color:var(--gold,#d4a843);padding:2px 9px;border-radius:10px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.dash-badge:empty{display:none}
+.dash-badge.muted{background:var(--glass2);color:var(--text3)}
+.dash-chevron{font-size:14px;color:var(--text3);transition:transform .25s cubic-bezier(.2,.7,.3,1);flex-shrink:0}
+.dash-secao[open] > summary > .dash-chevron{transform:rotate(180deg);color:var(--gold,#d4a843)}
+.dash-body{padding:16px}
+.dash-body > :first-child{margin-top:0}
 
 .disp-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .disp-head{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:600;text-align:center;padding:5px}
@@ -167,35 +178,50 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
         <div id="afilhados-container"></div>
 
-        <!-- Dashboard: tudo empilhado e visível -->
+        <!-- Dashboard: tudo colapsado por padrão — clica no header pra expandir -->
 
-        <!-- Seção 1: Próximas escalas (mais actionable, primeiro) -->
-        <section class="dash-secao">
-          <div class="dash-head">
-            <h2>📅 Minhas próximas escalas</h2>
-            <p class="dash-sub">Onde você foi escalado nos próximos dias</p>
+        <!-- Seção 1: Próximas escalas -->
+        <details class="dash-secao" id="dash-sec-escalas">
+          <summary>
+            <div class="dash-head-text">
+              <h2>📅 Minhas próximas escalas <span class="dash-badge" id="dash-cnt-escalas"></span></h2>
+              <p class="dash-sub">Onde você foi escalado nos próximos dias</p>
+            </div>
+            <span class="dash-chevron">▾</span>
+          </summary>
+          <div class="dash-body">
+            <div id="escalas-container"></div>
           </div>
-          <div id="escalas-container"></div>
-        </section>
+        </details>
 
         <!-- Seção 2: Disponibilidade do mês -->
-        <section class="dash-secao">
-          <div class="dash-head">
-            <h2>📋 Minha disponibilidade</h2>
-            <p class="dash-sub">Marque os dias e funções que <strong>NÃO</strong> posso. Vazio = totalmente disponível.</p>
+        <details class="dash-secao" id="dash-sec-disp">
+          <summary>
+            <div class="dash-head-text">
+              <h2>📋 Minha disponibilidade <span class="dash-badge muted" id="dash-cnt-disp"></span></h2>
+              <p class="dash-sub">Marque os dias e funções que <strong>NÃO</strong> posso. Vazio = totalmente disponível.</p>
+            </div>
+            <span class="dash-chevron">▾</span>
+          </summary>
+          <div class="dash-body">
+            <div id="meses-container"></div>
           </div>
-          <div id="meses-container"></div>
-        </section>
+        </details>
 
         <!-- Seção 3: Reembolso -->
-        <section class="dash-secao">
-          <div class="dash-head">
-            <h2>💸 Pedir reembolso</h2>
-            <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
+        <details class="dash-secao" id="dash-sec-reemb">
+          <summary>
+            <div class="dash-head-text">
+              <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
+              <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
+            </div>
+            <span class="dash-chevron">▾</span>
+          </summary>
+          <div class="dash-body">
+            <div id="reemb-form-container"></div>
+            <div id="reemb-historico"></div>
           </div>
-          <div id="reemb-form-container"></div>
-          <div id="reemb-historico"></div>
-        </section>
+        </details>
       </div>
     </div>
 
@@ -413,6 +439,10 @@ function renderDisp() {
   const meses = proxMeses(2);
   cont.innerHTML = meses.map(m => `<div class="card" id="mes-${m}"></div>`).join('');
   meses.forEach(m => renderMes(m));
+  // Atualiza badge da seção: total de dias marcados como indisponíveis
+  const totalIndisp = meses.reduce((s,m) => s + (APP.disp[m]?.datas_indisponivel?.length || 0), 0);
+  const badge = $('#dash-cnt-disp');
+  if(badge) badge.textContent = totalIndisp > 0 ? `${totalIndisp} dia${totalIndisp===1?'':'s'} marcado${totalIndisp===1?'':'s'}` : 'totalmente disponível';
 }
 
 function renderMes(m) {
@@ -575,17 +605,20 @@ function renderEsc() {
   };
 
   cont.innerHTML = `
-    <div class="card">
-      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Próximas escalas</h2>
-      ${futuras.length === 0 ? '<div class="empty">Você não tem escalas futuras agora.</div>' : futuras.map(cardEsc).join('')}
-    </div>
+    ${futuras.length === 0 ? '<div class="empty">Você não tem escalas futuras agora.</div>' : futuras.map(cardEsc).join('')}
     ${passadas.length ? `
-      <div class="card">
-        <h2>Histórico</h2>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico</div>
         ${passadas.slice(0,15).map(cardEsc).join('')}
       </div>
     `:''}
   `;
+  // Atualiza badge da seção
+  const badge = $('#dash-cnt-escalas');
+  if(badge) badge.textContent = futuras.length > 0 ? `${futuras.length} próxima${futuras.length===1?'':'s'}` : '';
+  // Abre auto se tem escalas futuras (info importante)
+  const sec = $('#dash-sec-escalas');
+  if(sec && futuras.length > 0) sec.open = true;
 }
 
 function renderAfilhados() {
@@ -1008,6 +1041,10 @@ async function carregarHistoricoReemb() {
     const lista = snap.docs.map(d => ({id:d.id, ...d.data()}))
       .sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0))
       .slice(0,10);
+    // Atualiza badge da seção: pedidos pendentes/aprovados (aguardando)
+    const aguardando = lista.filter(r => (r.status||'pendente') === 'pendente' || r.status === 'aprovado').length;
+    const badge = $('#dash-cnt-reemb');
+    if(badge) badge.textContent = aguardando > 0 ? `${aguardando} pendente${aguardando===1?'':'s'}` : '';
     if(lista.length === 0) { histC.innerHTML = ''; return; }
     const stChip = {
       pendente: ['Pendente','color:#d4a843;background:rgba(212,168,67,.12)'],
