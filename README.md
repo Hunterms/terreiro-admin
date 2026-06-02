@@ -6,7 +6,7 @@ Sistema de gestão do Terreiro do Candieiro — Barão Geraldo, Campinas-SP.
 
 - **`index.html`** — Admin completo (login obrigatório). Filhos, funções, kanban, calendário, escalas, agenda do Pai, consulentes, avisos, solicitações de agendamento, config de agendamento.
 - **`agendar.html`** — Página pública pra cliente agendar consulta de Baralho Cigano. Sem login. Pedidos vão pra `adm_solicitacoes` no Firestore, admin aprova manualmente.
-- **`disponibilidade.html`** — Página pública pros filhos da casa marcarem disponibilidade no mês, ver minhas escalas, próximas giras e quadro de avisos. Sem login (confiança).
+- **`area-filho.html`** — Área pessoal pública do filho. Painel com tarefas, escalas, reembolso, disponibilidade do mês, afilhados + coluna comunidade (avisos, próximas atividades, rega). Trust-based (últimos 4 dígitos do tel). `disponibilidade.html` permanece como redirect.
 - **`SCHEMA.md`** — Schema do Firestore (2 projects: `terreiro-pvd` + `terreiro-candieiro`), security rules, índices, migrations.
 - **`SITEMAP.md`** — Sitemap do admin com rotas, fluxos E2E, componentes.
 
@@ -27,7 +27,7 @@ Sistema de gestão do Terreiro do Candieiro — Barão Geraldo, Campinas-SP.
 |---|---|
 | Admin | `/index.html` |
 | Agendar consulta | `/agendar.html` |
-| Disponibilidade dos filhos | `/disponibilidade.html` |
+| Área do filho (pessoal) | `/area-filho.html` (legado: `/disponibilidade.html` redireciona) |
 
 ## Setup
 

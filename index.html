@@ -3795,7 +3795,7 @@ function renderControleDisp(c) {
   const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
   const filhosOrd = [...filhosAtivos].sort((a,b) => a.nome.localeCompare(b.nome));
 
-  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/disponibilidade.html';
+  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/area-filho.html';
 
   const linhaFilho = (f, m) => {
     const docId = `${f.id}_${m}`;
@@ -3878,7 +3878,7 @@ function renderControleDisp(c) {
         <div class="page-sub">Quem já marcou e quem ainda falta · ${filhosOrd.length} filhos ativos</div>
       </div>
       <div class="page-actions">
-        <a class="btn" href="disponibilidade.html" target="_blank">↗ Abrir página pública</a>
+        <a class="btn" href="area-filho.html" target="_blank">↗ Abrir página pública</a>
         <button class="btn btn-primary" id="ctd-broadcast">Lembrar todos por WhatsApp</button>
       </div>
     </div>
@@ -3903,7 +3903,7 @@ function renderControleDisp(c) {
 function renderRega(c) {
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const hojeStr = hoje.toISOString().slice(0,10);
-  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/disponibilidade.html';
+  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/area-filho.html';
 
   // Map: data → reserva
   const porDia = {};
@@ -3997,7 +3997,7 @@ function renderRega(c) {
         <div class="page-sub">1 pessoa por dia · filhos reservam pela página pública</div>
       </div>
       <div class="page-actions">
-        <a class="btn" href="disponibilidade.html" target="_blank">↗ Página pública</a>
+        <a class="btn" href="area-filho.html" target="_blank">↗ Página pública</a>
       </div>
     </div>
 
