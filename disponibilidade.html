@@ -62,6 +62,13 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 .tabs button{padding:10px 16px;border:none;background:transparent;color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--font)}
 .tabs button.active{color:var(--gold);border-bottom-color:var(--gold)}
 
+/* Dashboard sections (Meu painel) */
+.dash-secao{margin-bottom:28px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.dash-secao:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.dash-head{margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid rgba(212,168,67,.18)}
+.dash-head h2{font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin:0 0 4px 0;letter-spacing:.01em}
+.dash-head p.dash-sub{font-size:12.5px;color:var(--text2);margin:0;line-height:1.55}
+
 .disp-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .disp-head{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:600;text-align:center;padding:5px}
 .disp-day{aspect-ratio:1;background:var(--glass2);border:1px solid transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;color:var(--text2);transition:all .12s;font-weight:500}
@@ -150,40 +157,45 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       </div>
 
       <div id="filho-area" style="display:none">
-        <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
           <div>
             <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Conectado como</div>
             <div id="filho-saudacao-nome" style="font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin-top:2px"></div>
           </div>
           <button onclick="trocarFilho()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Trocar</button>
         </div>
-        <div id="afilhados-container"></div>
-        <div class="tabs" style="margin-top:14px">
-          <button id="tab-disp" class="active" onclick="setSubTab('disp')">Disponibilidade</button>
-          <button id="tab-esc" onclick="setSubTab('esc')">Minhas escalas</button>
-          <button id="tab-reemb" onclick="setSubTab('reemb')">Reembolso</button>
-        </div>
 
-        <div id="view-disp">
-          <div class="help">
-            Marque os dias e funções que <strong>NÃO</strong> posso comparecer/fazer esse mês.<br>
-            Vazio = totalmente disponível. Pode salvar quantas vezes quiser, sempre sobrescreve.
+        <div id="afilhados-container"></div>
+
+        <!-- Dashboard: tudo empilhado e visível -->
+
+        <!-- Seção 1: Próximas escalas (mais actionable, primeiro) -->
+        <section class="dash-secao">
+          <div class="dash-head">
+            <h2>📅 Minhas próximas escalas</h2>
+            <p class="dash-sub">Onde você foi escalado nos próximos dias</p>
+          </div>
+          <div id="escalas-container"></div>
+        </section>
+
+        <!-- Seção 2: Disponibilidade do mês -->
+        <section class="dash-secao">
+          <div class="dash-head">
+            <h2>📋 Minha disponibilidade</h2>
+            <p class="dash-sub">Marque os dias e funções que <strong>NÃO</strong> posso. Vazio = totalmente disponível.</p>
           </div>
           <div id="meses-container"></div>
-        </div>
+        </section>
 
-        <div id="view-esc" style="display:none">
-          <div id="escalas-container"></div>
-        </div>
-
-        <div id="view-reemb" style="display:none">
-          <div class="help">
-            Comprou algo pra ajudar (velas, ervas, comida pra gira, materiais) e quer receber de volta?<br>
-            Preenche aí embaixo e mande o comprovante (foto/print) no WhatsApp depois.
+        <!-- Seção 3: Reembolso -->
+        <section class="dash-secao">
+          <div class="dash-head">
+            <h2>💸 Pedir reembolso</h2>
+            <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
           </div>
           <div id="reemb-form-container"></div>
           <div id="reemb-historico"></div>
-        </div>
+        </section>
       </div>
     </div>
 
@@ -383,6 +395,7 @@ async function selecionarFilho(id) {
   renderDisp();
   renderEsc();
   renderAfilhados();
+  renderReembolso(); // dashboard: tudo visível ao mesmo tempo
 }
 
 function proxMeses(qtd) {
@@ -859,16 +872,9 @@ function setTab(t) {
   });
 }
 
-// Sub-abas dentro de Disponibilidade individual
-function setSubTab(t) {
-  ['disp','esc','reemb'].forEach(k => {
-    const b = $(`#tab-${k}`);
-    const v = $(`#view-${k}`);
-    if(b) b.classList.toggle('active', k === t);
-    if(v) v.style.display = k === t ? '' : 'none';
-  });
-  if(t === 'reemb') renderReembolso();
-}
+// setSubTab agora é no-op — a UI virou dashboard linear (escalas + disp + reembolso)
+// stackado. Mantido como função pra compatibilidade com chamadas remanescentes.
+function setSubTab(_t) { /* deprecated com a UI dashboard, mantém pra não quebrar */ }
 
 // ── REEMBOLSO ─────────────────────────────────────────────────────────────
 async function renderReembolso() {
