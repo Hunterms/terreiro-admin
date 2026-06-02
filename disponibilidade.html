@@ -79,6 +79,20 @@ body{
 .action-arrow{color:var(--text3);font-size:16px;flex-shrink:0;line-height:1}
 .actions-empty{padding:14px 16px;text-align:center;color:var(--text3);font-size:12.5px;background:var(--glass);border:1px dashed var(--border2);border-radius:10px}
 
+/* ── Search-select: autocomplete pra escolher filho ───────────────────── */
+.search-select{position:relative}
+.search-select .fi{padding-right:38px}
+.search-select .search-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text3);pointer-events:none;opacity:.6}
+.search-results{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow-y:auto;background:#181412;border:1px solid var(--border2);border-radius:var(--rad);z-index:50;display:none;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.search-results.open{display:block}
+.search-item{padding:10px 12px;cursor:pointer;font-size:14.5px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.04);display:flex;align-items:center;gap:10px;transition:background .1s;background:transparent;border-left:none;border-right:none;border-top:none;width:100%;text-align:left;font-family:inherit}
+.search-item:last-child{border-bottom:none}
+.search-item:hover, .search-item.active{background:rgba(212,168,67,.1)}
+.search-item-initials{width:30px;height:30px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;letter-spacing:.02em}
+.search-item-name{flex:1;min-width:0;line-height:1.3;font-weight:500}
+.search-item mark{background:rgba(212,168,67,.32);color:var(--gold);padding:0 1px;border-radius:2px;font-weight:700}
+.search-empty{padding:14px 12px;color:var(--text3);font-size:13px;text-align:center}
+
 header{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:6px 0}
 .flame{width:32px;height:32px;color:var(--red);flex-shrink:0;object-fit:contain}
 .header-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -221,10 +235,12 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         <!-- Pré-auth: convite pra entrar -->
         <div class="entrar-card" id="filho-sel-card">
           <h3>Acesse sua área</h3>
-          <div class="entrar-sub">Selecione seu nome — pediremos os últimos 4 dígitos do seu telefone pra confirmar.</div>
-          <select class="fi" id="filho-sel">
-            <option value="">— Selecione seu nome —</option>
-          </select>
+          <div class="entrar-sub">Digite seu nome — pediremos os últimos 4 dígitos do seu telefone pra confirmar.</div>
+          <div class="search-select">
+            <input class="fi" id="filho-input" type="text" placeholder="Comece a digitar seu nome..." autocomplete="off" autocapitalize="words" spellcheck="false"/>
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <div class="search-results" id="filho-results" role="listbox"></div>
+          </div>
         </div>
 
         <div id="filho-area" style="display:none">
@@ -389,14 +405,7 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     // Carrega dados PÚBLICOS (sem precisar selecionar nome)
     await Promise.all([carregarEventos(), carregarAvisos(), carregarRegasDiarias()]);
 
-    const sel = $('#filho-sel');
-    APP.filhos.forEach(f => {
-      const op = document.createElement('option');
-      op.value = f.id;
-      op.textContent = f.nome;
-      sel.appendChild(op);
-    });
-    sel.onchange = () => selecionarFilho(sel.value);
+    initSearchSelect();
 
     $('#loading').style.display = 'none';
     $('#content').style.display = '';
@@ -455,18 +464,18 @@ async function selecionarFilho(id) {
         ? `Olá ${filho.nome.split(' ')[0]}! Pra acessar sua área, digite os 4 últimos dígitos do seu celular cadastrado:`
         : `Olá ${filho.nome.split(' ')[0]}! Digite seu PIN de 4 dígitos:`;
       const entrada = prompt(msg);
-      if(!entrada) { $('#filho-sel').value = ''; return; }
+      if(!entrada) { resetSearchSelect(); return; }
       const limpa = entrada.replace(/\D/g,'').slice(-4);
       if(limpa !== auth) {
         alert('Não bate. Verifica os números e tenta de novo. Se não souber, fala com a administração pra confirmar seu telefone cadastrado.');
-        $('#filho-sel').value = '';
+        resetSearchSelect();
         return;
       }
       sessionStorage.setItem(`auth_${id}`, '1');
     }
   } else {
     alert(`Não há telefone nem PIN cadastrado pra ${filho.nome}. Fala com o admin pra atualizar seu cadastro antes de acessar.`);
-    $('#filho-sel').value = '';
+    resetSearchSelect();
     return;
   }
 
@@ -499,6 +508,100 @@ async function selecionarFilho(id) {
   renderAfilhados();
   renderReembolso();
   renderActionItems(); // smart summary do que precisa de atenção
+}
+
+// ── Search-select: autocomplete pra escolher filho ───────────────────────
+const _search = { idx: -1, results: [] };
+function _norm(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function _initialsOf(nome){
+  return (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—';
+}
+function _highlight(nome, q){
+  if(!q) return nome;
+  const nameN = _norm(nome);
+  const qN = _norm(q);
+  const i = nameN.indexOf(qN);
+  if(i < 0) return nome;
+  // Devolve nome original mas marcando a fatia [i, i+qN.length)
+  return nome.slice(0,i) + '<mark>' + nome.slice(i, i+qN.length) + '</mark>' + nome.slice(i+qN.length);
+}
+function initSearchSelect(){
+  const inp = $('#filho-input');
+  const box = $('#filho-results');
+  if(!inp || !box) return;
+
+  const render = () => {
+    const q = inp.value.trim();
+    const qN = _norm(q);
+    const results = qN.length === 0
+      ? APP.filhos.slice(0, 12) // sem query: mostra os 12 primeiros (já vem em ordem alfabética do boot)
+      : APP.filhos.filter(f => _norm(f.nome).includes(qN)).slice(0, 15);
+    _search.results = results;
+    _search.idx = results.length === 1 ? 0 : -1;
+    if(results.length === 0){
+      box.innerHTML = `<div class="search-empty">Nenhum nome bate com "${q}". Tenta com menos letras ou fala com o admin.</div>`;
+    } else {
+      box.innerHTML = results.map((f,i) => `
+        <button type="button" class="search-item ${i===_search.idx?'active':''}" data-id="${f.id}" data-i="${i}" role="option">
+          <span class="search-item-initials">${_initialsOf(f.nome)}</span>
+          <span class="search-item-name">${_highlight(f.nome, q)}</span>
+        </button>
+      `).join('');
+      box.querySelectorAll('.search-item').forEach(el => {
+        el.onmousedown = (e) => { e.preventDefault(); _pickSearch(el.dataset.id); };
+        el.onmouseenter = () => { _search.idx = parseInt(el.dataset.i,10); _updateActive(); };
+      });
+    }
+    box.classList.add('open');
+  };
+
+  inp.addEventListener('focus', render);
+  inp.addEventListener('input', render);
+  inp.addEventListener('keydown', (e) => {
+    if(!box.classList.contains('open')) return;
+    if(e.key === 'ArrowDown'){
+      e.preventDefault();
+      _search.idx = Math.min(_search.results.length-1, _search.idx+1);
+      _updateActive();
+    } else if(e.key === 'ArrowUp'){
+      e.preventDefault();
+      _search.idx = Math.max(0, _search.idx-1);
+      _updateActive();
+    } else if(e.key === 'Enter'){
+      e.preventDefault();
+      const pick = _search.idx >= 0 ? _search.results[_search.idx] : _search.results[0];
+      if(pick) _pickSearch(pick.id);
+    } else if(e.key === 'Escape'){
+      box.classList.remove('open');
+    }
+  });
+  inp.addEventListener('blur', () => {
+    // Pequeno delay pra permitir mousedown no item
+    setTimeout(() => box.classList.remove('open'), 120);
+  });
+}
+function _updateActive(){
+  const box = $('#filho-results');
+  if(!box) return;
+  box.querySelectorAll('.search-item').forEach((el,i) => {
+    el.classList.toggle('active', i === _search.idx);
+    if(i === _search.idx) el.scrollIntoView({block:'nearest'});
+  });
+}
+function _pickSearch(id){
+  const f = APP.filhos.find(x => x.id === id);
+  if(!f) return;
+  const inp = $('#filho-input');
+  if(inp) inp.value = f.nome;
+  $('#filho-results')?.classList.remove('open');
+  selecionarFilho(id);
+}
+function resetSearchSelect(){
+  const inp = $('#filho-input');
+  if(inp) inp.value = '';
+  $('#filho-results')?.classList.remove('open');
+  _search.idx = -1;
+  _search.results = [];
 }
 
 function renderIdentityHero(f) {
@@ -1306,7 +1409,7 @@ function trocarFilho() {
   $('#filho-area').style.display = 'none';
   const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = '';
-  $('#filho-sel').value = '';
+  resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
   ['dash-sec-afilhados','dash-sec-escalas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
