@@ -34,8 +34,12 @@ body{
   padding:24px 16px 60px;
 }
 .container{max-width:1100px;margin:0 auto}
-.painel-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
-@media (max-width:880px){.painel-grid{grid-template-columns:1fr;gap:18px}}
+.painel-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:22px;align-items:start}
+@media (max-width:880px){
+  .painel-grid{grid-template-columns:1fr;gap:24px}
+  .col-pessoal{order:1}
+  .col-comunidade{order:2}
+}
 .painel-col{min-width:0}
 .col-titulo{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
 .col-titulo h2{font-size:13px;font-weight:700;color:var(--gold);margin:0 0 4px 0;letter-spacing:.1em;text-transform:uppercase}
@@ -43,6 +47,37 @@ body{
 .deadline-banner{padding:10px 12px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;font-size:12.5px;color:var(--red);font-weight:600;text-align:center;margin-bottom:12px}
 .deadline-info{padding:8px 12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.2);border-radius:8px;font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.45}
 .disp-day.locked{opacity:.45;cursor:not-allowed !important}
+
+/* ── Pré-auth: card "Acesse sua área" ─────────────────────────────────── */
+.entrar-card{background:linear-gradient(135deg,rgba(212,168,67,.09),rgba(212,168,67,.01));border:1px solid rgba(212,168,67,.22);border-radius:14px;padding:22px;margin-bottom:14px}
+.entrar-card h3{font-size:17px;font-weight:700;margin:0 0 6px 0;color:var(--gold)}
+.entrar-card .entrar-sub{font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5}
+
+/* ── Identity hero: cumprimento + nome + roles ────────────────────────── */
+.identity-hero{display:flex;align-items:center;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.14),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.28);border-radius:14px;margin-bottom:14px}
+.identity-avatar{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1209;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;box-shadow:0 2px 12px rgba(212,168,67,.28);letter-spacing:.02em}
+.identity-info{flex:1;min-width:0}
+.identity-greet{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;line-height:1;margin-bottom:5px}
+.identity-name{font-size:18px;font-weight:700;color:var(--text);line-height:1.15;margin:0 0 6px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.identity-roles{display:flex;gap:5px;flex-wrap:wrap}
+.identity-role{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:8px;background:rgba(212,168,67,.18);color:var(--gold);letter-spacing:.02em;line-height:1.4}
+.identity-trocar{background:transparent;border:none;color:var(--text3);font-size:11.5px;cursor:pointer;font-family:inherit;letter-spacing:.04em;padding:6px 0;flex-shrink:0;transition:color .15s}
+.identity-trocar:hover{color:var(--text2)}
+
+/* ── Action items: o que precisa da atenção do filho agora ────────────── */
+.actions-card{margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
+.actions-label{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:4px;padding-left:2px}
+.action-item{display:flex;align-items:center;gap:12px;padding:11px 13px;background:var(--glass);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s;text-align:left;width:100%;font-family:inherit;color:inherit}
+.action-item:hover{border-color:rgba(212,168,67,.4);background:rgba(212,168,67,.05)}
+.action-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.action-icon.urgent{background:var(--red-bg);color:var(--red)}
+.action-icon.warn{background:var(--gold-bg);color:var(--gold)}
+.action-icon.info{background:rgba(52,152,219,.12);color:#3498db}
+.action-body{flex:1;min-width:0}
+.action-title{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.3;margin:0}
+.action-meta{font-size:11.5px;color:var(--text3);line-height:1.35;margin-top:2px}
+.action-arrow{color:var(--text3);font-size:16px;flex-shrink:0;line-height:1}
+.actions-empty{padding:14px 16px;text-align:center;color:var(--text3);font-size:12.5px;background:var(--glass);border:1px dashed var(--border2);border-radius:10px}
 
 header{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:6px 0}
 .flame{width:32px;height:32px;color:var(--red);flex-shrink:0;object-fit:contain}
@@ -153,8 +188,8 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
   <div id="content" style="display:none">
     <div class="painel-grid">
 
-      <!-- COLUNA ESQUERDA: Área da comunidade -->
-      <div class="painel-col">
+      <!-- COLUNA ESQUERDA (desktop): Área da comunidade — vira segunda em mobile -->
+      <div class="painel-col col-comunidade">
         <div class="col-titulo">
           <h2>Área da comunidade</h2>
           <p>Avisos, próximas atividades e escala de rega.</p>
@@ -176,30 +211,38 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         </details>
       </div>
 
-      <!-- COLUNA DIREITA: Meu painel (individual, precisa selecionar nome) -->
-      <div class="painel-col">
+      <!-- COLUNA DIREITA (desktop): Meu painel — vira primeira em mobile -->
+      <div class="painel-col col-pessoal">
         <div class="col-titulo">
           <h2>Meu painel</h2>
-          <p>Suas escalas, disponibilidade, afilhados e reembolsos.</p>
+          <p>Sua área pessoal: escalas, disponibilidade, afilhados e reembolsos.</p>
         </div>
 
-        <div class="card" id="filho-sel-card">
-          <div class="fi-group" style="margin:0">
-            <label>Quem é você?</label>
-            <select class="fi" id="filho-sel">
-              <option value="">— Selecione seu nome —</option>
-            </select>
-            <div style="font-size:12px;color:var(--text3);margin-top:6px">Selecione seu nome pra ver sua área pessoal.</div>
-          </div>
+        <!-- Pré-auth: convite pra entrar -->
+        <div class="entrar-card" id="filho-sel-card">
+          <h3>Acesse sua área</h3>
+          <div class="entrar-sub">Selecione seu nome — pediremos os últimos 4 dígitos do seu telefone pra confirmar.</div>
+          <select class="fi" id="filho-sel">
+            <option value="">— Selecione seu nome —</option>
+          </select>
         </div>
 
         <div id="filho-area" style="display:none">
-          <div id="filho-saudacao" style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Conectado como</div>
-              <div id="filho-saudacao-nome" style="font-size:17px;font-weight:700;color:var(--gold,#d4a843);margin-top:2px"></div>
+          <!-- Identity hero: cumprimento + nome + roles -->
+          <div class="identity-hero">
+            <div class="identity-avatar" id="id-avatar">—</div>
+            <div class="identity-info">
+              <div class="identity-greet">Olá,</div>
+              <div class="identity-name" id="id-name"></div>
+              <div class="identity-roles" id="id-roles"></div>
             </div>
-            <button onclick="trocarFilho()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Trocar</button>
+            <button class="identity-trocar" onclick="trocarFilho()" title="Sair desta conta">trocar</button>
+          </div>
+
+          <!-- Action items: o que precisa da atenção agora -->
+          <div id="actions-wrap" style="display:none">
+            <div class="actions-label">Pra você agora</div>
+            <div class="actions-card" id="actions-container"></div>
           </div>
 
           <!-- Dashboard: TODOS chevrons, TODOS começam fechados -->
@@ -429,9 +472,7 @@ async function selecionarFilho(id) {
 
   APP.filhoAtual = filho;
   $('#filho-area').style.display = '';
-  // Saudação: nome + esconde o seletor (depois reaparece em "Trocar")
-  const saudacaoNome = $('#filho-saudacao-nome');
-  if(saudacaoNome) saudacaoNome.textContent = filho.nome;
+  renderIdentityHero(filho);
   const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = 'none';
 
@@ -456,7 +497,114 @@ async function selecionarFilho(id) {
   renderDisp();
   renderEsc();
   renderAfilhados();
-  renderReembolso(); // dashboard: tudo visível ao mesmo tempo
+  renderReembolso();
+  renderActionItems(); // smart summary do que precisa de atenção
+}
+
+function renderIdentityHero(f) {
+  const initials = (f.nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—';
+  const av = $('#id-avatar'); if(av) av.textContent = initials;
+  const nm = $('#id-name'); if(nm) nm.textContent = f.nome;
+  const rl = $('#id-roles');
+  if(!rl) return;
+  const roles = [];
+  if(f.e_padrinho) roles.push('Padrinho/madrinha');
+  const meusPostos = f.postos || [];
+  if(meusPostos.length) {
+    const nomes = APP.funcoes
+      .filter(fn => meusPostos.includes(fn.id) && fn.entra_em_escala)
+      .slice(0,3)
+      .map(fn => fn.nome);
+    roles.push(...nomes);
+  }
+  rl.innerHTML = roles.length
+    ? roles.map(r => `<span class="identity-role">${r}</span>`).join('')
+    : '';
+  rl.style.display = roles.length ? '' : 'none';
+}
+
+function renderActionItems() {
+  const f = APP.filhoAtual;
+  const cont = $('#actions-container');
+  const wrap = $('#actions-wrap');
+  if(!f || !cont || !wrap) return;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const hojeStr = hoje.toISOString().slice(0,10);
+  const itens = [];
+
+  // 1. Próxima escala (urgência: hoje/amanhã = urgent, semana = info)
+  const minhas = APP.escalas.filter(es => (es.alocacoes||[]).some(a => a.filho_id === f.id));
+  const futuras = minhas.filter(es => es.data >= hojeStr).sort((a,b) => a.data.localeCompare(b.data));
+  if(futuras.length) {
+    const prox = futuras[0];
+    const ev = APP.eventos.find(e => e.id === prox.evento_id);
+    const aloc = prox.alocacoes.find(a => a.filho_id === f.id);
+    const fn = APP.funcoes.find(fx => fx.id === aloc?.funcao_id);
+    const nomeEv = ev?.nome || ev?.titulo || (prox.tipo === 'lojinha' ? 'Plantão da lojinha' : 'Evento');
+    const dataReal = prox.tipo === 'lojinha' ? prox.data : dataEfetivaAloc(prox, aloc, APP.funcoes);
+    const dt = new Date(dataReal+'T00:00:00');
+    const diff = Math.round((dt - hoje)/86400000);
+    const dataLabel = diff===0 ? 'HOJE' : diff===1 ? 'AMANHÃ' : dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'}).toUpperCase().replace(/\./g,'');
+    const tone = diff<=1 ? 'urgent' : diff<=7 ? 'info' : 'info';
+    itens.push({
+      icon:'🗓️', tone, sort: diff<=1 ? 1 : 5,
+      title: `Próxima escala · ${dataLabel}`,
+      meta: `${nomeEv}${fn?` · ${fn.nome}`:''}${ev?.hora && diff>0 ?` · ${ev.hora}`:''}`,
+      target: 'dash-sec-escalas'
+    });
+  }
+
+  // 2. Disponibilidade aberta sem marcação (todos os meses editáveis e vazios)
+  const meses = proxMeses(2);
+  for(const m of meses) {
+    if(!ehEditavelMes(m)) continue;
+    const disp = APP.disp[m] || {};
+    const tem = (disp.datas_indisponivel?.length||0) + (disp.funcoes_indisponivel?.length||0) > 0 || (disp.obs||'').trim();
+    if(tem) continue;
+    const deadline = deadlineMes(m);
+    const diasPraDl = Math.max(0, Math.round((deadline - hoje)/86400000));
+    const nomeMes = new Date(m+'-01T00:00:00').toLocaleDateString('pt-BR',{month:'long'});
+    const tone = diasPraDl<=3 ? 'urgent' : diasPraDl<=7 ? 'warn' : 'info';
+    itens.push({
+      icon:'⏳', tone, sort: diasPraDl<=3 ? 2 : diasPraDl<=7 ? 4 : 7,
+      title: `Disponibilidade de ${nomeMes} em aberto`,
+      meta: `Prazo: ${deadline.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} (${diasPraDl===0?'hoje':diasPraDl===1?'amanhã':diasPraDl+' dias'})`,
+      target: 'dash-sec-disp'
+    });
+  }
+
+  // Ordena por prioridade e limita a 4
+  itens.sort((a,b) => a.sort - b.sort);
+  const top = itens.slice(0,4);
+
+  if(top.length === 0) {
+    wrap.style.display = '';
+    cont.innerHTML = `<div class="actions-empty">✓ Tudo em dia. Bom retiro.</div>`;
+    return;
+  }
+
+  wrap.style.display = '';
+  cont.innerHTML = top.map(it => `
+    <button class="action-item" data-target="${it.target}" type="button">
+      <div class="action-icon ${it.tone}">${it.icon}</div>
+      <div class="action-body">
+        <div class="action-title">${it.title}</div>
+        <div class="action-meta">${it.meta}</div>
+      </div>
+      <div class="action-arrow">›</div>
+    </button>
+  `).join('');
+
+  cont.querySelectorAll('.action-item').forEach(el => {
+    el.onclick = () => {
+      const id = el.dataset.target;
+      const sec = document.getElementById(id);
+      if(sec) {
+        sec.open = true;
+        setTimeout(()=>sec.scrollIntoView({behavior:'smooth', block:'start'}), 50);
+      }
+    };
+  });
 }
 
 function proxMeses(qtd) {
@@ -490,10 +638,26 @@ function renderDisp() {
   const meses = proxMeses(2);
   cont.innerHTML = meses.map(m => `<div class="card" id="mes-${m}"></div>`).join('');
   meses.forEach(m => renderMes(m));
-  // Atualiza badge da seção: total de dias marcados como indisponíveis
-  const totalIndisp = meses.reduce((s,m) => s + (APP.disp[m]?.datas_indisponivel?.length || 0), 0);
+
+  // Badge: prioriza estado acionável (mês aberto sem preencher → "preencher")
   const badge = $('#dash-cnt-disp');
-  if(badge) badge.textContent = totalIndisp > 0 ? `${totalIndisp} dia${totalIndisp===1?'':'s'} marcado${totalIndisp===1?'':'s'}` : 'totalmente disponível';
+  if(!badge) return;
+  const abertosVazios = meses.filter(m => {
+    if(!ehEditavelMes(m)) return false;
+    const d = APP.disp[m]||{};
+    return (d.datas_indisponivel?.length||0)+(d.funcoes_indisponivel?.length||0)===0 && !(d.obs||'').trim();
+  });
+  const totalIndisp = meses.reduce((s,m) => s + (APP.disp[m]?.datas_indisponivel?.length || 0), 0);
+  badge.classList.remove('muted');
+  if(abertosVazios.length > 0) {
+    badge.textContent = `${abertosVazios.length} mes${abertosVazios.length===1?'':'es'} a preencher`;
+  } else if(totalIndisp > 0) {
+    badge.textContent = `${totalIndisp} dia${totalIndisp===1?'':'s'} indisp.`;
+    badge.classList.add('muted');
+  } else {
+    badge.textContent = 'totalmente disponível';
+    badge.classList.add('muted');
+  }
 }
 
 function renderMes(m) {
@@ -672,9 +836,21 @@ function renderEsc() {
       </div>
     `:''}
   `;
-  // Atualiza badge da seção
+  // Badge: mostra QUANDO é a próxima (info útil pré-clique)
   const badge = $('#dash-cnt-escalas');
-  if(badge) badge.textContent = futuras.length > 0 ? `${futuras.length} próxima${futuras.length===1?'':'s'}` : '';
+  if(badge) {
+    if(futuras.length === 0) { badge.textContent = ''; }
+    else {
+      const prox = futuras[0];
+      const aloc = prox.alocacoes.find(a => a.filho_id === f.id);
+      const dataReal = prox.tipo === 'lojinha' ? prox.data : dataEfetivaAloc(prox, aloc, APP.funcoes);
+      const dt = new Date(dataReal+'T00:00:00');
+      const hojeMs = new Date(); hojeMs.setHours(0,0,0,0);
+      const diff = Math.round((dt - hojeMs)/86400000);
+      const quando = diff===0 ? 'hoje' : diff===1 ? 'amanhã' : dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+      badge.textContent = futuras.length > 1 ? `${quando} +${futuras.length-1}` : quando;
+    }
+  }
 }
 
 function renderAfilhados() {
@@ -1135,8 +1311,9 @@ function trocarFilho() {
   ['dash-sec-afilhados','dash-sec-escalas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
   });
-  // Esconde seção de afilhados (próximo filho pode não ser padrinho)
+  // Esconde seção de afilhados (próximo filho pode não ser padrinho) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
+  const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
 
 window.trocarFilho = trocarFilho;
