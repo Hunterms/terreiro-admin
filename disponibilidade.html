@@ -44,10 +44,11 @@ body{
 .deadline-info{padding:8px 12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.2);border-radius:8px;font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.45}
 .disp-day.locked{opacity:.45;cursor:not-allowed !important}
 
-header{text-align:center;margin-bottom:30px;padding:14px 0}
-.flame{width:48px;height:48px;color:var(--red);margin:0 auto 12px;display:block}
-h1{font-size:24px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
-.subtitle{font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+header{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:6px 0}
+.flame{width:32px;height:32px;color:var(--red);flex-shrink:0;object-fit:contain}
+.header-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+h1{font-size:17px;font-weight:700;letter-spacing:.01em;margin:0;line-height:1}
+.subtitle{font-size:10.5px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;line-height:1}
 
 .card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:22px;margin-bottom:18px}
 .card h2{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
@@ -127,7 +128,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
 @media (max-width:560px){
   body{padding:16px 12px 40px}
-  h1{font-size:20px}
+  h1{font-size:15px}
   .card{padding:18px}
   .disp-day{font-size:13px}
 }
@@ -137,9 +138,11 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
 <div class="container">
   <header>
-    <img class="flame" src="logocandieiro.png" alt="Candieiro" style="object-fit:contain;width:72px;height:72px"/>
-    <h1>Área do <em style="font-style:italic;color:var(--gold,#d4a843)">filho</em></h1>
-    <div class="subtitle">Terreiro do Candieiro</div>
+    <img class="flame" src="logocandieiro.png" alt="Candieiro"/>
+    <div class="header-text">
+      <h1>Área do <em style="font-style:italic;color:var(--gold,#d4a843)">filho</em></h1>
+      <div class="subtitle">Terreiro do Candieiro</div>
+    </div>
   </header>
 
   <div id="loading">
