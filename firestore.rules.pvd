@@ -85,6 +85,11 @@ service cloud.firestore {
     match /adm_avisos/{id} {
       allow read: if true;
     }
+    // Tarefas (kanban) — leitura pública pro disponibilidade.html mostrar
+    // as tarefas do filho logado (trust-based, mesmo modelo das escalas)
+    match /adm_kanban/{id} {
+      allow read: if true;
+    }
 
     // Disponibilidade: leitura + write público (trust-based)
     match /adm_disponibilidade/{id} {

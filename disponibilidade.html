@@ -93,6 +93,32 @@ body{
 .search-item mark{background:rgba(212,168,67,.32);color:var(--gold);padding:0 1px;border-radius:2px;font-weight:700}
 .search-empty{padding:14px 12px;color:var(--text3);font-size:13px;text-align:center}
 
+/* ── Tarefas (kanban): cards compactos do filho ───────────────────────── */
+.tarefa-card{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:var(--glass2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px}
+.tarefa-prio{width:4px;border-radius:2px;flex-shrink:0;background:var(--text3)}
+.tarefa-prio.urgente{background:var(--red)}
+.tarefa-prio.alta{background:var(--gold)}
+.tarefa-prio.media{background:var(--text2)}
+.tarefa-prio.baixa{background:var(--text3)}
+.tarefa-body{flex:1;min-width:0}
+.tarefa-title{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.35;word-wrap:break-word}
+.tarefa-meta{font-size:11.5px;color:var(--text3);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tarefa-status{padding:1px 7px;border-radius:8px;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+.tarefa-status.todo{background:var(--glass2);color:var(--text2)}
+.tarefa-status.doing{background:var(--gold-bg);color:var(--gold)}
+.tarefa-status.blocked{background:var(--red-bg);color:var(--red)}
+.tarefa-prazo{font-weight:600}
+.tarefa-prazo.atrasada{color:var(--red)}
+.tarefa-prazo.urgente{color:var(--gold)}
+.tarefa-desc{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45}
+.tarefa-bloqueio{font-size:11.5px;color:var(--red);margin-top:4px;font-style:italic}
+.tarefas-secao-label{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px}
+.tarefas-mais{margin-top:14px;border-top:1px dashed var(--border);padding-top:10px}
+.tarefas-mais > summary{cursor:pointer;font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:4px 0;list-style:none;display:flex;align-items:center;gap:6px}
+.tarefas-mais > summary::-webkit-details-marker{display:none}
+.tarefas-mais > summary::before{content:'▸';display:inline-block;transition:transform .15s;font-size:10px}
+.tarefas-mais[open] > summary::before{transform:rotate(90deg)}
+
 header{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding:6px 0}
 .flame{width:32px;height:32px;color:var(--red);flex-shrink:0;object-fit:contain}
 .header-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -291,6 +317,20 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </div>
           </details>
 
+          <!-- Tarefas (kanban) -->
+          <details class="dash-secao" id="dash-sec-tarefas">
+            <summary>
+              <div class="dash-head-text">
+                <h2>✅ Minhas tarefas <span class="dash-badge" id="dash-cnt-tarefas"></span></h2>
+                <p class="dash-sub">Tarefas do kanban onde você é responsável.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="tarefas-container"></div>
+            </div>
+          </details>
+
           <!-- Disponibilidade do mês -->
           <details class="dash-secao" id="dash-sec-disp">
             <summary>
@@ -371,6 +411,7 @@ let APP = {
   filhoAtual: null,
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
+  tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
   eventos: [],
   avisos: [],
   regasDiarias: {},  // {YYYY-MM-DD: { filho_id, filho_nome, ... }} — dias já reservados
@@ -503,8 +544,16 @@ async function selecionarFilho(id) {
       .filter(es => (es.alocacoes||[]).some(a => a.filho_id === id));
   } catch(e) { console.warn('Erro escalas', e); }
 
+  // Carrega tarefas (kanban) onde o filho é responsável e ainda não foram concluídas
+  try {
+    const tSnap = await getDocs(collection(dbPvd,'adm_kanban'));
+    APP.tarefas = tSnap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .filter(t => !t.arquivado && t.status !== 'done' && (t.responsaveis||[]).includes(id));
+  } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; }
+
   renderDisp();
   renderEsc();
+  renderTarefas();
   renderAfilhados();
   renderReembolso();
   renderActionItems(); // smart summary do que precisa de atenção
@@ -657,7 +706,27 @@ function renderActionItems() {
     });
   }
 
-  // 2. Disponibilidade aberta sem marcação (todos os meses editáveis e vazios)
+  // 2. Tarefas atrasadas / pra hoje (sinal mais urgente que disp)
+  const tAtrasadas = (APP.tarefas||[]).filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d < 0; });
+  const tHoje = (APP.tarefas||[]).filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d === 0; });
+  if(tAtrasadas.length > 0) {
+    itens.push({
+      icon:'⚠️', tone:'urgent', sort:0,
+      title: `${tAtrasadas.length} tarefa${tAtrasadas.length>1?'s':''} atrasada${tAtrasadas.length>1?'s':''}`,
+      meta: `${tAtrasadas[0].titulo}${tAtrasadas.length>1?` +${tAtrasadas.length-1}`:''}`,
+      target: 'dash-sec-tarefas'
+    });
+  }
+  if(tHoje.length > 0) {
+    itens.push({
+      icon:'✅', tone:'urgent', sort:1,
+      title: `${tHoje.length} tarefa${tHoje.length>1?'s':''} pra hoje`,
+      meta: `${tHoje[0].titulo}${tHoje.length>1?` +${tHoje.length-1}`:''}`,
+      target: 'dash-sec-tarefas'
+    });
+  }
+
+  // 3. Disponibilidade aberta sem marcação (todos os meses editáveis e vazios)
   const meses = proxMeses(2);
   for(const m of meses) {
     if(!ehEditavelMes(m)) continue;
@@ -954,6 +1023,100 @@ function renderEsc() {
       badge.textContent = futuras.length > 1 ? `${quando} +${futuras.length-1}` : quando;
     }
   }
+}
+
+// ── TAREFAS (kanban) ──────────────────────────────────────────────────────
+function _diasAtePrazo(prazo, hoje) {
+  if(!prazo) return null;
+  const dt = new Date(prazo+'T00:00:00');
+  return Math.round((dt - hoje) / 86400000);
+}
+function _ordPrioridade(p) { return ({urgente:0, alta:1, media:2, baixa:3})[p] ?? 2; }
+
+function renderTarefas() {
+  const f = APP.filhoAtual;
+  const cont = $('#tarefas-container');
+  const badge = $('#dash-cnt-tarefas');
+  if(!f || !cont) return;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  // Ordena: atrasada/hoje primeiro, depois por prazo crescente, depois prioridade
+  const tarefas = (APP.tarefas||[]).slice().sort((a,b) => {
+    const pa = _diasAtePrazo(a.prazo, hoje);
+    const pb = _diasAtePrazo(b.prazo, hoje);
+    if(pa === null && pb !== null) return 1;
+    if(pa !== null && pb === null) return -1;
+    if(pa !== null && pb !== null && pa !== pb) return pa - pb;
+    return _ordPrioridade(a.prioridade) - _ordPrioridade(b.prioridade);
+  });
+
+  // Esta semana: prazo ≤ +7d (inclui atrasadas) OU sem prazo mas urgente/alta
+  const semana = tarefas.filter(t => {
+    const d = _diasAtePrazo(t.prazo, hoje);
+    if(d !== null && d <= 7) return true;
+    if(d === null && (t.prioridade === 'urgente' || t.prioridade === 'alta')) return true;
+    return false;
+  });
+  const outras = tarefas.filter(t => !semana.includes(t));
+
+  // Badge: prioriza "essa semana" como sinal acionável
+  if(badge) {
+    badge.classList.remove('muted');
+    if(tarefas.length === 0) badge.textContent = '';
+    else if(semana.length === 0) {
+      badge.textContent = `${outras.length} sem urgência`;
+      badge.classList.add('muted');
+    } else {
+      const atrasadas = semana.filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d < 0; }).length;
+      badge.textContent = atrasadas > 0 ? `⚠ ${atrasadas} atrasada${atrasadas===1?'':'s'}` : `${semana.length} essa semana`;
+    }
+  }
+
+  if(tarefas.length === 0) {
+    cont.innerHTML = '<div class="empty">Nenhuma tarefa atribuída a você. Bom retiro.</div>';
+    return;
+  }
+
+  const stLabels = { todo:'A fazer', doing:'Em andamento', blocked:'Bloqueada' };
+  const cardTask = (t) => {
+    const dias = _diasAtePrazo(t.prazo, hoje);
+    let prazoLabel = ''; let prazoClass = '';
+    if(dias === null) prazoLabel = 'sem prazo';
+    else if(dias < 0)  { prazoLabel = `atrasada ${-dias}d`; prazoClass = 'atrasada'; }
+    else if(dias === 0){ prazoLabel = 'hoje'; prazoClass = 'atrasada'; }
+    else if(dias === 1){ prazoLabel = 'amanhã'; prazoClass = 'urgente'; }
+    else if(dias <= 7) { prazoLabel = `em ${dias}d`; prazoClass = 'urgente'; }
+    else prazoLabel = new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    const desc = (t.descricao||'').trim();
+    const descCurta = desc.length > 120 ? desc.slice(0,120)+'…' : desc;
+    return `
+      <div class="tarefa-card">
+        <div class="tarefa-prio ${t.prioridade||'media'}"></div>
+        <div class="tarefa-body">
+          <div class="tarefa-title">${t.titulo||'(sem título)'}</div>
+          ${descCurta ? `<div class="tarefa-desc">${descCurta}</div>` : ''}
+          ${t.status === 'blocked' && t.motivo_bloqueio ? `<div class="tarefa-bloqueio">🚫 ${t.motivo_bloqueio}</div>` : ''}
+          <div class="tarefa-meta">
+            <span class="tarefa-status ${t.status||'todo'}">${stLabels[t.status]||t.status||'todo'}</span>
+            <span class="tarefa-prazo ${prazoClass}">${prazoLabel}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  cont.innerHTML = `
+    ${semana.length ? `
+      <div class="tarefas-secao-label">Essa semana</div>
+      ${semana.map(cardTask).join('')}
+    ` : '<div class="empty" style="padding:14px;font-size:13px">Nada urgente essa semana ✓</div>'}
+    ${outras.length ? `
+      <details class="tarefas-mais">
+        <summary>Outras tarefas (${outras.length})</summary>
+        <div style="margin-top:8px">${outras.map(cardTask).join('')}</div>
+      </details>
+    ` : ''}
+  `;
 }
 
 function renderAfilhados() {
@@ -1411,9 +1574,10 @@ function trocarFilho() {
   if(selectorCard) selectorCard.style.display = '';
   resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
-  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
+  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
   });
+  APP.tarefas = [];
   // Esconde seção de afilhados (próximo filho pode não ser padrinho) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
