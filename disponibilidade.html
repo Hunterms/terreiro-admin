@@ -288,18 +288,19 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </div>
 
           <!-- Dashboard: TODOS chevrons, TODOS começam fechados -->
+          <!-- Ordem: Tarefas → Escalas → Reembolso → Disponibilidade → Afilhados -->
 
-          <!-- Afilhados (só aparece se for padrinho/madrinha) -->
-          <details class="dash-secao" id="dash-sec-afilhados" style="display:none">
+          <!-- Tarefas (kanban) -->
+          <details class="dash-secao" id="dash-sec-tarefas">
             <summary>
               <div class="dash-head-text">
-                <h2>👥 Meus afilhados <span class="dash-badge" id="dash-cnt-afilhados"></span></h2>
-                <p class="dash-sub">Acompanhe os filhos vinculados a você como padrinho/madrinha.</p>
+                <h2>✅ Minhas tarefas <span class="dash-badge" id="dash-cnt-tarefas"></span></h2>
+                <p class="dash-sub">Tarefas do kanban onde você é responsável.</p>
               </div>
               <span class="dash-chevron">▾</span>
             </summary>
             <div class="dash-body">
-              <div id="afilhados-container"></div>
+              <div id="tarefas-container"></div>
             </div>
           </details>
 
@@ -317,17 +318,18 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </div>
           </details>
 
-          <!-- Tarefas (kanban) -->
-          <details class="dash-secao" id="dash-sec-tarefas">
+          <!-- Reembolso -->
+          <details class="dash-secao" id="dash-sec-reemb">
             <summary>
               <div class="dash-head-text">
-                <h2>✅ Minhas tarefas <span class="dash-badge" id="dash-cnt-tarefas"></span></h2>
-                <p class="dash-sub">Tarefas do kanban onde você é responsável.</p>
+                <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
+                <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
               </div>
               <span class="dash-chevron">▾</span>
             </summary>
             <div class="dash-body">
-              <div id="tarefas-container"></div>
+              <div id="reemb-form-container"></div>
+              <div id="reemb-historico"></div>
             </div>
           </details>
 
@@ -345,18 +347,17 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </div>
           </details>
 
-          <!-- Reembolso -->
-          <details class="dash-secao" id="dash-sec-reemb">
+          <!-- Afilhados (só aparece se for padrinho/madrinha) -->
+          <details class="dash-secao" id="dash-sec-afilhados" style="display:none">
             <summary>
               <div class="dash-head-text">
-                <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
-                <p class="dash-sub">Comprou algo pra ajudar? Preenche aqui e mande o comprovante no WhatsApp.</p>
+                <h2>👥 Meus afilhados <span class="dash-badge" id="dash-cnt-afilhados"></span></h2>
+                <p class="dash-sub">Acompanhe os filhos vinculados a você como padrinho/madrinha.</p>
               </div>
               <span class="dash-chevron">▾</span>
             </summary>
             <div class="dash-body">
-              <div id="reemb-form-container"></div>
-              <div id="reemb-historico"></div>
+              <div id="afilhados-container"></div>
             </div>
           </details>
         </div>
@@ -706,9 +707,13 @@ function renderActionItems() {
     });
   }
 
-  // 2. Tarefas atrasadas / pra hoje (sinal mais urgente que disp)
-  const tAtrasadas = (APP.tarefas||[]).filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d < 0; });
-  const tHoje = (APP.tarefas||[]).filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d === 0; });
+  // 2. Tarefas: atrasadas / hoje / essa semana (sinal mais urgente que disp)
+  const tarefas = APP.tarefas || [];
+  const tAtrasadas = tarefas.filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d < 0; });
+  const tHoje     = tarefas.filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d === 0; });
+  const tSemana   = tarefas.filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d > 0 && d <= 7; });
+  const tUrgSemPrazo = tarefas.filter(t => !t.prazo && (t.prioridade === 'urgente' || t.prioridade === 'alta'));
+
   if(tAtrasadas.length > 0) {
     itens.push({
       icon:'⚠️', tone:'urgent', sort:0,
@@ -722,6 +727,26 @@ function renderActionItems() {
       icon:'✅', tone:'urgent', sort:1,
       title: `${tHoje.length} tarefa${tHoje.length>1?'s':''} pra hoje`,
       meta: `${tHoje[0].titulo}${tHoje.length>1?` +${tHoje.length-1}`:''}`,
+      target: 'dash-sec-tarefas'
+    });
+  }
+  if(tSemana.length > 0) {
+    const prox = tSemana[0];
+    const dias = _diasAtePrazo(prox.prazo, hoje);
+    const qdo = dias === 1 ? 'amanhã' : `em ${dias}d`;
+    itens.push({
+      icon:'🗒️', tone:'warn', sort:3,
+      title: `${tSemana.length} tarefa${tSemana.length>1?'s':''} essa semana`,
+      meta: `Próxima: ${prox.titulo} · ${qdo}${tSemana.length>1?` +${tSemana.length-1}`:''}`,
+      target: 'dash-sec-tarefas'
+    });
+  }
+  if(tUrgSemPrazo.length > 0 && tAtrasadas.length === 0 && tHoje.length === 0) {
+    // Sem prazo mas prioridade alta — mostra só se não houver atrasada/hoje
+    itens.push({
+      icon:'🔥', tone:'warn', sort:3.5,
+      title: `${tUrgSemPrazo.length} tarefa${tUrgSemPrazo.length>1?'s':''} de alta prioridade`,
+      meta: tUrgSemPrazo[0].titulo + (tUrgSemPrazo.length>1?` +${tUrgSemPrazo.length-1}`:''),
       target: 'dash-sec-tarefas'
     });
   }
