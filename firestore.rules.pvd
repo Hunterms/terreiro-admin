@@ -118,6 +118,30 @@ service cloud.firestore {
       allow update, delete: if request.auth != null;
     }
 
+    // Reembolsos: criação pública (form em /reembolso.html), demais só admin
+    match /fin_reembolsos/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.resource.data.status == 'pendente'
+                    && request.resource.data.origem == 'reembolso_publico'
+                    && request.resource.data.nome is string
+                    && request.resource.data.nome.size() > 1
+                    && request.resource.data.nome.size() < 200
+                    && request.resource.data.tel is string
+                    && request.resource.data.tel.size() > 0
+                    && request.resource.data.tel.size() < 30
+                    && request.resource.data.descricao is string
+                    && request.resource.data.descricao.size() > 1
+                    && request.resource.data.descricao.size() < 1000
+                    && request.resource.data.valor is number
+                    && request.resource.data.valor > 0
+                    && request.resource.data.valor < 100000
+                    && request.resource.data.data_compra is string
+                    && request.resource.data.pix_chave is string
+                    && request.resource.data.pix_chave.size() > 0
+                    && request.resource.data.pix_chave.size() < 200;
+      allow update, delete: if request.auth != null;
+    }
+
     // Rega diária: leitura + write público (QR-based)
     match /adm_rega_diaria/{date} {
       allow read: if true;
