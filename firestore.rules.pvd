@@ -10,7 +10,7 @@
 // - Público (sem auth): só pub_slots_ocupados pra ver/marcar slots ocupados
 //   e adm_solicitacoes para criar pedidos (sem ler), adm_config/agendamento +
 //   adm_servicos pra config do agendar.html, e fin_filhos + collections do
-//   disponibilidade.html (trust-based via telefone)
+//   area-filho.html (trust-based via telefone)
 // ============================================================================
 
 rules_version = '2';
@@ -71,7 +71,7 @@ service cloud.firestore {
     // adm_atendimentos NÃO precisa de regra pública — coberto pela regra
     // genérica de auth no topo. Slots ocupados estão em pub_slots_ocupados.
 
-    // ── PÚBLICO: dados pro disponibilidade.html ───────────────────────────
+    // ── PÚBLICO: dados pro area-filho.html ───────────────────────────
     // ⚠️ Expõe nome + tel dos filhos. Trust-based (auth via últimos 4 dígitos).
     match /fin_filhos/{id} {
       allow read: if true;
@@ -85,7 +85,7 @@ service cloud.firestore {
     match /adm_avisos/{id} {
       allow read: if true;
     }
-    // Tarefas (kanban) — leitura pública pro disponibilidade.html mostrar
+    // Tarefas (kanban) — leitura pública pro area-filho.html mostrar
     // as tarefas do filho logado (trust-based, mesmo modelo das escalas)
     match /adm_kanban/{id} {
       allow read: if true;
