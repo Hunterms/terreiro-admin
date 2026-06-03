@@ -147,12 +147,15 @@ service cloud.firestore {
       allow update, delete: if request.auth != null;
     }
 
-    // Rega diária: leitura + write público (QR-based)
+    // Rega diária: leitura + write público (QR-based / trust-based)
+    // delete público pra liberar dia reservado (UX de "trocar com outra pessoa"
+    // na area-filho.html). Auth client-side via 4 dígitos do tel do dono.
     match /adm_rega_diaria/{date} {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasAny(
         ['reserva', 'realizadoEm', 'filhos_marcaram', 'data']
       );
+      allow delete: if true;
     }
   }
 }
