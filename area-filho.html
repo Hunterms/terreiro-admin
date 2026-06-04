@@ -567,13 +567,15 @@ async function selecionarFilho(id) {
       .filter(t => !t.arquivado && t.status !== 'done' && (t.responsaveis||[]).includes(id));
   } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; }
 
-  // Carrega escalas da lojinha (tipo='lojinha' em adm_escalas — mesma collection do admin)
+  // Lojinha gerentes: carregam TODAS escalas de gira (mesmo padrão da aba "escala"
+  // do admin). Cada doc é { tipo:'gira', evento_id, alocacoes:[{funcao_id,filho_id,...}] }.
+  // Elas só vão editar as alocações cuja funcao_id == Lojinha; o resto fica intacto.
   if (filho.gerencia_lojinha) {
     try {
       const lSnap = await getDocs(collection(dbPvd,'adm_escalas'));
       APP.lojinhaEscalas = lSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-        .filter(es => es.tipo === 'lojinha');
-    } catch(e) { console.warn('Erro escalas lojinha', e); APP.lojinhaEscalas = []; }
+        .filter(es => es.tipo === 'gira');
+    } catch(e) { console.warn('Erro escalas gira', e); APP.lojinhaEscalas = []; }
   } else { APP.lojinhaEscalas = []; }
 
   renderDisp();
@@ -1170,48 +1172,14 @@ function renderTarefas() {
   `;
 }
 
-// ── LOJINHA: usa o MESMO sistema do admin — adm_escalas com tipo='lojinha' ─
-// Função "Lojinha" em adm_funcoes define o grupo via restrito_a_filhos.
-// Uma escala por semana ISO; alocacoes[] tem { funcao_id, filho_id, dia, status }
-// onde "dia" é a data ISO do dia da semana.
+// ── LOJINHA: copia o sistema da aba "Escala" do admin ─────────────────────
+// Cada gira tem 1 doc em adm_escalas (tipo='gira', evento_id) com alocacoes[]
+// pra todas as funções. Aqui Giovana/Aline veem apenas as alocações da função
+// "Lojinha" pra cada gira futura, podem alterar quem está e/ou criar quando
+// não houver escala ainda. As alocações de OUTRAS funções ficam intactas.
 
-function _isoWeek(d) {
-  const date = new Date(d);
-  date.setHours(0,0,0,0);
-  date.setDate(date.getDate() + 4 - (date.getDay()||7));
-  const yearStart = new Date(date.getFullYear(),0,1);
-  const wk = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return `${date.getFullYear()}-W${String(wk).padStart(2,'0')}`;
-}
-
-function _proximas4Semanas() {
-  const hoje = new Date();
-  const startOfWeek = new Date(hoje);
-  startOfWeek.setDate(hoje.getDate() - hoje.getDay()); // domingo
-  startOfWeek.setHours(0,0,0,0);
-  const out = [];
-  for(let i=0; i<4; i++) {
-    const s = new Date(startOfWeek);
-    s.setDate(startOfWeek.getDate() + i*7);
-    const e = new Date(s); e.setDate(s.getDate()+6);
-    const id = _isoWeek(s);
-    const inicio = s.toISOString().slice(0,10);
-    const fim = e.toISOString().slice(0,10);
-    const dias = [];
-    for(let d = new Date(s); d <= e; d.setDate(d.getDate()+1)) {
-      dias.push({
-        data: d.toISOString().slice(0,10),
-        label: d.toLocaleDateString('pt-BR',{weekday:'short'}),
-        diaMes: d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
-      });
-    }
-    out.push({
-      id, inicio, fim, dias,
-      label: `${s.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${e.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}`
-    });
-  }
-  return out;
-}
+// Tipos de evento onde lojinha faz sentido (mirror do admin)
+const _TIPOS_COM_LOJINHA = new Set(['gira_aberta','gira_fechada','festa']);
 
 function renderLojinha() {
   const f = APP.filhoAtual;
@@ -1225,7 +1193,7 @@ function renderLojinha() {
   const fnLojinha = (APP.funcoes||[]).find(fn => fn.nome && fn.nome.toLowerCase().includes('lojinha') && !fn.arquivada);
   if (!fnLojinha) {
     if(badge) { badge.textContent = '⚠ sem função'; badge.classList.remove('muted'); }
-    cont.innerHTML = `<div class="empty" style="padding:24px 16px">A função "Lojinha" não está cadastrada em adm_funcoes. Fala com o admin.</div>`;
+    cont.innerHTML = `<div class="empty" style="padding:24px 16px">A função "Lojinha" não está cadastrada. Fala com o admin pra criar.</div>`;
     return;
   }
   const grupoIds = fnLojinha.restrito_a_filhos || [];
@@ -1236,63 +1204,73 @@ function renderLojinha() {
     return;
   }
 
-  const semanas = _proximas4Semanas();
-  // Estatísticas pro badge
-  let semanasSemPlantao = 0;
-  semanas.forEach(sem => {
-    const esc = APP.lojinhaEscalas.find(es => es.periodo === sem.id);
-    if (!esc || (esc.alocacoes||[]).length === 0) semanasSemPlantao++;
+  const hoje = new Date().toISOString().slice(0,10);
+  // Giras futuras onde lojinha cabe (gira_aberta, gira_fechada, festa)
+  const giras = (APP.eventos||[])
+    .filter(e => !e.arquivado && (e.data||'') >= hoje && _TIPOS_COM_LOJINHA.has(e.tipo || 'gira_aberta'))
+    .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')))
+    .slice(0,30);
+
+  // Pra cada gira: encontra a escala correspondente e extrai só alocações da Lojinha
+  const giraState = giras.map(ev => {
+    const esc = APP.lojinhaEscalas.find(es => es.evento_id === ev.id);
+    const lojinhaIds = (esc?.alocacoes||[])
+      .filter(a => a.funcao_id === fnLojinha.id)
+      .map(a => a.filho_id);
+    return { ev, esc, lojinhaIds };
   });
+
+  // Badge: quantas giras estão sem responsável da lojinha
+  const semResp = giraState.filter(s => s.lojinhaIds.length === 0).length;
   if(badge) {
     badge.classList.remove('muted');
-    if(semanasSemPlantao > 0) badge.textContent = `${semanasSemPlantao} semana${semanasSemPlantao===1?'':'s'} sem plantão`;
-    else { badge.textContent = '4 semanas cobertas'; badge.classList.add('muted'); }
+    if(giraState.length === 0) { badge.textContent = 'sem giras futuras'; badge.classList.add('muted'); }
+    else if(semResp > 0) badge.textContent = `${semResp} gira${semResp===1?'':'s'} sem responsável`;
+    else { badge.textContent = `${giraState.length} gira${giraState.length===1?'':'s'} cobertas`; badge.classList.add('muted'); }
   }
 
-  // Render por semana — card com summary + editor inline (chips por dia)
-  const cardSemana = (sem) => {
-    const esc = APP.lojinhaEscalas.find(es => es.periodo === sem.id);
-    const escId = esc ? esc.id : '';
-    const alocByDia = {};
-    (esc?.alocacoes||[]).forEach(a => {
-      if(a.dia) (alocByDia[a.dia] = alocByDia[a.dia] || []).push(a.filho_id);
-    });
-    const totalAloc = (esc?.alocacoes||[]).length;
-    const diasCobertos = Object.keys(alocByDia).filter(d => alocByDia[d].length > 0).length;
-    const statusLabel = totalAloc > 0
-      ? `<span style="color:var(--green);font-weight:600">${diasCobertos}/7 dias · ${totalAloc} plantão${totalAloc===1?'':'ões'}</span>`
-      : `<span style="color:var(--gold);font-weight:600">Sem plantão</span>`;
-    const editorId = `lj-ed-${sem.id.replace(/[^a-z0-9]/gi,'')}`;
-    const diasHTML = sem.dias.map(d => `
-      <div style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text2);text-transform:capitalize;font-weight:600;margin-bottom:5px">${d.label}, ${d.diaMes}</div>
-        <div class="chips" data-editor="${editorId}" data-dia="${d.data}">
-          ${grupo.map(g => {
-            const sel = (alocByDia[d.data]||[]).includes(g.id);
-            return `<button type="button" class="chip ${sel?'sel':''}" data-fid="${g.id}" onclick="this.classList.toggle('sel')">${(g.nome||'').split(' ')[0]}</button>`;
-          }).join('')}
-        </div>
-      </div>
-    `).join('');
+  const tipoLabel = { gira_aberta:'Gira aberta', gira_fechada:'Gira fechada', festa:'Festa' };
+
+  const cardGira = (st) => {
+    const { ev, esc, lojinhaIds } = st;
+    const escId = esc?.id || '';
+    const editorId = `lj-ed-${ev.id.replace(/[^a-z0-9]/gi,'')}`;
+    const nomeEv = ev.nome || ev.titulo || 'Evento';
+    const tipoEv = tipoLabel[ev.tipo] || 'Atividade';
+    const dataLabel = ev.data ? new Date(ev.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
+    const responsaveisLabel = lojinhaIds.length > 0
+      ? lojinhaIds.map(fid => (APP.filhos.find(x=>x.id===fid)?.nome || '?').split(' ')[0]).join(', ')
+      : null;
+    const chipsHTML = grupo.map(g => {
+      const sel = lojinhaIds.includes(g.id);
+      return `<button type="button" class="chip ${sel?'sel':''}" data-fid="${g.id}" onclick="this.classList.toggle('sel')">${(g.nome||'').split(' ')[0]}</button>`;
+    }).join('');
     return `
       <div class="list-item" style="background:var(--glass2);flex-direction:column;align-items:stretch;padding:14px">
         <div style="display:flex;align-items:center;gap:10px;width:100%">
           <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
-            <div class="d">${sem.inicio.slice(8,10)}</div>
-            <div>${new Date(sem.inicio+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+            <div class="d">${(ev.data||'').slice(8,10)}</div>
+            <div>${ev.data ? new Date(ev.data+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','') : '—'}</div>
           </div>
           <div style="flex:1;min-width:0">
-            <div class="li-name">${sem.label}</div>
-            <div class="li-meta">${statusLabel}</div>
+            <div class="li-name">${nomeEv} <span style="font-size:11px;color:var(--text3);font-weight:500;margin-left:4px">· ${tipoEv}</span></div>
+            <div class="li-meta">
+              <span>${dataLabel}</span>
+              ${ev.hora?`<span>${ev.hora}</span>`:''}
+              ${responsaveisLabel
+                ? `<span style="color:var(--green);font-weight:600">🛍️ ${responsaveisLabel}</span>`
+                : `<span style="color:var(--gold);font-weight:600">Sem responsável</span>`}
+            </div>
           </div>
-          <button onclick="window._lojinha.toggleEditor('${editorId}')" style="background:${totalAloc>0?'transparent':'linear-gradient(135deg,var(--gold),var(--gold2))'};border:1px solid ${totalAloc>0?'var(--border2)':'transparent'};color:${totalAloc>0?'var(--text2)':'#1a1209'};font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;flex-shrink:0">${totalAloc>0?'Editar':'Criar plantão'}</button>
+          <button onclick="window._lojinha.toggleEditor('${editorId}')" style="background:${lojinhaIds.length>0?'transparent':'linear-gradient(135deg,var(--gold),var(--gold2))'};border:1px solid ${lojinhaIds.length>0?'var(--border2)':'transparent'};color:${lojinhaIds.length>0?'var(--text2)':'#1a1209'};font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;flex-shrink:0">${lojinhaIds.length>0?'Editar':'Designar'}</button>
         </div>
-        <div id="${editorId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)" data-esc-id="${escId}" data-periodo="${sem.id}" data-inicio="${sem.inicio}" data-fim="${sem.fim}">
-          ${diasHTML}
-          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <button class="btn btn-primary" onclick="window._lojinha.salvar('${editorId}')">Salvar plantão</button>
+        <div id="${editorId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)"
+             data-evento-id="${ev.id}" data-evento-data="${ev.data||''}" data-esc-id="${escId}">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:7px">Quem fica na lojinha</div>
+          <div class="chips" data-role="lj-chips">${chipsHTML}</div>
+          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="window._lojinha.salvar('${editorId}')">Salvar</button>
             <button class="btn" onclick="window._lojinha.toggleEditor('${editorId}')">Cancelar</button>
-            ${escId ? `<button class="btn" style="background:transparent;border:1px solid var(--red-bd);color:var(--red);margin-left:auto" onclick="window._lojinha.remover('${escId}','${sem.label}')">Apagar plantão</button>` : ''}
           </div>
         </div>
       </div>
@@ -1305,14 +1283,17 @@ function renderLojinha() {
       <div class="chips">${grupo.map(g => `<span class="chip" style="background:var(--gold-bg);color:var(--gold);border-color:rgba(212,168,67,.3);cursor:default">${g.nome}</span>`).join('')}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">Pra mudar quem está nesse grupo, fala com o admin (edita a função "Lojinha").</div>
     </div>
-    <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximas 4 semanas</div>
-    ${semanas.map(cardSemana).join('')}
+    ${giras.length === 0
+      ? '<div class="empty" style="padding:24px 16px">Nenhuma gira futura cadastrada. As escalas só fazem sentido em giras — crie eventos no admin do site primeiro.</div>'
+      : `
+        <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximas giras (${giras.length})</div>
+        ${giraState.map(cardGira).join('')}
+      `}
   `;
 }
 
 window._lojinha = {
   toggleEditor: function(editorId) {
-    // Fecha qualquer outro editor antes (um por vez)
     document.querySelectorAll('[id^="lj-ed-"]').forEach(el => { if(el.id !== editorId) el.style.display = 'none'; });
     const ed = document.getElementById(editorId);
     if(!ed) return;
@@ -1322,61 +1303,49 @@ window._lojinha = {
   salvar: async function(editorId) {
     const ed = document.getElementById(editorId);
     if(!ed) return;
+    const eventoId = ed.dataset.eventoId;
+    const eventoData = ed.dataset.eventoData;
     const escId = ed.dataset.escId || '';
-    const periodo = ed.dataset.periodo;
-    const inicio = ed.dataset.inicio;
-    const fim = ed.dataset.fim;
     const fnLojinha = (APP.funcoes||[]).find(fn => fn.nome && fn.nome.toLowerCase().includes('lojinha') && !fn.arquivada);
     if(!fnLojinha) { toast('Função Lojinha não encontrada','err'); return; }
 
-    const alocacoes = [];
-    ed.querySelectorAll('[data-editor="'+editorId+'"]').forEach(chipsRow => {
-      const dia = chipsRow.dataset.dia;
-      chipsRow.querySelectorAll('.chip.sel').forEach(c => {
-        alocacoes.push({
-          funcao_id: fnLojinha.id,
-          filho_id: c.dataset.fid,
-          dia,
-          status: 'escalado',
-          notificado: false
-        });
-      });
-    });
+    // Filhos selecionados no chip-row
+    const selIds = Array.from(ed.querySelectorAll('[data-role="lj-chips"] .chip.sel')).map(c => c.dataset.fid);
 
-    const payload = {
-      tipo: 'lojinha',
-      periodo,
-      evento_id: null,
-      data: inicio,
-      data_fim: fim,
-      alocacoes,
-      status_geral: 'publicada',
-      geradoPor: 'manual',
-      atualizadoEm: serverTimestamp()
-    };
+    // Pega escala existente e SEPARA alocações: lojinha (vamos substituir) vs outras (preserva)
+    const escAtual = escId ? APP.lojinhaEscalas.find(e => e.id === escId) : null;
+    const outras = (escAtual?.alocacoes || []).filter(a => a.funcao_id !== fnLojinha.id);
+    const novasLojinha = selIds.map(filhoId => ({
+      funcao_id: fnLojinha.id,
+      filho_id: filhoId,
+      status: 'escalado',
+      notificado: false
+    }));
+    const alocacoes = [...outras, ...novasLojinha];
+
     try {
       if(escId) {
-        await setDoc(doc(dbPvd,'adm_escalas', escId), payload, { merge:true });
+        await updateDoc(doc(dbPvd,'adm_escalas', escId), { alocacoes, atualizadoEm: serverTimestamp() });
         const idx = APP.lojinhaEscalas.findIndex(e => e.id===escId);
-        if(idx >= 0) APP.lojinhaEscalas[idx] = { ...APP.lojinhaEscalas[idx], ...payload };
-        toast(`Plantão da semana ${periodo} atualizado.`);
+        if(idx >= 0) APP.lojinhaEscalas[idx] = { ...APP.lojinhaEscalas[idx], alocacoes };
+        toast(selIds.length > 0 ? 'Lojinha atualizada.' : 'Lojinha vazia salva.');
       } else {
-        payload.criadoEm = serverTimestamp();
+        const payload = {
+          tipo: 'gira',
+          evento_id: eventoId,
+          data: eventoData,
+          alocacoes,
+          status_geral: 'publicada',
+          geradoPor: 'manual',
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp()
+        };
         const ref = await addDoc(collection(dbPvd,'adm_escalas'), payload);
         APP.lojinhaEscalas.push({ id: ref.id, ...payload });
-        toast(`Plantão da semana ${periodo} criado.`);
+        toast('Escala criada com a lojinha definida.');
       }
       renderLojinha();
     } catch(e) { console.error(e); toast('Erro ao salvar: '+e.message,'err'); }
-  },
-  remover: async function(escId, label) {
-    if(!confirm(`Apagar todo o plantão de ${label}?`)) return;
-    try {
-      await deleteDoc(doc(dbPvd,'adm_escalas', escId));
-      APP.lojinhaEscalas = APP.lojinhaEscalas.filter(e => e.id !== escId);
-      renderLojinha();
-      toast('Plantão apagado.');
-    } catch(e) { toast('Erro ao apagar: '+e.message,'err'); }
   }
 };
 

@@ -81,13 +81,14 @@ service cloud.firestore {
     }
     match /adm_escalas/{id} {
       allow read: if true;
-      // Lojinha: escalas tipo='lojinha' podem ser criadas/editadas/apagadas
-      // publicamente (trust-based — só a Giovana/Aline acessam a UI, validado
-      // client-side por gerencia_lojinha). Outras escalas continuam admin-only.
-      allow create: if request.resource.data.tipo == 'lojinha';
-      allow update: if resource.data.tipo == 'lojinha'
-                    && request.resource.data.tipo == 'lojinha';
-      allow delete: if resource.data.tipo == 'lojinha';
+      // Lojinha gerentes (Giovana/Aline) ajudam a definir a escala da função
+      // Lojinha dentro de escalas tipo='gira' (mesmo modelo da aba escala do
+      // admin). Trust-based — UI só expõe pra quem tem gerencia_lojinha=true,
+      // e só altera as alocações da função Lojinha (preservando as outras).
+      // Sem delete público — apagar uma escala inteira fica admin-only.
+      allow create: if request.resource.data.tipo in ['gira','lojinha'];
+      allow update: if resource.data.tipo in ['gira','lojinha']
+                    && request.resource.data.tipo == resource.data.tipo;
     }
     match /adm_avisos/{id} {
       allow read: if true;
