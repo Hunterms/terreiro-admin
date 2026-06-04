@@ -1186,7 +1186,19 @@ function renderLojinha() {
   const futuros = plantoes.filter(p => (p.data||'') >= hoje);
   const passados = plantoes.filter(p => (p.data||'') < hoje).reverse();
 
-  if(badge) badge.textContent = futuros.length > 0 ? `${futuros.length} próximo${futuros.length===1?'':'s'}` : 'sem plantões';
+  // Badge: prioriza eventos sem plantão (ação pendente) > futuros (preenchidos)
+  if(badge) {
+    const tiposComLojinha = new Set(['gira_aberta','gira_fechada','festa','apresentacao_cultural','obrigacao_coletiva']);
+    const eventosCandidatos = (APP.eventos||[]).filter(e =>
+      !e.arquivado && (e.data||'') >= hoje &&
+      (e.tem_lojinha === true || (!e.tipo) || tiposComLojinha.has(e.tipo))
+    );
+    const pendentes = eventosCandidatos.filter(e => !plantoes.some(p => p.evento_id === e.id)).length;
+    badge.classList.remove('muted');
+    if(pendentes > 0) badge.textContent = `${pendentes} evento${pendentes===1?'':'s'} sem responsável`;
+    else if(futuros.length > 0) { badge.textContent = `${futuros.length} próximo${futuros.length===1?'':'s'}`; badge.classList.add('muted'); }
+    else { badge.textContent = 'sem plantões'; badge.classList.add('muted'); }
+  }
 
   const fmtDataPl = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
   const opcoesFilho = APP.filhos.map(x => `<option value="${x.id}" data-nome="${(x.nome||'').replace(/"/g,'&quot;')}">${x.nome}</option>`).join('');
@@ -1223,6 +1235,9 @@ function renderLojinha() {
       </summary>
       <div style="padding:12px;background:var(--glass);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-4px">
         <input type="hidden" id="lj-id"/>
+        <input type="hidden" id="lj-evento-id"/>
+        <input type="hidden" id="lj-evento-nome"/>
+        <div id="lj-evento-hint" style="display:none;padding:8px 12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);border-radius:7px;font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.4"></div>
         <div class="fi-group" style="margin-bottom:10px">
           <label>Responsável</label>
           <select class="fi" id="lj-filho">
@@ -1255,6 +1270,46 @@ function renderLojinha() {
       </div>
     </details>
 
+    ${(() => {
+      // Eventos do site que pedem lojinha mas ainda não têm plantão
+      const tiposComLojinha = new Set(['gira_aberta','gira_fechada','festa','apresentacao_cultural','obrigacao_coletiva']);
+      const eventosFuturos = (APP.eventos||[])
+        .filter(e => !e.arquivado && (e.data||'') >= hoje)
+        .filter(e => e.tem_lojinha === true || (!e.tipo) || tiposComLojinha.has(e.tipo))
+        .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
+      const semPlantao = eventosFuturos.filter(e => !plantoes.some(p => p.evento_id === e.id));
+      if (semPlantao.length === 0) return '';
+      const cardEv = (e) => {
+        const nomeEv = e.nome || e.titulo || 'Evento';
+        const dataLabel = e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
+        const dataEsc = (e.data||'').replace(/'/g,"\\'");
+        const horaEsc = (e.hora||'').replace(/'/g,"\\'");
+        const nomeEsc = nomeEv.replace(/'/g,"\\'");
+        return `
+          <div class="list-item" style="background:rgba(212,168,67,.06);border:1px dashed rgba(212,168,67,.3)">
+            <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
+              <div class="d">${(e.data||'').slice(8,10)}</div>
+              <div>${e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','') : '—'}</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div class="li-name">${nomeEv} <span style="color:var(--text3);font-weight:500;font-size:12px">— sem responsável</span></div>
+              <div class="li-meta">
+                <span>${dataLabel}</span>
+                ${e.hora?`<span>${e.hora}</span>`:''}
+                ${e.local?`<span>${e.local}</span>`:''}
+              </div>
+            </div>
+            <button onclick="window._lojinha.designarParaEvento('${e.id}','${nomeEsc}','${dataEsc}','${horaEsc}')" style="background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;color:#1a1209;font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;flex-shrink:0">Designar</button>
+          </div>`;
+      };
+      return `
+        <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;margin-top:6px">Eventos sem plantão definido (${semPlantao.length})</div>
+        ${semPlantao.slice(0,8).map(cardEv).join('')}
+        ${semPlantao.length > 8 ? `<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px 0">+ ${semPlantao.length-8} evento(s) mais à frente</div>` : ''}
+        <div style="height:14px"></div>
+      `;
+    })()}
+
     ${futuros.length === 0 ? '<div class="empty">Nenhum plantão futuro agendado.</div>' : `
       <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximos plantões</div>
       ${futuros.map(p => cardPlantao(p, false)).join('')}
@@ -1269,6 +1324,25 @@ function renderLojinha() {
 }
 
 window._lojinha = {
+  // Pré-fill do formulário com dados de um evento do site (clique em "Designar")
+  designarParaEvento: function(eventoId, nomeEv, dataEv, horaEv) {
+    this.cancelar();
+    $('#lj-data').value = dataEv || '';
+    $('#lj-ini').value = horaEv || '';
+    const evtIdInput = $('#lj-evento-id');
+    if(evtIdInput) evtIdInput.value = eventoId;
+    const evtNomeInput = $('#lj-evento-nome');
+    if(evtNomeInput) evtNomeInput.value = nomeEv || '';
+    // Feedback visual: mostra qual evento está vinculado
+    const hint = $('#lj-evento-hint');
+    if(hint) {
+      hint.style.display = 'block';
+      hint.innerHTML = `🔗 Vinculado a: <strong>${nomeEv}</strong> · ${dataEv}${horaEv?' '+horaEv:''}`;
+    }
+    $('#lojinha-form-wrap').open = true;
+    setTimeout(() => $('#lj-filho').focus(), 60);
+    $('#lojinha-form-wrap').scrollIntoView({behavior:'smooth', block:'start'});
+  },
   salvar: async function() {
     const id = $('#lj-id').value;
     const sel = $('#lj-filho');
@@ -1277,6 +1351,8 @@ window._lojinha = {
     const horaIni = $('#lj-ini').value;
     const horaFim = $('#lj-fim').value;
     const obs = $('#lj-obs').value.trim();
+    const eventoId = $('#lj-evento-id')?.value || null;
+    const eventoNome = $('#lj-evento-nome')?.value || null;
     if(!filhoId) { toast('Selecione o responsável','err'); return; }
     if(!data) { toast('Informe a data','err'); return; }
     const opt = sel.options[sel.selectedIndex];
@@ -1288,6 +1364,8 @@ window._lojinha = {
       filho_id: filhoId,
       filho_nome: nome,
       observacao: obs || null,
+      evento_id: eventoId,
+      evento_nome: eventoNome,
       atualizadoEm: serverTimestamp()
     };
     try {
@@ -1314,11 +1392,21 @@ window._lojinha = {
     $('#lj-ini').value = p.hora_inicio||'';
     $('#lj-fim').value = p.hora_fim||'';
     $('#lj-obs').value = p.observacao||'';
+    $('#lj-evento-id').value = p.evento_id || '';
+    $('#lj-evento-nome').value = p.evento_nome || '';
+    const hint = $('#lj-evento-hint');
+    if(hint) {
+      if(p.evento_id) {
+        hint.style.display = 'block';
+        hint.innerHTML = `🔗 Vinculado a: <strong>${p.evento_nome||'evento'}</strong>`;
+      } else hint.style.display = 'none';
+    }
     $('#lojinha-form-wrap').open = true;
     $('#lojinha-form-wrap').scrollIntoView({behavior:'smooth', block:'start'});
   },
   cancelar: function() {
-    ['lj-id','lj-filho','lj-data','lj-ini','lj-fim','lj-obs'].forEach(i => { const el = $('#'+i); if(el) el.value=''; });
+    ['lj-id','lj-filho','lj-data','lj-ini','lj-fim','lj-obs','lj-evento-id','lj-evento-nome'].forEach(i => { const el = $('#'+i); if(el) el.value=''; });
+    const hint = $('#lj-evento-hint'); if(hint) hint.style.display = 'none';
   },
   remover: async function(id, label) {
     if(!confirm(`Remover plantão ${label}?`)) return;
