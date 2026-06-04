@@ -1397,6 +1397,13 @@ function openFilhoForm(id=null) {
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Marque só pros filhos que assumem o papel de padrinho. Eles aparecerão como opção pra apadrinhar outros.</div>
       </div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-lojinha-flag" ${f?.gerencia_lojinha?'checked':''}/>
+          Esse filho gerencia a escala da lojinha
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra Giovana/Aline e quem mais cuidar da lojinha. Habilita a seção "Escala da lojinha" na área pessoal dela.</div>
+      </div>
       <div class="fi-group"><label>Padrinho/madrinha (de quem é apadrinhado)</label>
         <select class="fi" id="ff-padrinho">
           <option value="">— Sem padrinho —</option>
@@ -1467,6 +1474,7 @@ function openFilhoForm(id=null) {
       prazoObs: '',
       postos,
       e_padrinho: $('#ff-padrinho-flag').checked,
+      gerencia_lojinha: $('#ff-lojinha-flag').checked,
       padrinho_id: $('#ff-padrinho').value || null,
       auth_email: $('#ff-email').value.trim() || null,
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,

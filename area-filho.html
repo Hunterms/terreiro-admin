@@ -360,6 +360,20 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
               <div id="afilhados-container"></div>
             </div>
           </details>
+
+          <!-- Lojinha — só aparece pra quem gerencia (Giovana, Aline, etc.) -->
+          <details class="dash-secao" id="dash-sec-lojinha" style="display:none">
+            <summary>
+              <div class="dash-head-text">
+                <h2>🛍️ Escala da lojinha <span class="dash-badge" id="dash-cnt-lojinha"></span></h2>
+                <p class="dash-sub">Organize os plantões da lojinha do jeito que vocês decidirem.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="lojinha-container"></div>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -413,6 +427,7 @@ let APP = {
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
+  lojinhaPlantoes: [], // plantões da lojinha (só carrega se gerencia_lojinha === true)
   eventos: [],
   avisos: [],
   regasDiarias: {},  // {YYYY-MM-DD: { filho_id, filho_nome, ... }} — dias já reservados
@@ -552,10 +567,20 @@ async function selecionarFilho(id) {
       .filter(t => !t.arquivado && t.status !== 'done' && (t.responsaveis||[]).includes(id));
   } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; }
 
+  // Carrega plantões da lojinha (futuros). Só usa de fato se gerencia_lojinha === true,
+  // mas carrega sempre — pequeno overhead, evita reload depois.
+  if (filho.gerencia_lojinha) {
+    try {
+      const lSnap = await getDocs(collection(dbPvd,'adm_lojinha_plantoes'));
+      APP.lojinhaPlantoes = lSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    } catch(e) { console.warn('Erro plantões lojinha', e); APP.lojinhaPlantoes = []; }
+  } else { APP.lojinhaPlantoes = []; }
+
   renderDisp();
   renderEsc();
   renderTarefas();
   renderAfilhados();
+  renderLojinha();
   renderReembolso();
   renderActionItems(); // smart summary do que precisa de atenção
 }
@@ -662,6 +687,7 @@ function renderIdentityHero(f) {
   if(!rl) return;
   const roles = [];
   if(f.e_padrinho) roles.push('Padrinho/madrinha');
+  if(f.gerencia_lojinha) roles.push('Lojinha');
   const meusPostos = f.postos || [];
   if(meusPostos.length) {
     const nomes = APP.funcoes
@@ -1143,6 +1169,167 @@ function renderTarefas() {
     ` : ''}
   `;
 }
+
+// ── LOJINHA: escala de plantões (CRUD por filhos com gerencia_lojinha) ────
+function renderLojinha() {
+  const f = APP.filhoAtual;
+  const sec = $('#dash-sec-lojinha');
+  const cont = $('#lojinha-container');
+  const badge = $('#dash-cnt-lojinha');
+  if(!sec || !cont) return;
+  if(!f || !f.gerencia_lojinha) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+
+  const hoje = new Date().toISOString().slice(0,10);
+  const plantoes = (APP.lojinhaPlantoes||[]).slice()
+    .sort((a,b) => (a.data+(a.hora_inicio||'')).localeCompare(b.data+(b.hora_inicio||'')));
+  const futuros = plantoes.filter(p => (p.data||'') >= hoje);
+  const passados = plantoes.filter(p => (p.data||'') < hoje).reverse();
+
+  if(badge) badge.textContent = futuros.length > 0 ? `${futuros.length} próximo${futuros.length===1?'':'s'}` : 'sem plantões';
+
+  const fmtDataPl = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
+  const opcoesFilho = APP.filhos.map(x => `<option value="${x.id}" data-nome="${(x.nome||'').replace(/"/g,'&quot;')}">${x.nome}</option>`).join('');
+
+  const cardPlantao = (p, isPassado=false) => {
+    const nomeR = p.filho_nome || (APP.filhos.find(x=>x.id===p.filho_id)?.nome) || '—';
+    const horas = (p.hora_inicio || p.hora_fim) ? `${p.hora_inicio||'—'}${p.hora_fim?' às '+p.hora_fim:''}` : 'horário a combinar';
+    return `
+      <div class="list-item" style="background:${isPassado?'rgba(255,255,255,.02)':'var(--glass2)'};opacity:${isPassado?'.6':'1'}">
+        <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
+          <div class="d">${(p.data||'').slice(8,10)}</div>
+          <div>${p.data ? new Date(p.data+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','') : '—'}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="li-name">${nomeR}</div>
+          <div class="li-meta">
+            <span>${fmtDataPl(p.data)}</span>
+            <span>${horas}</span>
+            ${p.observacao?`<span style="color:var(--text2);font-style:italic">${p.observacao}</span>`:''}
+          </div>
+        </div>
+        ${!isPassado ? `
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="window._lojinha.editar('${p.id}')" title="Editar" style="background:transparent;border:1px solid var(--border2);color:var(--text2);font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit">Editar</button>
+          <button onclick="window._lojinha.remover('${p.id}','${(nomeR||'').replace(/'/g,'')} · ${fmtDataPl(p.data)}')" title="Remover" style="background:transparent;border:1px solid var(--red-bd);color:var(--red);font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit">×</button>
+        </div>` : ''}
+      </div>`;
+  };
+
+  cont.innerHTML = `
+    <details style="margin-bottom:12px" id="lojinha-form-wrap">
+      <summary style="cursor:pointer;padding:10px 12px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:8px;list-style:none;font-size:13px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px">
+        <span>＋</span> Adicionar plantão
+      </summary>
+      <div style="padding:12px;background:var(--glass);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-4px">
+        <input type="hidden" id="lj-id"/>
+        <div class="fi-group" style="margin-bottom:10px">
+          <label>Responsável</label>
+          <select class="fi" id="lj-filho">
+            <option value="">— Selecione —</option>
+            ${opcoesFilho}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="fi-group" style="margin:0">
+            <label>Data</label>
+            <input class="fi" id="lj-data" type="date"/>
+          </div>
+          <div class="fi-group" style="margin:0">
+            <label>Início</label>
+            <input class="fi" id="lj-ini" type="time"/>
+          </div>
+          <div class="fi-group" style="margin:0">
+            <label>Fim</label>
+            <input class="fi" id="lj-fim" type="time"/>
+          </div>
+        </div>
+        <div class="fi-group" style="margin-bottom:10px">
+          <label>Observação (opcional)</label>
+          <input class="fi" id="lj-obs" placeholder="Ex: levar troco, abre meia hora antes..."/>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="window._lojinha.salvar()">Salvar plantão</button>
+          <button class="btn" onclick="window._lojinha.cancelar()">Limpar</button>
+        </div>
+      </div>
+    </details>
+
+    ${futuros.length === 0 ? '<div class="empty">Nenhum plantão futuro agendado.</div>' : `
+      <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximos plantões</div>
+      ${futuros.map(p => cardPlantao(p, false)).join('')}
+    `}
+    ${passados.length > 0 ? `
+      <details style="margin-top:14px;border-top:1px dashed var(--border);padding-top:10px">
+        <summary style="cursor:pointer;font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;list-style:none;padding:4px 0">Histórico (${passados.length})</summary>
+        <div style="margin-top:10px">${passados.slice(0,20).map(p => cardPlantao(p, true)).join('')}</div>
+      </details>
+    ` : ''}
+  `;
+}
+
+window._lojinha = {
+  salvar: async function() {
+    const id = $('#lj-id').value;
+    const sel = $('#lj-filho');
+    const filhoId = sel.value;
+    const data = $('#lj-data').value;
+    const horaIni = $('#lj-ini').value;
+    const horaFim = $('#lj-fim').value;
+    const obs = $('#lj-obs').value.trim();
+    if(!filhoId) { toast('Selecione o responsável','err'); return; }
+    if(!data) { toast('Informe a data','err'); return; }
+    const opt = sel.options[sel.selectedIndex];
+    const nome = opt?.dataset?.nome || (APP.filhos.find(x=>x.id===filhoId)?.nome) || '';
+    const payload = {
+      data,
+      hora_inicio: horaIni || null,
+      hora_fim: horaFim || null,
+      filho_id: filhoId,
+      filho_nome: nome,
+      observacao: obs || null,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if(id) {
+        await setDoc(doc(dbPvd,'adm_lojinha_plantoes', id), payload, { merge:true });
+        const idx = APP.lojinhaPlantoes.findIndex(p => p.id===id);
+        if(idx >= 0) APP.lojinhaPlantoes[idx] = { ...APP.lojinhaPlantoes[idx], ...payload };
+        toast('Plantão atualizado.');
+      } else {
+        const ref = await addDoc(collection(dbPvd,'adm_lojinha_plantoes'), { ...payload, criadoEm: serverTimestamp() });
+        APP.lojinhaPlantoes.push({ id: ref.id, ...payload });
+        toast('Plantão adicionado.');
+      }
+      this.cancelar();
+      renderLojinha();
+    } catch(e) { console.error(e); toast('Erro ao salvar: '+e.message,'err'); }
+  },
+  editar: function(id) {
+    const p = APP.lojinhaPlantoes.find(x => x.id===id);
+    if(!p) return;
+    $('#lj-id').value = id;
+    $('#lj-filho').value = p.filho_id||'';
+    $('#lj-data').value = p.data||'';
+    $('#lj-ini').value = p.hora_inicio||'';
+    $('#lj-fim').value = p.hora_fim||'';
+    $('#lj-obs').value = p.observacao||'';
+    $('#lojinha-form-wrap').open = true;
+    $('#lojinha-form-wrap').scrollIntoView({behavior:'smooth', block:'start'});
+  },
+  cancelar: function() {
+    ['lj-id','lj-filho','lj-data','lj-ini','lj-fim','lj-obs'].forEach(i => { const el = $('#'+i); if(el) el.value=''; });
+  },
+  remover: async function(id, label) {
+    if(!confirm(`Remover plantão ${label}?`)) return;
+    try {
+      await deleteDoc(doc(dbPvd,'adm_lojinha_plantoes', id));
+      APP.lojinhaPlantoes = APP.lojinhaPlantoes.filter(p => p.id!==id);
+      renderLojinha();
+      toast('Plantão removido.');
+    } catch(e) { toast('Erro ao remover: '+e.message,'err'); }
+  }
+};
 
 function renderAfilhados() {
   const cont = $('#afilhados-container');
@@ -1651,12 +1838,14 @@ function trocarFilho() {
   if(selectorCard) selectorCard.style.display = '';
   resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
-  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb'].forEach(id => {
+  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
   });
   APP.tarefas = [];
-  // Esconde seção de afilhados (próximo filho pode não ser padrinho) + action items
+  APP.lojinhaPlantoes = [];
+  // Esconde seções condicionais (próximo filho pode não ter as flags) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
+  const lj = $('#dash-sec-lojinha'); if(lj) lj.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
 
