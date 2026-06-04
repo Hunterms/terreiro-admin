@@ -1206,6 +1206,9 @@ function renderLojinha() {
   const cardPlantao = (p, isPassado=false) => {
     const nomeR = p.filho_nome || (APP.filhos.find(x=>x.id===p.filho_id)?.nome) || '—';
     const horas = (p.hora_inicio || p.hora_fim) ? `${p.hora_inicio||'—'}${p.hora_fim?' às '+p.hora_fim:''}` : 'horário a combinar';
+    // Se está vinculado a um evento, prefere mostrar nome atual de APP.eventos (caso tenha sido editado)
+    const evLink = p.evento_id ? (APP.eventos.find(e => e.id === p.evento_id)) : null;
+    const evNome = evLink ? (evLink.nome || evLink.titulo) : p.evento_nome;
     return `
       <div class="list-item" style="background:${isPassado?'rgba(255,255,255,.02)':'var(--glass2)'};opacity:${isPassado?'.6':'1'}">
         <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
@@ -1217,6 +1220,7 @@ function renderLojinha() {
           <div class="li-meta">
             <span>${fmtDataPl(p.data)}</span>
             <span>${horas}</span>
+            ${evNome ? `<span style="color:var(--gold);font-weight:600">🔗 ${evNome}</span>` : ''}
             ${p.observacao?`<span style="color:var(--text2);font-style:italic">${p.observacao}</span>`:''}
           </div>
         </div>
@@ -1270,6 +1274,12 @@ function renderLojinha() {
       </div>
     </details>
 
+    ${futuros.length > 0 ? `
+      <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;margin-top:6px">Próximos plantões (${futuros.length})</div>
+      ${futuros.map(p => cardPlantao(p, false)).join('')}
+      <div style="height:14px"></div>
+    ` : ''}
+
     ${(() => {
       // Eventos do site que pedem lojinha mas ainda não têm plantão
       const tiposComLojinha = new Set(['gira_aberta','gira_fechada','festa','apresentacao_cultural','obrigacao_coletiva']);
@@ -1278,7 +1288,9 @@ function renderLojinha() {
         .filter(e => e.tem_lojinha === true || (!e.tipo) || tiposComLojinha.has(e.tipo))
         .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
       const semPlantao = eventosFuturos.filter(e => !plantoes.some(p => p.evento_id === e.id));
-      if (semPlantao.length === 0) return '';
+      if (semPlantao.length === 0) {
+        return futuros.length === 0 ? '<div class="empty">Nenhum plantão agendado e nenhum evento futuro pra designar.</div>' : '';
+      }
       const cardEv = (e) => {
         const nomeEv = e.nome || e.titulo || 'Evento';
         const dataLabel = e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
@@ -1306,14 +1318,9 @@ function renderLojinha() {
         <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;margin-top:6px">Eventos sem plantão definido (${semPlantao.length})</div>
         ${semPlantao.slice(0,8).map(cardEv).join('')}
         ${semPlantao.length > 8 ? `<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px 0">+ ${semPlantao.length-8} evento(s) mais à frente</div>` : ''}
-        <div style="height:14px"></div>
       `;
     })()}
 
-    ${futuros.length === 0 ? '<div class="empty">Nenhum plantão futuro agendado.</div>' : `
-      <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximos plantões</div>
-      ${futuros.map(p => cardPlantao(p, false)).join('')}
-    `}
     ${passados.length > 0 ? `
       <details style="margin-top:14px;border-top:1px dashed var(--border);padding-top:10px">
         <summary style="cursor:pointer;font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;list-style:none;padding:4px 0">Histórico (${passados.length})</summary>
