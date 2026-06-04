@@ -81,6 +81,13 @@ service cloud.firestore {
     }
     match /adm_escalas/{id} {
       allow read: if true;
+      // Lojinha: escalas tipo='lojinha' podem ser criadas/editadas/apagadas
+      // publicamente (trust-based — só a Giovana/Aline acessam a UI, validado
+      // client-side por gerencia_lojinha). Outras escalas continuam admin-only.
+      allow create: if request.resource.data.tipo == 'lojinha';
+      allow update: if resource.data.tipo == 'lojinha'
+                    && request.resource.data.tipo == 'lojinha';
+      allow delete: if resource.data.tipo == 'lojinha';
     }
     match /adm_avisos/{id} {
       allow read: if true;
@@ -98,12 +105,6 @@ service cloud.firestore {
                             && request.resource.data.filho_id.size() > 0;
     }
 
-    // Escala da lojinha — CRUD por filhos com gerencia_lojinha (trust-based,
-    // validado client-side; só fica visível na area-filho.html pra elas).
-    match /adm_lojinha_plantoes/{id} {
-      allow read: if true;
-      allow create, update, delete: if true;
-    }
 
     // ── VENDAS EXTERNAS (vendas.html) ─────────────────────────────────────
     // Produtos: leitura pública (form precisa ler pra mostrar); escrita só admin

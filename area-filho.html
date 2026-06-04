@@ -427,7 +427,7 @@ let APP = {
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
-  lojinhaPlantoes: [], // plantões da lojinha (só carrega se gerencia_lojinha === true)
+  lojinhaEscalas: [], // adm_escalas onde tipo='lojinha' (semanal). Só carrega se gerencia_lojinha
   eventos: [],
   avisos: [],
   regasDiarias: {},  // {YYYY-MM-DD: { filho_id, filho_nome, ... }} — dias já reservados
@@ -567,14 +567,14 @@ async function selecionarFilho(id) {
       .filter(t => !t.arquivado && t.status !== 'done' && (t.responsaveis||[]).includes(id));
   } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; }
 
-  // Carrega plantões da lojinha (futuros). Só usa de fato se gerencia_lojinha === true,
-  // mas carrega sempre — pequeno overhead, evita reload depois.
+  // Carrega escalas da lojinha (tipo='lojinha' em adm_escalas — mesma collection do admin)
   if (filho.gerencia_lojinha) {
     try {
-      const lSnap = await getDocs(collection(dbPvd,'adm_lojinha_plantoes'));
-      APP.lojinhaPlantoes = lSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-    } catch(e) { console.warn('Erro plantões lojinha', e); APP.lojinhaPlantoes = []; }
-  } else { APP.lojinhaPlantoes = []; }
+      const lSnap = await getDocs(collection(dbPvd,'adm_escalas'));
+      APP.lojinhaEscalas = lSnap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .filter(es => es.tipo === 'lojinha');
+    } catch(e) { console.warn('Erro escalas lojinha', e); APP.lojinhaEscalas = []; }
+  } else { APP.lojinhaEscalas = []; }
 
   renderDisp();
   renderEsc();
@@ -1170,7 +1170,49 @@ function renderTarefas() {
   `;
 }
 
-// ── LOJINHA: escala de plantões (CRUD por filhos com gerencia_lojinha) ────
+// ── LOJINHA: usa o MESMO sistema do admin — adm_escalas com tipo='lojinha' ─
+// Função "Lojinha" em adm_funcoes define o grupo via restrito_a_filhos.
+// Uma escala por semana ISO; alocacoes[] tem { funcao_id, filho_id, dia, status }
+// onde "dia" é a data ISO do dia da semana.
+
+function _isoWeek(d) {
+  const date = new Date(d);
+  date.setHours(0,0,0,0);
+  date.setDate(date.getDate() + 4 - (date.getDay()||7));
+  const yearStart = new Date(date.getFullYear(),0,1);
+  const wk = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getFullYear()}-W${String(wk).padStart(2,'0')}`;
+}
+
+function _proximas4Semanas() {
+  const hoje = new Date();
+  const startOfWeek = new Date(hoje);
+  startOfWeek.setDate(hoje.getDate() - hoje.getDay()); // domingo
+  startOfWeek.setHours(0,0,0,0);
+  const out = [];
+  for(let i=0; i<4; i++) {
+    const s = new Date(startOfWeek);
+    s.setDate(startOfWeek.getDate() + i*7);
+    const e = new Date(s); e.setDate(s.getDate()+6);
+    const id = _isoWeek(s);
+    const inicio = s.toISOString().slice(0,10);
+    const fim = e.toISOString().slice(0,10);
+    const dias = [];
+    for(let d = new Date(s); d <= e; d.setDate(d.getDate()+1)) {
+      dias.push({
+        data: d.toISOString().slice(0,10),
+        label: d.toLocaleDateString('pt-BR',{weekday:'short'}),
+        diaMes: d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
+      });
+    }
+    out.push({
+      id, inicio, fim, dias,
+      label: `${s.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${e.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}`
+    });
+  }
+  return out;
+}
+
 function renderLojinha() {
   const f = APP.filhoAtual;
   const sec = $('#dash-sec-lojinha');
@@ -1180,249 +1222,161 @@ function renderLojinha() {
   if(!f || !f.gerencia_lojinha) { sec.style.display = 'none'; return; }
   sec.style.display = '';
 
-  const hoje = new Date().toISOString().slice(0,10);
-  const plantoes = (APP.lojinhaPlantoes||[]).slice()
-    .sort((a,b) => (a.data+(a.hora_inicio||'')).localeCompare(b.data+(b.hora_inicio||'')));
-  const futuros = plantoes.filter(p => (p.data||'') >= hoje);
-  const passados = plantoes.filter(p => (p.data||'') < hoje).reverse();
-
-  // Badge: prioriza eventos sem plantão (ação pendente) > futuros (preenchidos)
-  if(badge) {
-    const tiposComLojinha = new Set(['gira_aberta','gira_fechada','festa','apresentacao_cultural','obrigacao_coletiva']);
-    const eventosCandidatos = (APP.eventos||[]).filter(e =>
-      !e.arquivado && (e.data||'') >= hoje &&
-      (e.tem_lojinha === true || (!e.tipo) || tiposComLojinha.has(e.tipo))
-    );
-    const pendentes = eventosCandidatos.filter(e => !plantoes.some(p => p.evento_id === e.id)).length;
-    badge.classList.remove('muted');
-    if(pendentes > 0) badge.textContent = `${pendentes} evento${pendentes===1?'':'s'} sem responsável`;
-    else if(futuros.length > 0) { badge.textContent = `${futuros.length} próximo${futuros.length===1?'':'s'}`; badge.classList.add('muted'); }
-    else { badge.textContent = 'sem plantões'; badge.classList.add('muted'); }
+  const fnLojinha = (APP.funcoes||[]).find(fn => fn.nome && fn.nome.toLowerCase().includes('lojinha') && !fn.arquivada);
+  if (!fnLojinha) {
+    if(badge) { badge.textContent = '⚠ sem função'; badge.classList.remove('muted'); }
+    cont.innerHTML = `<div class="empty" style="padding:24px 16px">A função "Lojinha" não está cadastrada em adm_funcoes. Fala com o admin.</div>`;
+    return;
+  }
+  const grupoIds = fnLojinha.restrito_a_filhos || [];
+  const grupo = APP.filhos.filter(x => grupoIds.includes(x.id));
+  if (grupo.length === 0) {
+    if(badge) { badge.textContent = '⚠ sem grupo'; badge.classList.remove('muted'); }
+    cont.innerHTML = `<div class="empty" style="padding:24px 16px">A função "Lojinha" existe mas o grupo está vazio. Fala com o admin pra marcar os filhos elegíveis.</div>`;
+    return;
   }
 
-  const fmtDataPl = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
-  const opcoesFilho = APP.filhos.map(x => `<option value="${x.id}" data-nome="${(x.nome||'').replace(/"/g,'&quot;')}">${x.nome}</option>`).join('');
+  const semanas = _proximas4Semanas();
+  // Estatísticas pro badge
+  let semanasSemPlantao = 0;
+  semanas.forEach(sem => {
+    const esc = APP.lojinhaEscalas.find(es => es.periodo === sem.id);
+    if (!esc || (esc.alocacoes||[]).length === 0) semanasSemPlantao++;
+  });
+  if(badge) {
+    badge.classList.remove('muted');
+    if(semanasSemPlantao > 0) badge.textContent = `${semanasSemPlantao} semana${semanasSemPlantao===1?'':'s'} sem plantão`;
+    else { badge.textContent = '4 semanas cobertas'; badge.classList.add('muted'); }
+  }
 
-  const cardPlantao = (p, isPassado=false) => {
-    const nomeR = p.filho_nome || (APP.filhos.find(x=>x.id===p.filho_id)?.nome) || '—';
-    const horas = (p.hora_inicio || p.hora_fim) ? `${p.hora_inicio||'—'}${p.hora_fim?' às '+p.hora_fim:''}` : 'horário a combinar';
-    // Se está vinculado a um evento, prefere mostrar nome atual de APP.eventos (caso tenha sido editado)
-    const evLink = p.evento_id ? (APP.eventos.find(e => e.id === p.evento_id)) : null;
-    const evNome = evLink ? (evLink.nome || evLink.titulo) : p.evento_nome;
-    return `
-      <div class="list-item" style="background:${isPassado?'rgba(255,255,255,.02)':'var(--glass2)'};opacity:${isPassado?'.6':'1'}">
-        <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
-          <div class="d">${(p.data||'').slice(8,10)}</div>
-          <div>${p.data ? new Date(p.data+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','') : '—'}</div>
+  // Render por semana — card com summary + editor inline (chips por dia)
+  const cardSemana = (sem) => {
+    const esc = APP.lojinhaEscalas.find(es => es.periodo === sem.id);
+    const escId = esc ? esc.id : '';
+    const alocByDia = {};
+    (esc?.alocacoes||[]).forEach(a => {
+      if(a.dia) (alocByDia[a.dia] = alocByDia[a.dia] || []).push(a.filho_id);
+    });
+    const totalAloc = (esc?.alocacoes||[]).length;
+    const diasCobertos = Object.keys(alocByDia).filter(d => alocByDia[d].length > 0).length;
+    const statusLabel = totalAloc > 0
+      ? `<span style="color:var(--green);font-weight:600">${diasCobertos}/7 dias · ${totalAloc} plantão${totalAloc===1?'':'ões'}</span>`
+      : `<span style="color:var(--gold);font-weight:600">Sem plantão</span>`;
+    const editorId = `lj-ed-${sem.id.replace(/[^a-z0-9]/gi,'')}`;
+    const diasHTML = sem.dias.map(d => `
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text2);text-transform:capitalize;font-weight:600;margin-bottom:5px">${d.label}, ${d.diaMes}</div>
+        <div class="chips" data-editor="${editorId}" data-dia="${d.data}">
+          ${grupo.map(g => {
+            const sel = (alocByDia[d.data]||[]).includes(g.id);
+            return `<button type="button" class="chip ${sel?'sel':''}" data-fid="${g.id}" onclick="this.classList.toggle('sel')">${(g.nome||'').split(' ')[0]}</button>`;
+          }).join('')}
         </div>
-        <div style="flex:1;min-width:0">
-          <div class="li-name">${nomeR}</div>
-          <div class="li-meta">
-            <span>${fmtDataPl(p.data)}</span>
-            <span>${horas}</span>
-            ${evNome ? `<span style="color:var(--gold);font-weight:600">🔗 ${evNome}</span>` : ''}
-            ${p.observacao?`<span style="color:var(--text2);font-style:italic">${p.observacao}</span>`:''}
+      </div>
+    `).join('');
+    return `
+      <div class="list-item" style="background:var(--glass2);flex-direction:column;align-items:stretch;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;width:100%">
+          <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
+            <div class="d">${sem.inicio.slice(8,10)}</div>
+            <div>${new Date(sem.inicio+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="li-name">${sem.label}</div>
+            <div class="li-meta">${statusLabel}</div>
+          </div>
+          <button onclick="window._lojinha.toggleEditor('${editorId}')" style="background:${totalAloc>0?'transparent':'linear-gradient(135deg,var(--gold),var(--gold2))'};border:1px solid ${totalAloc>0?'var(--border2)':'transparent'};color:${totalAloc>0?'var(--text2)':'#1a1209'};font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;flex-shrink:0">${totalAloc>0?'Editar':'Criar plantão'}</button>
+        </div>
+        <div id="${editorId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)" data-esc-id="${escId}" data-periodo="${sem.id}" data-inicio="${sem.inicio}" data-fim="${sem.fim}">
+          ${diasHTML}
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="window._lojinha.salvar('${editorId}')">Salvar plantão</button>
+            <button class="btn" onclick="window._lojinha.toggleEditor('${editorId}')">Cancelar</button>
+            ${escId ? `<button class="btn" style="background:transparent;border:1px solid var(--red-bd);color:var(--red);margin-left:auto" onclick="window._lojinha.remover('${escId}','${sem.label}')">Apagar plantão</button>` : ''}
           </div>
         </div>
-        ${!isPassado ? `
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <button onclick="window._lojinha.editar('${p.id}')" title="Editar" style="background:transparent;border:1px solid var(--border2);color:var(--text2);font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit">Editar</button>
-          <button onclick="window._lojinha.remover('${p.id}','${(nomeR||'').replace(/'/g,'')} · ${fmtDataPl(p.data)}')" title="Remover" style="background:transparent;border:1px solid var(--red-bd);color:var(--red);font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit">×</button>
-        </div>` : ''}
-      </div>`;
+      </div>
+    `;
   };
 
   cont.innerHTML = `
-    <details style="margin-bottom:12px" id="lojinha-form-wrap">
-      <summary style="cursor:pointer;padding:10px 12px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:8px;list-style:none;font-size:13px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px">
-        <span>＋</span> Adicionar plantão
-      </summary>
-      <div style="padding:12px;background:var(--glass);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-4px">
-        <input type="hidden" id="lj-id"/>
-        <input type="hidden" id="lj-evento-id"/>
-        <input type="hidden" id="lj-evento-nome"/>
-        <div id="lj-evento-hint" style="display:none;padding:8px 12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);border-radius:7px;font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.4"></div>
-        <div class="fi-group" style="margin-bottom:10px">
-          <label>Responsável</label>
-          <select class="fi" id="lj-filho">
-            <option value="">— Selecione —</option>
-            ${opcoesFilho}
-          </select>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-          <div class="fi-group" style="margin:0">
-            <label>Data</label>
-            <input class="fi" id="lj-data" type="date"/>
-          </div>
-          <div class="fi-group" style="margin:0">
-            <label>Início</label>
-            <input class="fi" id="lj-ini" type="time"/>
-          </div>
-          <div class="fi-group" style="margin:0">
-            <label>Fim</label>
-            <input class="fi" id="lj-fim" type="time"/>
-          </div>
-        </div>
-        <div class="fi-group" style="margin-bottom:10px">
-          <label>Observação (opcional)</label>
-          <input class="fi" id="lj-obs" placeholder="Ex: levar troco, abre meia hora antes..."/>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" onclick="window._lojinha.salvar()">Salvar plantão</button>
-          <button class="btn" onclick="window._lojinha.cancelar()">Limpar</button>
-        </div>
-      </div>
-    </details>
-
-    ${futuros.length > 0 ? `
-      <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;margin-top:6px">Próximos plantões (${futuros.length})</div>
-      ${futuros.map(p => cardPlantao(p, false)).join('')}
-      <div style="height:14px"></div>
-    ` : ''}
-
-    ${(() => {
-      // Eventos do site que pedem lojinha mas ainda não têm plantão
-      const tiposComLojinha = new Set(['gira_aberta','gira_fechada','festa','apresentacao_cultural','obrigacao_coletiva']);
-      const eventosFuturos = (APP.eventos||[])
-        .filter(e => !e.arquivado && (e.data||'') >= hoje)
-        .filter(e => e.tem_lojinha === true || (!e.tipo) || tiposComLojinha.has(e.tipo))
-        .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
-      const semPlantao = eventosFuturos.filter(e => !plantoes.some(p => p.evento_id === e.id));
-      if (semPlantao.length === 0) {
-        return futuros.length === 0 ? '<div class="empty">Nenhum plantão agendado e nenhum evento futuro pra designar.</div>' : '';
-      }
-      const cardEv = (e) => {
-        const nomeEv = e.nome || e.titulo || 'Evento';
-        const dataLabel = e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
-        const dataEsc = (e.data||'').replace(/'/g,"\\'");
-        const horaEsc = (e.hora||'').replace(/'/g,"\\'");
-        const nomeEsc = nomeEv.replace(/'/g,"\\'");
-        return `
-          <div class="list-item" style="background:rgba(212,168,67,.06);border:1px dashed rgba(212,168,67,.3)">
-            <div class="li-date" style="background:rgba(212,168,67,.15);color:var(--gold)">
-              <div class="d">${(e.data||'').slice(8,10)}</div>
-              <div>${e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','') : '—'}</div>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="li-name">${nomeEv} <span style="color:var(--text3);font-weight:500;font-size:12px">— sem responsável</span></div>
-              <div class="li-meta">
-                <span>${dataLabel}</span>
-                ${e.hora?`<span>${e.hora}</span>`:''}
-                ${e.local?`<span>${e.local}</span>`:''}
-              </div>
-            </div>
-            <button onclick="window._lojinha.designarParaEvento('${e.id}','${nomeEsc}','${dataEsc}','${horaEsc}')" style="background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;color:#1a1209;font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;flex-shrink:0">Designar</button>
-          </div>`;
-      };
-      return `
-        <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px;margin-top:6px">Eventos sem plantão definido (${semPlantao.length})</div>
-        ${semPlantao.slice(0,8).map(cardEv).join('')}
-        ${semPlantao.length > 8 ? `<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px 0">+ ${semPlantao.length-8} evento(s) mais à frente</div>` : ''}
-      `;
-    })()}
-
-    ${passados.length > 0 ? `
-      <details style="margin-top:14px;border-top:1px dashed var(--border);padding-top:10px">
-        <summary style="cursor:pointer;font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;list-style:none;padding:4px 0">Histórico (${passados.length})</summary>
-        <div style="margin-top:10px">${passados.slice(0,20).map(p => cardPlantao(p, true)).join('')}</div>
-      </details>
-    ` : ''}
+    <div style="padding:10px 14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:9px;margin-bottom:14px">
+      <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:6px">Grupo da lojinha</div>
+      <div class="chips">${grupo.map(g => `<span class="chip" style="background:var(--gold-bg);color:var(--gold);border-color:rgba(212,168,67,.3);cursor:default">${g.nome}</span>`).join('')}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.4">Pra mudar quem está nesse grupo, fala com o admin (edita a função "Lojinha").</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">Próximas 4 semanas</div>
+    ${semanas.map(cardSemana).join('')}
   `;
 }
 
 window._lojinha = {
-  // Pré-fill do formulário com dados de um evento do site (clique em "Designar")
-  designarParaEvento: function(eventoId, nomeEv, dataEv, horaEv) {
-    this.cancelar();
-    $('#lj-data').value = dataEv || '';
-    $('#lj-ini').value = horaEv || '';
-    const evtIdInput = $('#lj-evento-id');
-    if(evtIdInput) evtIdInput.value = eventoId;
-    const evtNomeInput = $('#lj-evento-nome');
-    if(evtNomeInput) evtNomeInput.value = nomeEv || '';
-    // Feedback visual: mostra qual evento está vinculado
-    const hint = $('#lj-evento-hint');
-    if(hint) {
-      hint.style.display = 'block';
-      hint.innerHTML = `🔗 Vinculado a: <strong>${nomeEv}</strong> · ${dataEv}${horaEv?' '+horaEv:''}`;
-    }
-    $('#lojinha-form-wrap').open = true;
-    setTimeout(() => $('#lj-filho').focus(), 60);
-    $('#lojinha-form-wrap').scrollIntoView({behavior:'smooth', block:'start'});
+  toggleEditor: function(editorId) {
+    // Fecha qualquer outro editor antes (um por vez)
+    document.querySelectorAll('[id^="lj-ed-"]').forEach(el => { if(el.id !== editorId) el.style.display = 'none'; });
+    const ed = document.getElementById(editorId);
+    if(!ed) return;
+    ed.style.display = ed.style.display === 'none' ? '' : 'none';
+    if(ed.style.display === '') ed.scrollIntoView({behavior:'smooth', block:'center'});
   },
-  salvar: async function() {
-    const id = $('#lj-id').value;
-    const sel = $('#lj-filho');
-    const filhoId = sel.value;
-    const data = $('#lj-data').value;
-    const horaIni = $('#lj-ini').value;
-    const horaFim = $('#lj-fim').value;
-    const obs = $('#lj-obs').value.trim();
-    const eventoId = $('#lj-evento-id')?.value || null;
-    const eventoNome = $('#lj-evento-nome')?.value || null;
-    if(!filhoId) { toast('Selecione o responsável','err'); return; }
-    if(!data) { toast('Informe a data','err'); return; }
-    const opt = sel.options[sel.selectedIndex];
-    const nome = opt?.dataset?.nome || (APP.filhos.find(x=>x.id===filhoId)?.nome) || '';
+  salvar: async function(editorId) {
+    const ed = document.getElementById(editorId);
+    if(!ed) return;
+    const escId = ed.dataset.escId || '';
+    const periodo = ed.dataset.periodo;
+    const inicio = ed.dataset.inicio;
+    const fim = ed.dataset.fim;
+    const fnLojinha = (APP.funcoes||[]).find(fn => fn.nome && fn.nome.toLowerCase().includes('lojinha') && !fn.arquivada);
+    if(!fnLojinha) { toast('Função Lojinha não encontrada','err'); return; }
+
+    const alocacoes = [];
+    ed.querySelectorAll('[data-editor="'+editorId+'"]').forEach(chipsRow => {
+      const dia = chipsRow.dataset.dia;
+      chipsRow.querySelectorAll('.chip.sel').forEach(c => {
+        alocacoes.push({
+          funcao_id: fnLojinha.id,
+          filho_id: c.dataset.fid,
+          dia,
+          status: 'escalado',
+          notificado: false
+        });
+      });
+    });
+
     const payload = {
-      data,
-      hora_inicio: horaIni || null,
-      hora_fim: horaFim || null,
-      filho_id: filhoId,
-      filho_nome: nome,
-      observacao: obs || null,
-      evento_id: eventoId,
-      evento_nome: eventoNome,
+      tipo: 'lojinha',
+      periodo,
+      evento_id: null,
+      data: inicio,
+      data_fim: fim,
+      alocacoes,
+      status_geral: 'publicada',
+      geradoPor: 'manual',
       atualizadoEm: serverTimestamp()
     };
     try {
-      if(id) {
-        await setDoc(doc(dbPvd,'adm_lojinha_plantoes', id), payload, { merge:true });
-        const idx = APP.lojinhaPlantoes.findIndex(p => p.id===id);
-        if(idx >= 0) APP.lojinhaPlantoes[idx] = { ...APP.lojinhaPlantoes[idx], ...payload };
-        toast('Plantão atualizado.');
+      if(escId) {
+        await setDoc(doc(dbPvd,'adm_escalas', escId), payload, { merge:true });
+        const idx = APP.lojinhaEscalas.findIndex(e => e.id===escId);
+        if(idx >= 0) APP.lojinhaEscalas[idx] = { ...APP.lojinhaEscalas[idx], ...payload };
+        toast(`Plantão da semana ${periodo} atualizado.`);
       } else {
-        const ref = await addDoc(collection(dbPvd,'adm_lojinha_plantoes'), { ...payload, criadoEm: serverTimestamp() });
-        APP.lojinhaPlantoes.push({ id: ref.id, ...payload });
-        toast('Plantão adicionado.');
+        payload.criadoEm = serverTimestamp();
+        const ref = await addDoc(collection(dbPvd,'adm_escalas'), payload);
+        APP.lojinhaEscalas.push({ id: ref.id, ...payload });
+        toast(`Plantão da semana ${periodo} criado.`);
       }
-      this.cancelar();
       renderLojinha();
     } catch(e) { console.error(e); toast('Erro ao salvar: '+e.message,'err'); }
   },
-  editar: function(id) {
-    const p = APP.lojinhaPlantoes.find(x => x.id===id);
-    if(!p) return;
-    $('#lj-id').value = id;
-    $('#lj-filho').value = p.filho_id||'';
-    $('#lj-data').value = p.data||'';
-    $('#lj-ini').value = p.hora_inicio||'';
-    $('#lj-fim').value = p.hora_fim||'';
-    $('#lj-obs').value = p.observacao||'';
-    $('#lj-evento-id').value = p.evento_id || '';
-    $('#lj-evento-nome').value = p.evento_nome || '';
-    const hint = $('#lj-evento-hint');
-    if(hint) {
-      if(p.evento_id) {
-        hint.style.display = 'block';
-        hint.innerHTML = `🔗 Vinculado a: <strong>${p.evento_nome||'evento'}</strong>`;
-      } else hint.style.display = 'none';
-    }
-    $('#lojinha-form-wrap').open = true;
-    $('#lojinha-form-wrap').scrollIntoView({behavior:'smooth', block:'start'});
-  },
-  cancelar: function() {
-    ['lj-id','lj-filho','lj-data','lj-ini','lj-fim','lj-obs','lj-evento-id','lj-evento-nome'].forEach(i => { const el = $('#'+i); if(el) el.value=''; });
-    const hint = $('#lj-evento-hint'); if(hint) hint.style.display = 'none';
-  },
-  remover: async function(id, label) {
-    if(!confirm(`Remover plantão ${label}?`)) return;
+  remover: async function(escId, label) {
+    if(!confirm(`Apagar todo o plantão de ${label}?`)) return;
     try {
-      await deleteDoc(doc(dbPvd,'adm_lojinha_plantoes', id));
-      APP.lojinhaPlantoes = APP.lojinhaPlantoes.filter(p => p.id!==id);
+      await deleteDoc(doc(dbPvd,'adm_escalas', escId));
+      APP.lojinhaEscalas = APP.lojinhaEscalas.filter(e => e.id !== escId);
       renderLojinha();
-      toast('Plantão removido.');
-    } catch(e) { toast('Erro ao remover: '+e.message,'err'); }
+      toast('Plantão apagado.');
+    } catch(e) { toast('Erro ao apagar: '+e.message,'err'); }
   }
 };
 
@@ -1937,7 +1891,7 @@ function trocarFilho() {
     const d = $(`#${id}`); if(d) d.open = false;
   });
   APP.tarefas = [];
-  APP.lojinhaPlantoes = [];
+  APP.lojinhaEscalas = [];
   // Esconde seções condicionais (próximo filho pode não ter as flags) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
   const lj = $('#dash-sec-lojinha'); if(lj) lj.style.display = 'none';
