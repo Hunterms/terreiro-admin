@@ -98,6 +98,13 @@ service cloud.firestore {
                             && request.resource.data.filho_id.size() > 0;
     }
 
+    // Escala da lojinha — CRUD por filhos com gerencia_lojinha (trust-based,
+    // validado client-side; só fica visível na area-filho.html pra elas).
+    match /adm_lojinha_plantoes/{id} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
     // ── VENDAS EXTERNAS (vendas.html) ─────────────────────────────────────
     // Produtos: leitura pública (form precisa ler pra mostrar); escrita só admin
     match /vendas_produtos/{id} {
