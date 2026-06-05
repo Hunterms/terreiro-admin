@@ -348,6 +348,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
         Pedidos <span id="ped-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
       </button>
+      <button data-route="eventos-filhos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Eventos pros filhos
+      </button>
 
       <div class="section-label">Comunicação</div>
       <button data-route="avisos">
@@ -884,7 +888,7 @@ function attachListeners() {
   // Eventos (candieiro project!)
   S.unsubs.push(onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
     S.eventos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['calendario','dashboard','meu-dashboard','escalas'].includes(S.route)) renderRoute();
+    if(['calendario','dashboard','meu-dashboard','escalas','eventos-filhos'].includes(S.route)) renderRoute();
   }));
 
   // Avisos
@@ -910,6 +914,8 @@ function attachListeners() {
     S.eventoInscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     // Re-render modal de pagamentos se aberto
     if(window._app && window._app.renderPagamentos) window._app.renderPagamentos();
+    // Re-render lista de eventos pros filhos se aberta
+    if(S.route === 'eventos-filhos') renderRoute();
   }));
 
   // Rega diária (1 doc por dia coberto)
@@ -1006,6 +1012,7 @@ function renderRoute() {
     case 'config-agendamento': return renderConfigAgendamento(c);
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
+    case 'eventos-filhos':return renderEventosFilhos(c);
     case 'avisos':        return renderAvisos(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
@@ -2052,13 +2059,15 @@ function calNav(delta) {
   renderRoute();
 }
 
-function openEventoForm(id=null, dataInicial=null) {
+function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
   const e = id ? S.eventos.find(x=>x.id===id) : null;
   const isEdit = !!e;
+  // Tipo efetivo pra pré-selecionar no dropdown e abrir o bloco de cobrança quando precisa
+  const tipoSelecionado = e?.tipo || tipoDefault || 'gira_aberta';
   openModal(`
-    <div class="modal-h"><h3>${isEdit?'Editar evento':'Novo evento'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-h"><h3>${isEdit?'Editar evento':(tipoDefault==='evento_filho'?'Novo evento pros filhos':'Novo evento')}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="Gira de Pretos-Velhos"/></div>
+      <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="${tipoDefault==='evento_filho'?'Festa do Dendê':'Gira de Pretos-Velhos'}"/></div>
       <div class="row-2">
         <div class="fi-group"><label>Data *</label><input type="date" class="fi" id="ev-data" value="${e?.data||dataInicial||''}"/></div>
         <div class="fi-group"><label>Hora</label><input type="time" class="fi" id="ev-hora" value="${e?.hora||''}"/></div>
@@ -2066,22 +2075,22 @@ function openEventoForm(id=null, dataInicial=null) {
       <div class="row-2">
         <div class="fi-group"><label>Tipo</label>
           <select class="fi" id="ev-tipo">
-            <option value="gira_aberta" ${(!e||e?.tipo==='gira_aberta')?'selected':''}>Gira aberta</option>
-            <option value="gira_fechada" ${e?.tipo==='gira_fechada'?'selected':''}>Gira fechada</option>
-            <option value="trabalho_interno" ${e?.tipo==='trabalho_interno'?'selected':''}>Trabalho interno</option>
-            <option value="ensaio_curimba" ${e?.tipo==='ensaio_curimba'?'selected':''}>Ensaio de curimba</option>
-            <option value="reuniao" ${e?.tipo==='reuniao'?'selected':''}>Reunião</option>
-            <option value="mutirao" ${e?.tipo==='mutirao'?'selected':''}>Mutirão</option>
-            <option value="obrigacao_coletiva" ${e?.tipo==='obrigacao_coletiva'?'selected':''}>Obrigação coletiva</option>
-            <option value="festa" ${e?.tipo==='festa'?'selected':''}>Festa</option>
-            <option value="apresentacao_cultural" ${e?.tipo==='apresentacao_cultural'?'selected':''}>Apresentação cultural (coco, samba, etc.)</option>
-            <option value="evento_filho" ${e?.tipo==='evento_filho'?'selected':''}>💰 Evento pros filhos (com cobrança)</option>
-            <option value="outro" ${e?.tipo==='outro'?'selected':''}>Outro</option>
+            <option value="gira_aberta" ${tipoSelecionado==='gira_aberta'?'selected':''}>Gira aberta</option>
+            <option value="gira_fechada" ${tipoSelecionado==='gira_fechada'?'selected':''}>Gira fechada</option>
+            <option value="trabalho_interno" ${tipoSelecionado==='trabalho_interno'?'selected':''}>Trabalho interno</option>
+            <option value="ensaio_curimba" ${tipoSelecionado==='ensaio_curimba'?'selected':''}>Ensaio de curimba</option>
+            <option value="reuniao" ${tipoSelecionado==='reuniao'?'selected':''}>Reunião</option>
+            <option value="mutirao" ${tipoSelecionado==='mutirao'?'selected':''}>Mutirão</option>
+            <option value="obrigacao_coletiva" ${tipoSelecionado==='obrigacao_coletiva'?'selected':''}>Obrigação coletiva</option>
+            <option value="festa" ${tipoSelecionado==='festa'?'selected':''}>Festa</option>
+            <option value="apresentacao_cultural" ${tipoSelecionado==='apresentacao_cultural'?'selected':''}>Apresentação cultural (coco, samba, etc.)</option>
+            <option value="evento_filho" ${tipoSelecionado==='evento_filho'?'selected':''}>💰 Evento pros filhos (com cobrança)</option>
+            <option value="outro" ${tipoSelecionado==='outro'?'selected':''}>Outro</option>
           </select>
         </div>
         <div class="fi-group" style="justify-content:flex-end">
           <label class="checkbox-row" style="margin-top:24px">
-            <input type="checkbox" id="ev-publico" ${(!e||e?.publico)?'checked':''}/>
+            <input type="checkbox" id="ev-publico" ${tipoSelecionado==='evento_filho' ? '' : ((!e||e?.publico)?'checked':'')}/>
             Público (aparece no site)
           </label>
         </div>
@@ -2097,7 +2106,7 @@ function openEventoForm(id=null, dataInicial=null) {
       <div class="fi-group"><label>Descrição</label><textarea class="fi" id="ev-desc">${e?.descricao||''}</textarea></div>
 
       <!-- ── Bloco de cobrança: SÓ aparece pra tipo 'evento_filho' ──── -->
-      <div id="ev-cobranca-wrap" style="margin-top:18px;padding:14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:10px;display:${e?.tipo === 'evento_filho' ? 'block' : 'none'}">
+      <div id="ev-cobranca-wrap" style="margin-top:18px;padding:14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:10px;display:${tipoSelecionado === 'evento_filho' ? 'block' : 'none'}">
         <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px">💰 Cobrança dos filhos</div>
         <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">Esse evento só aparece pros filhos (na área pessoal deles), com botão de pagar. Não vai pro site público.</div>
         <div class="row-2">
@@ -5214,6 +5223,91 @@ function openProdutoForm(id=null) {
 // ── PEDIDOS (gerenciamento dos vindos do form público) ──────────────────
 let pedTab = 'pendente'; // pendente | confirmado | cancelado | todos
 
+// ── EVENTOS PROS FILHOS ──────────────────────────────────────────────────
+// Lista enxuta de eventos tipo='evento_filho' com botão de criar e acesso rápido
+// à lista de pagamentos. Compartilha o mesmo modal (openEventoForm) — só pré-fila
+// o tipo pra evento_filho.
+function renderEventosFilhos(c) {
+  const hoje = new Date().toISOString().slice(0,10);
+  const futuros = S.eventos
+    .filter(e => e.tipo === 'evento_filho' && !e.arquivado && (e.data||'') >= hoje)
+    .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
+  const passados = S.eventos
+    .filter(e => e.tipo === 'evento_filho' && !e.arquivado && (e.data||'') < hoje)
+    .sort((a,b) => (b.data+(b.hora||'')).localeCompare(a.data+(a.hora||'')))
+    .slice(0,12);
+
+  // Totais arrecadados (todos eventos)
+  const arrecGeral = (S.eventoInscricoes||[])
+    .filter(i => i.status === 'pago')
+    .reduce((s,i) => s + (Number(i.valor)||0), 0);
+
+  const cardEv = (e) => {
+    const insc = (S.eventoInscricoes||[]).filter(i => i.evento_id === e.id);
+    const pagas = insc.filter(i => i.status === 'pago');
+    const aguardando = insc.filter(i => i.status === 'aguardando' || !i.status);
+    const arrec = pagas.reduce((s,i) => s + (Number(i.valor)||0), 0);
+    const valor = Number(e.valor) || 0;
+    const url = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/evento.html?id=' + e.id;
+    return `
+      <div class="list-item">
+        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(e.data||'').slice(8,10)}</div>
+        <div class="li-main">
+          <div class="li-name">${e.nome || e.titulo || 'Evento'}</div>
+          <div class="li-meta">
+            <span>${fmt.dataLong(e.data)}${e.hora?' · '+e.hora:''}</span>
+            ${valor?`<span class="chip chip-gold">${fmt.brl(valor)}</span>`:''}
+            ${pagas.length?`<span class="chip chip-green">${pagas.length} pago${pagas.length===1?'':'s'} · ${fmt.brl(arrec)}</span>`:''}
+            ${aguardando.length?`<span class="chip chip-amber">${aguardando.length} aguardando</span>`:''}
+          </div>
+        </div>
+        <div class="li-actions">
+          <button class="btn btn-sm" onclick="window._app.copiarLinkEvento('${e.id}', this)">📋 Link</button>
+          <button class="btn btn-sm btn-primary" onclick="window._app.abrirPagamentosEvento('${e.id}')">💰 Pagamentos</button>
+          <button class="btn btn-sm" onclick="window._app.openEventoForm('${e.id}')">Editar</button>
+        </div>
+      </div>
+    `;
+  };
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Eventos pros filhos</div>
+        <div class="page-sub">Festas, jantares e outros eventos pagos só pra galera da casa. <strong style="color:var(--green)">Arrecadado total: ${fmt.brl(arrecGeral)}</strong></div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openEventoForm(null, null, 'evento_filho')">+ Novo evento pros filhos</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><div class="card-title">Próximos eventos (${futuros.length})</div></div>
+      ${futuros.length === 0
+        ? '<div class="empty"><div class="empty-t">Nenhum evento futuro</div><div class="empty-s">Clica em "+ Novo evento pros filhos" pra criar.</div></div>'
+        : futuros.map(cardEv).join('')}
+    </div>
+
+    ${passados.length > 0 ? `
+      <div class="card">
+        <div class="card-h"><div class="card-title">Histórico (${passados.length})</div></div>
+        ${passados.map(cardEv).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
+function copiarLinkEvento(id, btn) {
+  const url = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/evento.html?id=' + id;
+  navigator.clipboard.writeText(url).then(() => {
+    if(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copiado!';
+      setTimeout(() => btn.textContent = orig, 1800);
+    } else { toast('Link copiado','ok'); }
+  }).catch(() => alert('Link: ' + url));
+};
+
 function renderPedidos(c) {
   atualizarBadgePedidos();
   const todos = [...S.pedidos].sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
@@ -5791,6 +5885,7 @@ window._app = {
   abrirPagamentosEvento,
   marcarInscricao,
   deletarInscricao,
+  copiarLinkEvento,
   openEscalaForm,
   setEscTab,
   setAnalisePeriodo,
