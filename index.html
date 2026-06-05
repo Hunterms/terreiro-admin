@@ -348,10 +348,6 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
         Pedidos <span id="ped-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
       </button>
-      <button data-route="eventos-filhos">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        Eventos pros filhos
-      </button>
 
       <div class="section-label">Comunicação</div>
       <button data-route="avisos">
@@ -1014,7 +1010,6 @@ function renderRoute() {
     case 'config-agendamento': return renderConfigAgendamento(c);
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
-    case 'eventos-filhos':return renderEventosFilhos(c);
     case 'avisos':        return renderAvisos(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
@@ -2067,9 +2062,9 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
   // Tipo efetivo pra pré-selecionar no dropdown e abrir o bloco de cobrança quando precisa
   const tipoSelecionado = e?.tipo || tipoDefault || 'gira_aberta';
   openModal(`
-    <div class="modal-h"><h3>${isEdit?'Editar evento':(tipoDefault==='evento_filho'?'Novo evento pros filhos':'Novo evento')}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-h"><h3>${isEdit?'Editar evento':'Novo evento'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="${tipoDefault==='evento_filho'?'Festa do Dendê':'Gira de Pretos-Velhos'}"/></div>
+      <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="Gira de Pretos-Velhos"/></div>
       <div class="row-2">
         <div class="fi-group"><label>Data *</label><input type="date" class="fi" id="ev-data" value="${e?.data||dataInicial||''}"/></div>
         <div class="fi-group"><label>Hora</label><input type="time" class="fi" id="ev-hora" value="${e?.hora||''}"/></div>
@@ -2086,13 +2081,12 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
             <option value="obrigacao_coletiva" ${tipoSelecionado==='obrigacao_coletiva'?'selected':''}>Obrigação coletiva</option>
             <option value="festa" ${tipoSelecionado==='festa'?'selected':''}>Festa</option>
             <option value="apresentacao_cultural" ${tipoSelecionado==='apresentacao_cultural'?'selected':''}>Apresentação cultural (coco, samba, etc.)</option>
-            <option value="evento_filho" ${tipoSelecionado==='evento_filho'?'selected':''}>💰 Evento pros filhos (com cobrança)</option>
             <option value="outro" ${tipoSelecionado==='outro'?'selected':''}>Outro</option>
           </select>
         </div>
         <div class="fi-group" style="justify-content:flex-end">
           <label class="checkbox-row" style="margin-top:24px">
-            <input type="checkbox" id="ev-publico" ${tipoSelecionado==='evento_filho' ? '' : ((!e||e?.publico)?'checked':'')}/>
+            <input type="checkbox" id="ev-publico" ${(!e||e?.publico)?'checked':''}/>
             Público (aparece no site)
           </label>
         </div>
@@ -2107,20 +2101,6 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
       <div class="fi-group"><label>Local</label><input class="fi" id="ev-local" value="${e?.local||'Terreiro'}"/></div>
       <div class="fi-group"><label>Descrição</label><textarea class="fi" id="ev-desc">${e?.descricao||''}</textarea></div>
 
-      <!-- ── Bloco de cobrança: SÓ aparece pra tipo 'evento_filho' ──── -->
-      <div id="ev-cobranca-wrap" style="margin-top:18px;padding:14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:10px;display:${tipoSelecionado === 'evento_filho' ? 'block' : 'none'}">
-        <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px">💰 Cobrança dos filhos</div>
-        <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">Esse evento só aparece pros filhos (na área pessoal deles), com botão de pagar. Não vai pro site público.</div>
-        <div class="row-2">
-          <div class="fi-group"><label>Valor (R$) *</label><input type="number" step="0.01" min="0" class="fi" id="ev-valor" value="${e?.valor ?? ''}" placeholder="Ex: 30"/></div>
-          <div class="fi-group"><label>Link InfinityPay (cartão)</label><input class="fi" id="ev-ip" value="${e?.infinity_link||''}" placeholder="https://link.infinitepay.io/candieiro/..."/></div>
-        </div>
-        ${isEdit ? `
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:14px;border-top:1px dashed var(--border)">
-            <button type="button" class="btn btn-sm btn-primary" id="ev-pagamentos">💰 Ver pagamentos</button>
-          </div>
-        ` : '<div style="font-size:11px;color:var(--text3);margin-top:8px">Salve pra liberar a lista de pagamentos.</div>'}
-      </div>
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="ev-del">Excluir</button>':''}
@@ -2129,39 +2109,20 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
     </div>
   `, { lg: true });
 
-  // Toggle do bloco de cobrança quando o tipo mudar
-  const tipoSel = $('#ev-tipo');
-  const cobrancaWrap = $('#ev-cobranca-wrap');
-  if(tipoSel && cobrancaWrap) {
-    tipoSel.addEventListener('change', () => {
-      cobrancaWrap.style.display = tipoSel.value === 'evento_filho' ? 'block' : 'none';
-      // Se virou evento_filho, força publico=false (não vai pro site)
-      if(tipoSel.value === 'evento_filho') $('#ev-publico').checked = false;
-    });
-  }
-
   $('#ev-save').onclick = async () => {
     const nome = $('#ev-nome').value.trim();
     const data = $('#ev-data').value;
     if(!nome) { toast('Informe o título','err'); return; }
     if(!data) { toast('Informe a data','err'); return; }
-    const tipo = $('#ev-tipo').value;
-    const ehEventoFilho = tipo === 'evento_filho';
-    const valor = parseFloat($('#ev-valor').value);
-    if(ehEventoFilho && (isNaN(valor) || valor <= 0)) {
-      toast('Evento pros filhos precisa de valor','err'); return;
-    }
     const payload = {
       nome,
       data,
       hora: $('#ev-hora').value || '',
-      tipo,
-      publico: ehEventoFilho ? false : $('#ev-publico').checked, // evento_filho NUNCA vai pro site
+      tipo: $('#ev-tipo').value,
+      publico: $('#ev-publico').checked,
       requer_limpeza: $('#ev-limpeza').checked,
       local: $('#ev-local').value.trim(),
       descricao: $('#ev-desc').value.trim(),
-      valor: ehEventoFilho ? valor : null,
-      infinity_link: ehEventoFilho ? ($('#ev-ip').value.trim() || null) : null,
       arquivado: false,
       atualizadoEm: serverTimestamp()
     };
@@ -2185,12 +2146,6 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
       catch(e) { toast('Erro: '+e.message,'err'); }
     });
   };
-
-  // Botão pagamentos (só pra evento_filho salvo)
-  if(isEdit) {
-    const btnPag = $('#ev-pagamentos');
-    if(btnPag) btnPag.onclick = () => abrirPagamentosEvento(id);
-  }
 }
 
 // ── PAGAMENTOS DE EVENTO ─────────────────────────────────────────────────
