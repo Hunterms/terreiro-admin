@@ -5241,6 +5241,7 @@ function renderEventosFilhos(c) {
   const arrecGeral = (S.eventoInscricoes||[])
     .filter(i => i.status === 'pago')
     .reduce((s,i) => s + (Number(i.valor)||0), 0);
+  const brl = v => 'R$ ' + Number(v||0).toFixed(2).replace('.',',');
 
   const cardEv = (e) => {
     const insc = (S.eventoInscricoes||[]).filter(i => i.evento_id === e.id);
@@ -5256,8 +5257,8 @@ function renderEventosFilhos(c) {
           <div class="li-name">${e.nome || e.titulo || 'Evento'}</div>
           <div class="li-meta">
             <span>${fmt.dataLong(e.data)}${e.hora?' · '+e.hora:''}</span>
-            ${valor?`<span class="chip chip-gold">${fmt.brl(valor)}</span>`:''}
-            ${pagas.length?`<span class="chip chip-green">${pagas.length} pago${pagas.length===1?'':'s'} · ${fmt.brl(arrec)}</span>`:''}
+            ${valor?`<span class="chip chip-gold">${brl(valor)}</span>`:''}
+            ${pagas.length?`<span class="chip chip-green">${pagas.length} pago${pagas.length===1?'':'s'} · ${brl(arrec)}</span>`:''}
             ${aguardando.length?`<span class="chip chip-amber">${aguardando.length} aguardando</span>`:''}
           </div>
         </div>
@@ -5274,7 +5275,7 @@ function renderEventosFilhos(c) {
     <div class="page-head">
       <div>
         <div class="page-title">Eventos pros filhos</div>
-        <div class="page-sub">Festas, jantares e outros eventos pagos só pra galera da casa. <strong style="color:var(--green)">Arrecadado total: ${fmt.brl(arrecGeral)}</strong></div>
+        <div class="page-sub">Festas, jantares e outros eventos pagos só pra galera da casa. <strong style="color:var(--green)">Arrecadado total: ${brl(arrecGeral)}</strong></div>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" onclick="window._app.openEventoForm(null, null, 'evento_filho')">+ Novo evento pros filhos</button>
