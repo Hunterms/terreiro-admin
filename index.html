@@ -946,8 +946,10 @@ function attachListeners() {
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_pedidos'), snap => {
       S.pedidos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      if(['pedidos','dashboard'].includes(S.route)) renderRoute();
+      if(['pedidos','dashboard','produtos'].includes(S.route)) renderRoute();
       atualizarBadgePedidos();
+      // Re-render modal de pagamentos do produto se estiver aberto
+      if(window._app && window._app.renderPagProd) window._app.renderPagProd();
     }));
   }
 
@@ -2299,6 +2301,183 @@ async function deletarInscricao(inscId) {
   try {
     await deleteDoc(doc(dbPvd,'evento_inscricoes', inscId));
     toast('Inscrição apagada','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+// ── PAGAMENTOS POR PRODUTO (evento pros filhos) ──────────────────────────
+// Lista TODOS os filhos ativos × status de pagamento no vendas_pedidos pra
+// aquele produto. Match prioriza filho_id no pedido (quando vendas.html
+// salva via autocomplete); fallback é por nome normalizado.
+let _pagProdState = { filtro: 'todos', produtoId: null };
+function _normNome(s) { return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim(); }
+
+function abrirPagamentosProduto(produtoId) {
+  _pagProdState.produtoId = produtoId;
+  _pagProdState.filtro = 'todos';
+  openModal(_renderPagProdContent(), { lg: true });
+  window._app.renderPagProd = () => {
+    const modal = document.querySelector('.modal-overlay.show .modal');
+    if(modal) modal.innerHTML = _renderPagProdContent();
+  };
+}
+
+function _renderPagProdContent() {
+  const produtoId = _pagProdState.produtoId;
+  const filtro = _pagProdState.filtro;
+  const p = S.produtos.find(x => x.id === produtoId);
+  if(!p) return '<div class="modal-h"><h3>Produto não encontrado</h3></div>';
+
+  const valorAtivo = (() => {
+    if(p.promo_ativa && p.promo_valor && p.promo_ate) {
+      const hojeISO = new Date().toISOString().slice(0,10);
+      if(p.promo_ate >= hojeISO) return Number(p.promo_valor) || 0;
+    }
+    return Number(p.valor) || 0;
+  })();
+  const brl = v => 'R$ ' + Number(v||0).toFixed(2).replace('.',',');
+
+  // Pra cada filho ativo, vê se tem pedido (status='confirmado' ou 'pendente')
+  const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo')
+    .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  const pedidosDoProduto = (S.pedidos||[]).filter(x => x.produto_id === produtoId);
+
+  const rows = filhosAtivos.map(f => {
+    const nomeF = _normNome(f.nome);
+    const pedido = pedidosDoProduto.find(x =>
+      (x.filho_id && x.filho_id === f.id) || (!x.filho_id && _normNome(x.nome) === nomeF)
+    );
+    const status = pedido?.status === 'confirmado' ? 'pago'
+                 : pedido ? 'aguardando'
+                 : 'nao_pago';
+    return { filho:f, pedido, status };
+  });
+
+  const totalConfirmado = rows.filter(r => r.status === 'pago')
+    .reduce((s,r) => s + (Number(r.pedido?.valor) || valorAtivo), 0);
+  const qtdPago = rows.filter(r => r.status === 'pago').length;
+  const qtdAguardando = rows.filter(r => r.status === 'aguardando').length;
+  const qtdNaoPago = rows.filter(r => r.status === 'nao_pago').length;
+  const totalEsperado = filhosAtivos.length * valorAtivo;
+
+  let filtradas = rows;
+  if(filtro === 'pagos') filtradas = rows.filter(r => r.status === 'pago');
+  else if(filtro === 'nao_pagos') filtradas = rows.filter(r => r.status === 'nao_pago');
+  else if(filtro === 'aguardando') filtradas = rows.filter(r => r.status === 'aguardando');
+
+  const linha = (r) => {
+    const stChip = r.status === 'pago'
+      ? '<span class="chip chip-green">✓ Pago</span>'
+      : r.status === 'aguardando'
+      ? '<span class="chip chip-amber">⏳ Aguardando</span>'
+      : '<span class="chip" style="background:var(--glass2);color:var(--text3)">— Não pago</span>';
+    const valorPg = r.pedido ? `<span style="font-weight:700;color:var(--gold)">${brl(r.pedido.valor || valorAtivo)}</span>` : '';
+    const dt = r.pedido?.criadoEm?.toDate ? r.pedido.criadoEm.toDate() : (r.pedido?.criadoEm?.seconds ? new Date(r.pedido.criadoEm.seconds*1000) : null);
+    const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `
+      <div class="list-item" style="background:var(--glass2)">
+        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(r.filho.nome)}</div>
+        <div class="li-main">
+          <div class="li-name">${r.filho.nome}</div>
+          <div class="li-meta">
+            ${stChip}
+            ${valorPg}
+            ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
+            ${r.pedido?.metodo?`<span class="chip">${r.pedido.metodo}</span>`:''}
+          </div>
+        </div>
+        <div class="li-actions">
+          ${r.status === 'aguardando' ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${r.pedido.id}')">Confirmar pago</button>` : ''}
+          ${r.status === 'pago' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${r.pedido.id}')">Desfazer</button>` : ''}
+          ${r.status === 'nao_pago' ? `<button class="btn btn-sm" onclick="window._app.marcarPagoSemPedido('${produtoId}','${r.filho.id}', '${r.filho.nome.replace(/'/g,'')}', ${valorAtivo})" title="Cria um pedido já confirmado (ex: pagou em dinheiro)">+ Marcar pago</button>` : ''}
+        </div>
+      </div>
+    `;
+  };
+
+  return `
+    <div class="modal-h"><h3>💰 Pagamentos · ${p.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+        <div style="padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Arrecadado</div>
+          <div style="font-size:18px;font-weight:700;color:var(--green);margin-top:4px">${brl(totalConfirmado)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${qtdPago} pago${qtdPago===1?'':'s'} de ${filhosAtivos.length}</div>
+        </div>
+        ${qtdAguardando ? `
+        <div style="padding:12px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:8px">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Aguardando</div>
+          <div style="font-size:18px;font-weight:700;color:var(--gold);margin-top:4px">${qtdAguardando}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">confirma manualmente</div>
+        </div>` : ''}
+        <div style="padding:12px;background:var(--glass2);border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Faltam pagar</div>
+          <div style="font-size:18px;font-weight:700;color:var(--text);margin-top:4px">${qtdNaoPago}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">de ${filhosAtivos.length} filhos ativos</div>
+        </div>
+        <div style="padding:12px;background:var(--glass2);border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Valor unitário</div>
+          <div style="font-size:18px;font-weight:700;color:var(--gold);margin-top:4px">${brl(valorAtivo)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">esperado: ${brl(totalEsperado)}</div>
+        </div>
+      </div>
+
+      <div class="tabs" style="margin-bottom:12px">
+        <button class="${filtro==='todos'?'active':''}" onclick="window._app.setFiltroPagProd('todos')">Todos (${rows.length})</button>
+        <button class="${filtro==='pagos'?'active':''}" onclick="window._app.setFiltroPagProd('pagos')">✓ Pagos (${qtdPago})</button>
+        <button class="${filtro==='aguardando'?'active':''}" onclick="window._app.setFiltroPagProd('aguardando')">⏳ Aguardando (${qtdAguardando})</button>
+        <button class="${filtro==='nao_pagos'?'active':''}" onclick="window._app.setFiltroPagProd('nao_pagos')">— Não pagos (${qtdNaoPago})</button>
+      </div>
+
+      ${filtradas.length === 0
+        ? '<div class="empty"><div class="empty-s">Nenhum filho nesse filtro.</div></div>'
+        : filtradas.map(linha).join('')}
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Fechar</button>
+    </div>
+  `;
+}
+
+function setFiltroPagProd(novo) {
+  _pagProdState.filtro = novo;
+  if(window._app.renderPagProd) window._app.renderPagProd();
+}
+
+async function confirmarPedido(pedidoId) {
+  try {
+    await updateDoc(doc(dbPvd,'vendas_pedidos', pedidoId), { status: 'confirmado', confirmadoEm: serverTimestamp() });
+    toast('Pagamento confirmado','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+async function reverterPedido(pedidoId) {
+  if(!confirm('Desfazer confirmação? O pagamento volta pra "aguardando".')) return;
+  try {
+    await updateDoc(doc(dbPvd,'vendas_pedidos', pedidoId), { status: 'pendente' });
+    toast('Revertido pra pendente','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+async function marcarPagoSemPedido(produtoId, filhoId, filhoNome, valor) {
+  const p = S.produtos.find(x => x.id === produtoId);
+  if(!p) return;
+  if(!confirm(`Criar pedido já confirmado pra ${filhoNome}? Use isso quando o filho pagou fora do site (dinheiro / pix direto).`)) return;
+  try {
+    await addDoc(collection(dbPvd,'vendas_pedidos'), {
+      produto_id: produtoId,
+      produto_nome: p.nome,
+      produto_slug: p.slug,
+      filho_id: filhoId,
+      nome: filhoNome,
+      tel: '',
+      valor: Number(valor) || 0,
+      metodo: 'manual',
+      status: 'confirmado',
+      origem: 'admin_manual',
+      criadoEm: serverTimestamp(),
+      confirmadoEm: serverTimestamp()
+    });
+    toast(`${filhoNome} marcado como pago`,'ok');
   } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
@@ -5070,6 +5249,7 @@ function renderProdutos(c) {
             <div class="li-actions">
               <button class="btn btn-sm" onclick="window._app.copiarLinkProduto('${p.slug}')" title="Copia o link público">📋</button>
               <a class="btn btn-sm" href="${urlPub}" target="_blank" rel="noopener" title="Abre o link público">↗</a>
+              ${p.evento_filho ? `<button class="btn btn-sm btn-primary" onclick="window._app.abrirPagamentosProduto('${p.id}')">💰 Pagamentos</button>` : ''}
               <button class="btn btn-sm" onclick="window._app.openProdutoForm('${p.id}')">Editar</button>
             </div>
           </div>
@@ -5151,6 +5331,10 @@ function openProdutoForm(id=null) {
           <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Inativo = link mostra "vendas encerradas".</div>
         </div>
       </div>
+      <div class="fi-group" style="padding:14px;background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-eh-filho" ${p?.evento_filho?'checked':''}/> <strong>💰 É evento pros filhos da casa</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Marque pra ativar a aba de Pagamentos: o item ganha um botão na lista pra acompanhar quem da casa já pagou e quem falta (com filtro). No vendas.html, o comprador escolhe o nome no dropdown em vez de digitar.</div>
+      </div>
       <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="pd-ord" value="${p?.ordem||(S.produtos.length+1)}"/></div>
     </div>
     <div class="modal-f">
@@ -5200,6 +5384,7 @@ function openProdutoForm(id=null) {
       infinity_link_promo: $('#pd-infinity-promo').value.trim() || null,
       publico: $('#pd-pub').checked,
       ativo: $('#pd-ativo').checked,
+      evento_filho: $('#pd-eh-filho').checked,
       ordem: parseInt($('#pd-ord').value) || 999,
       atualizadoEm: serverTimestamp()
     };
@@ -5909,6 +6094,11 @@ window._app = {
   // Vendas externas
   openProdutoForm,
   copiarLinkProduto,
+  abrirPagamentosProduto,
+  setFiltroPagProd,
+  confirmarPedido,
+  reverterPedido,
+  marcarPagoSemPedido,
   setPedTab,
   setPedidoStatus,
   deletarPedido
