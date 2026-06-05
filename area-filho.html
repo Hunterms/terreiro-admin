@@ -235,6 +235,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <p>Avisos, próximas atividades e escala de rega.</p>
         </div>
         <div id="avisos-container"></div>
+        <div id="eventos-filho-container"></div>
         <div id="giras-container"></div>
 
         <details class="dash-secao" id="dash-sec-rega">
@@ -430,6 +431,7 @@ let APP = {
   lojinhaEscalas: [], // adm_escalas onde tipo='lojinha' (semanal). Só carrega se gerencia_lojinha
   eventos: [],
   avisos: [],
+  eventoInscricoes: [], // inscrições em eventos_filho (pra mostrar status no card)
   regasDiarias: {},  // {YYYY-MM-DD: { filho_id, filho_nome, ... }} — dias já reservados
   regaCarrinho: new Set()  // dias que o filho selecionou nessa sessão (pré-checkout)
 };
@@ -460,7 +462,7 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     }
 
     // Carrega dados PÚBLICOS (sem precisar selecionar nome)
-    await Promise.all([carregarEventos(), carregarAvisos(), carregarRegasDiarias()]);
+    await Promise.all([carregarEventos(), carregarAvisos(), carregarRegasDiarias(), carregarEventoInscricoes()]);
 
     initSearchSelect();
 
@@ -468,6 +470,7 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     $('#content').style.display = '';
 
     renderAvisos();
+    renderEventosFilho();
     renderGiras();
     renderRega();
   } catch(e) {
@@ -498,6 +501,13 @@ async function carregarRegasDiarias() {
     APP.regasDiarias = {};
     rSnap.docs.forEach(d => { APP.regasDiarias[d.id] = { id:d.id, ...d.data() }; });
   } catch(e) { console.warn('Erro regas diárias', e); APP.regasDiarias = {}; }
+}
+
+async function carregarEventoInscricoes() {
+  try {
+    const iSnap = await getDocs(collection(dbPvd,'evento_inscricoes'));
+    APP.eventoInscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e) { console.warn('Erro inscrições', e); APP.eventoInscricoes = []; }
 }
 
 async function selecionarFilho(id) {
@@ -584,6 +594,7 @@ async function selecionarFilho(id) {
   renderAfilhados();
   renderLojinha();
   renderReembolso();
+  renderEventosFilho(); // re-render pra mostrar badge "pago/aguardando" do filho logado
   renderActionItems(); // smart summary do que precisa de atenção
 }
 
@@ -1396,8 +1407,9 @@ function renderGiras() {
   if(!cont) return;
   const hoje = new Date().toISOString().slice(0,10);
   // Todas as atividades futuras (giras + trabalhos + festas + mutirões)
+  // EXCLUI evento_filho — esses têm card próprio acima (renderEventosFilho)
   const atividades = APP.eventos
-    .filter(e => e.data >= hoje && !e.arquivado)
+    .filter(e => e.data >= hoje && !e.arquivado && e.tipo !== 'evento_filho')
     .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora))
     .slice(0,50);
 
@@ -1439,6 +1451,56 @@ function renderGiras() {
         </div>
         `;
       }).join('')}
+    </div>
+  `;
+}
+
+// ── EVENTOS PROS FILHOS (tipo='evento_filho') — card com botão Comprar ────
+// Aparece logo abaixo dos avisos. Não fica no painel pessoal pra não esconder
+// o link de pagamento atrás de um chevron.
+function renderEventosFilho() {
+  const cont = $('#eventos-filho-container');
+  if(!cont) return;
+  const hoje = new Date().toISOString().slice(0,10);
+  const eventos = (APP.eventos||[])
+    .filter(e => e.tipo === 'evento_filho' && !e.arquivado && (e.data||'') >= hoje)
+    .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
+  if(eventos.length === 0) { cont.innerHTML = ''; return; }
+
+  const f = APP.filhoAtual;
+  const baseUrl = window.location.origin + window.location.pathname.replace(/area-filho\.html$/,'').replace(/\/$/,'') + '/evento.html';
+
+  const cardEv = (e) => {
+    const valor = Number(e.valor) || 0;
+    const dataLabel = e.data ? new Date(e.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'short'}) : '—';
+    // Se o filho está autenticado, vê o status dele
+    let badgeStatus = '';
+    if(f) {
+      const insc = (APP.eventoInscricoes||[]).find(i => i.evento_id === e.id && i.filho_id === f.id);
+      if(insc?.status === 'pago') badgeStatus = '<span style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);padding:3px 9px;border-radius:12px;font-size:11px;font-weight:700">✓ Pago</span>';
+      else if(insc) badgeStatus = '<span style="background:var(--gold-bg);color:var(--gold);border:1px solid rgba(212,168,67,.3);padding:3px 9px;border-radius:12px;font-size:11px;font-weight:700">⏳ Aguardando confirmação</span>';
+    }
+    return `
+      <div style="padding:16px;background:linear-gradient(135deg,rgba(212,168,67,.1),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.28);border-radius:12px;margin-bottom:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:10.5px;color:var(--gold);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:4px">💰 Evento pros filhos</div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px">${e.nome || e.titulo || 'Evento'}</div>
+          <div style="font-size:12.5px;color:var(--text2);line-height:1.4">${dataLabel}${e.hora?' · '+e.hora:''}${e.local?' · '+e.local:''}</div>
+          ${badgeStatus ? `<div style="margin-top:8px">${badgeStatus}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:3px">Contribuição</div>
+          <div style="font-size:20px;font-weight:700;color:var(--gold);margin-bottom:8px">${valor > 0 ? 'R$ ' + valor.toFixed(2).replace('.',',') : '—'}</div>
+          <a href="${baseUrl}?id=${e.id}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1209;border:none;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit">💳 Pagar</a>
+        </div>
+      </div>
+    `;
+  };
+
+  cont.innerHTML = `
+    <div class="card" style="border-color:rgba(212,168,67,.25);padding:18px">
+      <h2 style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Eventos com contribuição</h2>
+      ${eventos.map(cardEv).join('')}
     </div>
   `;
 }

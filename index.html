@@ -455,6 +455,7 @@ const S = {
   servicos: [],
   produtos: [],
   pedidos: [],
+  eventoInscricoes: [],
   cfgEscalas: { janela_semanas: 8 },
   route: 'dashboard',
   unsubs: []
@@ -902,6 +903,13 @@ function attachListeners() {
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_escalas'), snap => {
     S.escalas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Inscrições em eventos (pagamentos)
+  S.unsubs.push(onSnapshot(collection(dbPvd,'evento_inscricoes'), snap => {
+    S.eventoInscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    // Re-render modal de pagamentos se aberto
+    if(window._app && window._app.renderPagamentos) window._app.renderPagamentos();
   }));
 
   // Rega diária (1 doc por dia coberto)
@@ -2067,6 +2075,7 @@ function openEventoForm(id=null, dataInicial=null) {
             <option value="obrigacao_coletiva" ${e?.tipo==='obrigacao_coletiva'?'selected':''}>Obrigação coletiva</option>
             <option value="festa" ${e?.tipo==='festa'?'selected':''}>Festa</option>
             <option value="apresentacao_cultural" ${e?.tipo==='apresentacao_cultural'?'selected':''}>Apresentação cultural (coco, samba, etc.)</option>
+            <option value="evento_filho" ${e?.tipo==='evento_filho'?'selected':''}>💰 Evento pros filhos (com cobrança)</option>
             <option value="outro" ${e?.tipo==='outro'?'selected':''}>Outro</option>
           </select>
         </div>
@@ -2086,6 +2095,21 @@ function openEventoForm(id=null, dataInicial=null) {
       </div>
       <div class="fi-group"><label>Local</label><input class="fi" id="ev-local" value="${e?.local||'Terreiro'}"/></div>
       <div class="fi-group"><label>Descrição</label><textarea class="fi" id="ev-desc">${e?.descricao||''}</textarea></div>
+
+      <!-- ── Bloco de cobrança: SÓ aparece pra tipo 'evento_filho' ──── -->
+      <div id="ev-cobranca-wrap" style="margin-top:18px;padding:14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:10px;display:${e?.tipo === 'evento_filho' ? 'block' : 'none'}">
+        <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px">💰 Cobrança dos filhos</div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">Esse evento só aparece pros filhos (na área pessoal deles), com botão de pagar. Não vai pro site público.</div>
+        <div class="row-2">
+          <div class="fi-group"><label>Valor (R$) *</label><input type="number" step="0.01" min="0" class="fi" id="ev-valor" value="${e?.valor ?? ''}" placeholder="Ex: 30"/></div>
+          <div class="fi-group"><label>Link InfinityPay (cartão)</label><input class="fi" id="ev-ip" value="${e?.infinity_link||''}" placeholder="https://link.infinitepay.io/candieiro/..."/></div>
+        </div>
+        ${isEdit ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:14px;border-top:1px dashed var(--border)">
+            <button type="button" class="btn btn-sm btn-primary" id="ev-pagamentos">💰 Ver pagamentos</button>
+          </div>
+        ` : '<div style="font-size:11px;color:var(--text3);margin-top:8px">Salve pra liberar a lista de pagamentos.</div>'}
+      </div>
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="ev-del">Excluir</button>':''}
@@ -2094,20 +2118,39 @@ function openEventoForm(id=null, dataInicial=null) {
     </div>
   `, { lg: true });
 
+  // Toggle do bloco de cobrança quando o tipo mudar
+  const tipoSel = $('#ev-tipo');
+  const cobrancaWrap = $('#ev-cobranca-wrap');
+  if(tipoSel && cobrancaWrap) {
+    tipoSel.addEventListener('change', () => {
+      cobrancaWrap.style.display = tipoSel.value === 'evento_filho' ? 'block' : 'none';
+      // Se virou evento_filho, força publico=false (não vai pro site)
+      if(tipoSel.value === 'evento_filho') $('#ev-publico').checked = false;
+    });
+  }
+
   $('#ev-save').onclick = async () => {
     const nome = $('#ev-nome').value.trim();
     const data = $('#ev-data').value;
     if(!nome) { toast('Informe o título','err'); return; }
     if(!data) { toast('Informe a data','err'); return; }
+    const tipo = $('#ev-tipo').value;
+    const ehEventoFilho = tipo === 'evento_filho';
+    const valor = parseFloat($('#ev-valor').value);
+    if(ehEventoFilho && (isNaN(valor) || valor <= 0)) {
+      toast('Evento pros filhos precisa de valor','err'); return;
+    }
     const payload = {
       nome,
       data,
       hora: $('#ev-hora').value || '',
-      tipo: $('#ev-tipo').value,
-      publico: $('#ev-publico').checked,
+      tipo,
+      publico: ehEventoFilho ? false : $('#ev-publico').checked, // evento_filho NUNCA vai pro site
       requer_limpeza: $('#ev-limpeza').checked,
       local: $('#ev-local').value.trim(),
       descricao: $('#ev-desc').value.trim(),
+      valor: ehEventoFilho ? valor : null,
+      infinity_link: ehEventoFilho ? ($('#ev-ip').value.trim() || null) : null,
       arquivado: false,
       atualizadoEm: serverTimestamp()
     };
@@ -2131,6 +2174,123 @@ function openEventoForm(id=null, dataInicial=null) {
       catch(e) { toast('Erro: '+e.message,'err'); }
     });
   };
+
+  // Botão pagamentos (só pra evento_filho salvo)
+  if(isEdit) {
+    const btnPag = $('#ev-pagamentos');
+    if(btnPag) btnPag.onclick = () => abrirPagamentosEvento(id);
+  }
+}
+
+// ── PAGAMENTOS DE EVENTO ─────────────────────────────────────────────────
+// Modal lista quem se inscreveu/pagou + total arrecadado + ações
+async function abrirPagamentosEvento(eventoId) {
+  const ev = S.eventos.find(x => x.id === eventoId);
+  if(!ev) return;
+  const vf = Number(ev.valor_filho) || 0;
+  const vp = Number(ev.valor_publico) || 0;
+
+  // Carrega inscrições (já listener em S.eventoInscricoes — fallback fresh fetch)
+  let inscricoes = (S.eventoInscricoes||[]).filter(i => i.evento_id === eventoId);
+  if(inscricoes.length === 0 && !S.eventoInscricoes) {
+    try {
+      const snap = await getDocs(query(collection(dbPvd,'evento_inscricoes'), where('evento_id','==',eventoId)));
+      inscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    } catch(e) {}
+  }
+
+  const renderModal = () => {
+    inscricoes = (S.eventoInscricoes||[]).filter(i => i.evento_id === eventoId);
+    const pagas = inscricoes.filter(i => i.status === 'pago');
+    const aguardando = inscricoes.filter(i => i.status === 'aguardando' || !i.status);
+    const arrecadado = pagas.reduce((s,i) => s + (Number(i.valor)||0), 0);
+    const previstas = inscricoes.reduce((s,i) => s + (Number(i.valor)||0), 0);
+
+    const linha = (insc) => {
+      const ehFilho = !!insc.filho_id;
+      const stChip = insc.status === 'pago'
+        ? '<span class="chip chip-green">Pago</span>'
+        : '<span class="chip chip-amber">Aguardando</span>';
+      const dt = insc.criadoEm?.toDate ? insc.criadoEm.toDate() : (insc.criadoEm?.seconds ? new Date(insc.criadoEm.seconds*1000) : null);
+      const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+      return `
+        <div class="list-item" style="background:var(--glass2)">
+          <div class="li-main">
+            <div class="li-name">${insc.nome||'—'} ${ehFilho?'<span class="chip chip-gold" style="margin-left:6px;font-size:10px">filho</span>':''}</div>
+            <div class="li-meta">
+              <span style="font-weight:700;color:var(--gold)">R$ ${(Number(insc.valor)||0).toFixed(2).replace('.',',')}</span>
+              ${stChip}
+              ${insc.metodo?`<span class="chip">${insc.metodo}</span>`:''}
+              ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
+              ${insc.tel?`<span style="color:var(--text3)">📱 ${insc.tel}</span>`:''}
+            </div>
+          </div>
+          <div class="li-actions">
+            ${insc.status === 'pago'
+              ? `<button class="btn btn-sm" onclick="window._app.marcarInscricao('${insc.id}','aguardando')">Marcar pendente</button>`
+              : `<button class="btn btn-sm btn-primary" onclick="window._app.marcarInscricao('${insc.id}','pago')">Confirmar pago</button>`}
+            <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.deletarInscricao('${insc.id}')">×</button>
+          </div>
+        </div>
+      `;
+    };
+
+    return `
+      <div class="modal-h"><h3>💰 Pagamentos · ${ev.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-c">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
+          <div style="padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Arrecadado</div>
+            <div style="font-size:18px;font-weight:700;color:var(--green);margin-top:4px">R$ ${arrecadado.toFixed(2).replace('.',',')}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${pagas.length} pagamento${pagas.length===1?'':'s'}</div>
+          </div>
+          <div style="padding:12px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:8px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Aguardando</div>
+            <div style="font-size:18px;font-weight:700;color:var(--gold);margin-top:4px">R$ ${(previstas-arrecadado).toFixed(2).replace('.',',')}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${aguardando.length} pendente${aguardando.length===1?'':'s'}</div>
+          </div>
+          <div style="padding:12px;background:var(--glass2);border:1px solid var(--border);border-radius:8px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Valores</div>
+            <div style="font-size:13px;color:var(--text);margin-top:4px;line-height:1.4">
+              ${vp?`Público: <strong style="color:var(--gold)">R$ ${vp.toFixed(2).replace('.',',')}</strong>`:'<span style="color:var(--text3)">Sem valor público</span>'}<br>
+              ${vf?`Filho: <strong style="color:var(--gold)">R$ ${vf.toFixed(2).replace('.',',')}</strong>`:'<span style="color:var(--text3)">Sem valor filho</span>'}
+            </div>
+          </div>
+        </div>
+        ${inscricoes.length === 0
+          ? '<div class="empty"><div class="empty-s">Ninguém se inscreveu ainda. Compartilhe o link público pra começar.</div></div>'
+          : inscricoes.sort((a,b) => (a.status==='pago'?1:-1) - (b.status==='pago'?1:-1)).map(linha).join('')}
+      </div>
+      <div class="modal-f">
+        <button class="btn" onclick="closeModal()">Fechar</button>
+      </div>
+    `;
+  };
+
+  openModal(renderModal(), { lg:true });
+
+  // Re-render quando S.eventoInscricoes mudar
+  window._app.renderPagamentos = () => {
+    const modal = document.querySelector('.modal-overlay.show .modal');
+    if(modal) modal.innerHTML = renderModal();
+  };
+}
+
+async function marcarInscricao(inscId, novoStatus) {
+  try {
+    const patch = { status: novoStatus, atualizadoEm: serverTimestamp() };
+    if(novoStatus === 'pago') patch.confirmadoEm = serverTimestamp();
+    await updateDoc(doc(dbPvd,'evento_inscricoes', inscId), patch);
+    toast(novoStatus==='pago'?'Marcado como pago':'Marcado como pendente','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+async function deletarInscricao(inscId) {
+  if(!confirm('Apagar essa inscrição? Não dá pra desfazer.')) return;
+  try {
+    await deleteDoc(doc(dbPvd,'evento_inscricoes', inscId));
+    toast('Inscrição apagada','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
 // ── ESCALAS (tabs: Gira + Lojinha + Análise) ──────────────────────────────
@@ -5628,6 +5788,9 @@ window._app = {
   addJanelaDia,
   delJanelaDia,
   openEventoForm,
+  abrirPagamentosEvento,
+  marcarInscricao,
+  deletarInscricao,
   openEscalaForm,
   setEscTab,
   setAnalisePeriodo,
