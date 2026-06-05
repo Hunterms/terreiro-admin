@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Evento · Terreiro do Candieiro</title>
+<meta name="robots" content="noindex"/>
+<link rel="icon" type="image/png" href="logocandieiro.png"/>
+<link rel="apple-touch-icon" href="logocandieiro.png"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --red:#e63329;--red2:#c0251c;
+  --red-bg:rgba(230,51,41,0.1);--red-bd:rgba(230,51,41,0.3);
+  --gold:#d4a843;--gold2:#b8922a;
+  --gold-bg:rgba(212,168,67,0.1);
+  --green:#2ecc71;
+  --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html,body{background:var(--bg);min-height:100vh}
+body{
+  font-family:var(--font);color:var(--text);
+  background-image:
+    radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),
+    radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);
+  padding:24px 16px 60px;
+}
+.container{max-width:560px;margin:0 auto}
+
+header{display:flex;align-items:center;gap:12px;margin-bottom:22px;padding:6px 0}
+.flame{width:36px;height:36px;color:var(--red);flex-shrink:0;object-fit:contain}
+.header-text{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+h1{font-size:17px;font-weight:700;letter-spacing:.01em;margin:0;line-height:1}
+.subtitle{font-size:10.5px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;line-height:1}
+
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:22px;margin-bottom:18px}
+
+.evt-hero{background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.02));border:1px solid rgba(212,168,67,0.28);border-radius:var(--radlg);padding:22px;margin-bottom:18px}
+.evt-tipo{font-size:10.5px;color:var(--gold);letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-bottom:6px}
+.evt-nome{font-size:22px;font-weight:700;color:var(--text);line-height:1.2;margin-bottom:10px;letter-spacing:.01em}
+.evt-meta{display:flex;flex-direction:column;gap:6px;font-size:13.5px;color:var(--text2)}
+.evt-meta span{display:flex;align-items:center;gap:8px}
+.evt-meta svg{width:14px;height:14px;color:var(--text3);flex-shrink:0}
+.evt-desc{font-size:13.5px;color:var(--text2);line-height:1.55;margin-top:14px;padding-top:14px;border-top:1px solid rgba(212,168,67,0.18);white-space:pre-wrap}
+.evt-valor{margin-top:14px;padding:12px 14px;background:rgba(212,168,67,0.12);border-radius:10px;display:flex;align-items:center;justify-content:space-between}
+.evt-valor-l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.evt-valor-v{font-size:22px;font-weight:700;color:var(--gold);font-family:var(--font)}
+
+.section-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:8px;display:block}
+.fi{padding:13px 14px;background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:15px;font-family:var(--font);outline:none;width:100%}
+.fi:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,0.12)}
+
+/* Search-select igual area-filho */
+.search-select{position:relative}
+.search-select .fi{padding-right:38px}
+.search-select .search-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text3);pointer-events:none;opacity:.6}
+.search-results{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow-y:auto;background:#181412;border:1px solid var(--border2);border-radius:var(--rad);z-index:50;display:none;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.search-results.open{display:block}
+.search-item{padding:10px 12px;cursor:pointer;font-size:14.5px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.04);display:flex;align-items:center;gap:10px;transition:background .1s;background:transparent;border-left:none;border-right:none;border-top:none;width:100%;text-align:left;font-family:inherit}
+.search-item:last-child{border-bottom:none}
+.search-item:hover, .search-item.active{background:rgba(212,168,67,.1)}
+.search-item-initials{width:30px;height:30px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;letter-spacing:.02em}
+.search-item-name{flex:1;min-width:0;line-height:1.3;font-weight:500}
+.search-item mark{background:rgba(212,168,67,.32);color:var(--gold);padding:0 1px;border-radius:2px;font-weight:700}
+.search-empty{padding:14px 12px;color:var(--text3);font-size:13px;text-align:center}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:13px 22px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:14.5px;font-weight:700;cursor:pointer;font-family:var(--font);width:100%;transition:all .15s}
+.btn-primary{background:linear-gradient(135deg,var(--gold),var(--gold2));border-color:transparent;color:#1a1209}
+.btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}
+.btn-primary:disabled{opacity:.55;cursor:wait}
+
+.identity-hero{display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.14),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.28);border-radius:12px;margin-bottom:14px}
+.identity-avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1209;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;letter-spacing:.02em}
+.identity-info{flex:1;min-width:0}
+.identity-greet{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;line-height:1;margin-bottom:4px}
+.identity-name{font-size:16px;font-weight:700;color:var(--text);line-height:1.15}
+.identity-trocar{background:transparent;border:none;color:var(--text3);font-size:11.5px;cursor:pointer;font-family:inherit;padding:6px 0}
+.identity-trocar:hover{color:var(--text2);text-decoration:underline}
+
+.pay-box{padding:18px;border-radius:12px;margin-bottom:14px}
+.pay-box-pix{background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35)}
+.pay-box-card{background:linear-gradient(135deg,rgba(52,152,219,0.12),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.35);text-align:center}
+.pay-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center;font-weight:700}
+.pay-pix-key{font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:4px;user-select:all}
+.pay-pix-titular{font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px}
+.pay-pix-copy{display:block;margin:0 auto;padding:11px 18px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font);font-weight:600}
+.pay-pix-copy:hover{background:rgba(212,168,67,.16);border-color:var(--gold);color:var(--gold)}
+.pay-card-link{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;font-size:14px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700}
+.pay-card-link:hover{filter:brightness(1.05);transform:translateY(-1px)}
+
+.success-box{text-align:center;padding:20px 0}
+.success-icon{width:64px;height:64px;color:var(--green);margin:0 auto 14px;display:block}
+.success-t{font-size:20px;font-weight:700;margin-bottom:10px;color:var(--text)}
+.success-d{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:16px}
+.success-whats{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:14px 26px;font-size:15px;background:#25d366;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;border:none;cursor:pointer;font-family:var(--font);width:100%}
+.success-whats:hover{filter:brightness(1.05);transform:translateY(-1px)}
+
+.banner-paid{padding:14px 16px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:10px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--green);font-weight:600;line-height:1.4}
+.banner-pending{padding:14px 16px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:10px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--gold);font-weight:600;line-height:1.4}
+
+.toast{position:fixed;top:24px;right:24px;background:#181412;border:1px solid var(--border2);border-left:3px solid var(--green);border-radius:var(--rad);padding:14px 18px;font-size:14px;z-index:2000;box-shadow:0 8px 30px rgba(0,0,0,.4);animation:slideIn .2s}
+.toast.err{border-left-color:var(--red)}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+#loading{text-align:center;padding:60px 20px;color:var(--text3)}
+.spinner{width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#err{text-align:center;padding:60px 20px;color:var(--text2);font-size:14.5px;line-height:1.6}
+
+footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
+
+@media (max-width:480px){
+  body{padding:16px 12px 40px}
+  .evt-nome{font-size:19px}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <img class="flame" src="logocandieiro.png" alt="Candieiro"/>
+    <div class="header-text">
+      <h1>Evento do <em style="font-style:italic;color:var(--gold)">Candieiro</em></h1>
+      <div class="subtitle">só pra filhos da casa</div>
+    </div>
+  </header>
+
+  <div id="loading"><div class="spinner"></div>Carregando evento...</div>
+  <div id="err" style="display:none"></div>
+
+  <div id="content" style="display:none">
+    <!-- HERO do evento -->
+    <div class="evt-hero">
+      <div class="evt-tipo">💰 Evento pros filhos</div>
+      <div class="evt-nome" id="ev-nome">—</div>
+      <div class="evt-meta" id="ev-meta"></div>
+      <div class="evt-desc" id="ev-desc" style="display:none"></div>
+      <div class="evt-valor">
+        <div>
+          <div class="evt-valor-l">Sua contribuição</div>
+        </div>
+        <div class="evt-valor-v" id="ev-valor">—</div>
+      </div>
+    </div>
+
+    <!-- Step 1: pré-auth — escolhe o nome -->
+    <div id="step-nome" class="card">
+      <label class="section-label">Quem é você?</label>
+      <div class="search-select">
+        <input class="fi" id="filho-input" type="text" placeholder="Digite seu nome..." autocomplete="off" autocapitalize="words" spellcheck="false"/>
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <div class="search-results" id="filho-results" role="listbox"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.45">Selecione seu nome — o admin vai confirmar seu pagamento pelo extrato.</div>
+    </div>
+
+    <!-- Step 2: pagamento -->
+    <div id="step-pay" style="display:none">
+      <div class="identity-hero">
+        <div class="identity-avatar" id="id-avatar">—</div>
+        <div class="identity-info">
+          <div class="identity-greet">Pagando como</div>
+          <div class="identity-name" id="id-name"></div>
+        </div>
+        <button class="identity-trocar" onclick="resetFlow()">trocar</button>
+      </div>
+
+      <!-- Status: já paguei ou aguardando -->
+      <div id="banner-status" style="display:none"></div>
+
+      <!-- Opções de pagamento -->
+      <div id="pay-options">
+        <div class="pay-box pay-box-pix" id="pix-box" style="display:none">
+          <div class="pay-label">💸 Opção 1 · PIX (copia e cola)</div>
+          <div class="pay-pix-key" id="pix-key"></div>
+          <div class="pay-pix-titular" id="pix-titular"></div>
+          <button class="pay-pix-copy" id="pix-copy-btn">📋 Copiar chave PIX</button>
+        </div>
+        <div class="pay-box pay-box-card" id="card-box" style="display:none">
+          <div class="pay-label">💳 Opção 2 · Cartão de crédito</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay — valor já preenchido.</div>
+          <a id="card-link" target="_blank" rel="noopener" class="pay-card-link">🔒 Pagar no crédito</a>
+        </div>
+
+        <div style="margin-top:14px">
+          <button class="btn btn-primary" id="btn-confirmar">✅ Já paguei (registrar)</button>
+          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.45;text-align:center">Clica aqui depois de pagar pra avisar o admin. Confirmação é manual via extrato.</div>
+        </div>
+      </div>
+
+      <!-- Sucesso -->
+      <div id="success" class="card" style="display:none">
+        <div class="success-box">
+          <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div class="success-t">Pagamento registrado!</div>
+          <div class="success-d">
+            Agora manda o comprovante pelo WhatsApp pra acelerar a confirmação:
+          </div>
+          <a class="success-whats" id="whats-link" target="_blank">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
+            Enviar comprovante pelo WhatsApp
+          </a>
+          <div style="margin-top:18px"><button class="btn" onclick="location.reload()">Fechar</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Terreiro do Candieiro · Barão Geraldo, Campinas-SP</footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+const cfgPvd = {
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+};
+const cfgCand = {
+  apiKey: "AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM",
+  authDomain: "terreiro-candieiro.firebaseapp.com",
+  projectId: "terreiro-candieiro",
+  appId: "1:100068133826:web:aa6bea82298a266737a45b"
+};
+const dbPvd = getFirestore(initializeApp(cfgPvd, 'pvd'));
+const dbCand = getFirestore(initializeApp(cfgCand, 'cand'));
+
+const $ = q => document.querySelector(q);
+const $$ = q => Array.from(document.querySelectorAll(q));
+const fmt = v => 'R$ ' + Number(v).toFixed(2).replace('.', ',');
+const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '—';
+
+function toast(msg, type='') {
+  const t = document.createElement('div');
+  t.className = 'toast '+type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),200)},2600);
+}
+
+const APP = {
+  evento: null,
+  eventoId: null,
+  filhos: [],
+  cfg: { pix:null, pix_titular:null, whatsapp:'5519992494267' },
+  filhoSel: null,
+  inscricoes: [], // existentes desse evento, pra checar duplicata
+};
+
+const _search = { idx:-1, results:[] };
+function _norm(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function _initials(nome){ return (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—'; }
+function _highlight(nome, q){
+  if(!q) return nome;
+  const nameN = _norm(nome), qN = _norm(q);
+  const i = nameN.indexOf(qN); if(i<0) return nome;
+  return nome.slice(0,i)+'<mark>'+nome.slice(i,i+qN.length)+'</mark>'+nome.slice(i+qN.length);
+}
+
+(async function boot() {
+  const params = new URLSearchParams(location.search);
+  APP.eventoId = params.get('id');
+  if(!APP.eventoId) { return showErr('Faltou o id do evento na URL. Pede ao admin pra mandar o link certo.'); }
+
+  try {
+    // 1) Carrega o evento
+    const evSnap = await getDoc(doc(dbCand,'eventos', APP.eventoId));
+    if(!evSnap.exists()) return showErr('Esse evento não existe (ou foi removido).');
+    APP.evento = { id:evSnap.id, ...evSnap.data() };
+    if(APP.evento.tipo !== 'evento_filho') return showErr('Esse link é só pra eventos pros filhos. Esse aqui é de outro tipo — pede ao admin pra confirmar o link.');
+    if(APP.evento.arquivado) return showErr('Esse evento foi arquivado.');
+
+    // 2) Carrega config (pix + whatsapp)
+    try {
+      const cSnap = await getDoc(doc(dbPvd,'adm_config','agendamento'));
+      if(cSnap.exists()) APP.cfg = { ...APP.cfg, ...cSnap.data() };
+    } catch(e) { /* segue sem pix se não tiver config */ }
+
+    // 3) Carrega filhos ativos
+    const fSnap = await getDocs(query(collection(dbPvd,'fin_filhos'), orderBy('nome')));
+    APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(f => !f.status || f.status === 'ativo');
+
+    // 4) Carrega inscrições existentes pra checar status do filho que escolher
+    try {
+      const iSnap = await getDocs(query(collection(dbPvd,'evento_inscricoes'), where('evento_id','==',APP.eventoId)));
+      APP.inscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    } catch(e) { APP.inscricoes = []; }
+
+    renderEvento();
+    $('#loading').style.display = 'none';
+    $('#content').style.display = '';
+    initSearch();
+  } catch(e) {
+    console.error(e);
+    showErr('Erro ao carregar evento. Tenta recarregar a página.');
+  }
+})();
+
+function showErr(msg) {
+  $('#loading').style.display = 'none';
+  const err = $('#err');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+function renderEvento() {
+  const ev = APP.evento;
+  $('#ev-nome').textContent = ev.nome || ev.titulo || 'Evento';
+  const meta = $('#ev-meta');
+  meta.innerHTML = `
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>${fmtData(ev.data)}</span>
+    ${ev.hora?`<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${ev.hora}</span>`:''}
+    ${ev.local?`<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>${ev.local}</span>`:''}
+  `;
+  if(ev.descricao) {
+    $('#ev-desc').textContent = ev.descricao;
+    $('#ev-desc').style.display = 'block';
+  }
+  const valor = Number(ev.valor) || 0;
+  $('#ev-valor').textContent = valor > 0 ? fmt(valor) : '—';
+}
+
+// ── SEARCH-SELECT (autocomplete) ─────────────────────────────────────────
+function initSearch() {
+  const inp = $('#filho-input');
+  const box = $('#filho-results');
+  if(!inp || !box) return;
+
+  const render = () => {
+    const q = inp.value.trim();
+    const qN = _norm(q);
+    const results = qN.length === 0
+      ? APP.filhos.slice(0,12)
+      : APP.filhos.filter(f => _norm(f.nome).includes(qN)).slice(0,15);
+    _search.results = results;
+    _search.idx = results.length === 1 ? 0 : -1;
+    if(results.length === 0) {
+      box.innerHTML = `<div class="search-empty">Nenhum nome bate com "${q}". Fala com o admin se seu nome não aparecer.</div>`;
+    } else {
+      box.innerHTML = results.map((f,i) => `
+        <button type="button" class="search-item ${i===_search.idx?'active':''}" data-id="${f.id}" data-i="${i}">
+          <span class="search-item-initials">${_initials(f.nome)}</span>
+          <span class="search-item-name">${_highlight(f.nome, q)}</span>
+        </button>
+      `).join('');
+      box.querySelectorAll('.search-item').forEach(el => {
+        el.onmousedown = (e) => { e.preventDefault(); _pick(el.dataset.id); };
+        el.onmouseenter = () => { _search.idx = parseInt(el.dataset.i,10); _updateActive(); };
+      });
+    }
+    box.classList.add('open');
+  };
+
+  inp.addEventListener('focus', render);
+  inp.addEventListener('input', render);
+  inp.addEventListener('keydown', (e) => {
+    if(!box.classList.contains('open')) return;
+    if(e.key==='ArrowDown'){ e.preventDefault(); _search.idx=Math.min(_search.results.length-1,_search.idx+1); _updateActive(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); _search.idx=Math.max(0,_search.idx-1); _updateActive(); }
+    else if(e.key==='Enter'){
+      e.preventDefault();
+      const pick = _search.idx>=0 ? _search.results[_search.idx] : _search.results[0];
+      if(pick) _pick(pick.id);
+    } else if(e.key==='Escape') box.classList.remove('open');
+  });
+  inp.addEventListener('blur', () => setTimeout(()=>box.classList.remove('open'),120));
+}
+function _updateActive() {
+  const box = $('#filho-results');
+  box.querySelectorAll('.search-item').forEach((el,i) => {
+    el.classList.toggle('active', i===_search.idx);
+    if(i===_search.idx) el.scrollIntoView({block:'nearest'});
+  });
+}
+function _pick(filhoId) {
+  const f = APP.filhos.find(x => x.id === filhoId);
+  if(!f) return;
+  APP.filhoSel = f;
+  $('#filho-results').classList.remove('open');
+  irParaPagamento();
+}
+
+function irParaPagamento() {
+  const f = APP.filhoSel; if(!f) return;
+  $('#step-nome').style.display = 'none';
+  $('#step-pay').style.display = '';
+  $('#id-avatar').textContent = _initials(f.nome);
+  $('#id-name').textContent = f.nome;
+
+  // Checa se já tem inscrição
+  const inscricaoExistente = APP.inscricoes.find(i => i.filho_id === f.id);
+  const banner = $('#banner-status');
+  if(inscricaoExistente) {
+    banner.style.display = 'flex';
+    if(inscricaoExistente.status === 'pago') {
+      banner.className = 'banner-paid';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;flex-shrink:0"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Você já está com pagamento confirmado nesse evento ✓`;
+      $('#pay-options').style.display = 'none';
+      return;
+    } else {
+      banner.className = 'banner-pending';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Você já registrou pagamento — aguardando o admin confirmar.`;
+    }
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // PIX
+  const ev = APP.evento;
+  const valor = Number(ev.valor) || 0;
+  if(APP.cfg.pix) {
+    $('#pix-box').style.display = 'block';
+    $('#pix-key').textContent = APP.cfg.pix;
+    $('#pix-titular').textContent = APP.cfg.pix_titular ? `Titular: ${APP.cfg.pix_titular}` : '';
+    $('#pix-copy-btn').onclick = () => {
+      navigator.clipboard.writeText(APP.cfg.pix).then(() => {
+        const b = $('#pix-copy-btn'); const orig = b.textContent;
+        b.textContent = '✓ Copiado!'; b.style.color = 'var(--green)';
+        setTimeout(()=>{ b.textContent = orig; b.style.color = ''; }, 1800);
+      }).catch(() => alert('Chave PIX: '+APP.cfg.pix));
+    };
+  }
+  if(ev.infinity_link) {
+    $('#card-box').style.display = 'block';
+    $('#card-link').href = ev.infinity_link;
+    $('#card-link').innerHTML = `🔒 Pagar ${fmt(valor)} no crédito`;
+  }
+
+  $('#btn-confirmar').onclick = confirmarInscricao;
+}
+
+async function confirmarInscricao() {
+  const f = APP.filhoSel; const ev = APP.evento;
+  if(!f || !ev) return;
+  const btn = $('#btn-confirmar');
+  btn.disabled = true; btn.textContent = 'Registrando...';
+  try {
+    const valor = Number(ev.valor) || 0;
+    await addDoc(collection(dbPvd,'evento_inscricoes'), {
+      evento_id: ev.id,
+      evento_nome: ev.nome || ev.titulo || 'Evento',
+      evento_data: ev.data || null,
+      filho_id: f.id,
+      nome: f.nome,
+      tel: f.tel || '',
+      valor,
+      status: 'aguardando',
+      origem: 'evento_publico',
+      criadoEm: serverTimestamp()
+    });
+    $('#pay-options').style.display = 'none';
+    $('#banner-status').style.display = 'none';
+    const succ = $('#success');
+    const msg = `Olá! Acabei de pagar o evento:\n\n📅 ${ev.nome}\n👤 ${f.nome}\n💰 ${fmt(valor)}\n\nSegue o comprovante.`;
+    $('#whats-link').href = `https://wa.me/${APP.cfg.whatsapp || '5519992494267'}?text=${encodeURIComponent(msg)}`;
+    succ.style.display = '';
+    succ.scrollIntoView({behavior:'smooth', block:'start'});
+  } catch(e) {
+    console.error(e);
+    toast('Erro ao registrar: '+e.message,'err');
+    btn.disabled = false; btn.textContent = '✅ Já paguei (registrar)';
+  }
+}
+
+window.resetFlow = function() {
+  APP.filhoSel = null;
+  $('#filho-input').value = '';
+  $('#step-pay').style.display = 'none';
+  $('#step-nome').style.display = '';
+};
+</script>
+</body>
+</html>

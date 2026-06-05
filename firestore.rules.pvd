@@ -67,6 +67,23 @@ service cloud.firestore {
       allow update, delete: if request.auth != null;
     }
 
+    // ── PÚBLICO: inscrições/pagamentos de evento ──────────────────────────
+    // evento.html cria 1 doc por inscrição. Visitantes (form) e filhos (auto-
+    // complete) entram aqui. Status muda pra 'pago' após admin confirmar.
+    match /evento_inscricoes/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.evento_id is string
+                    && request.resource.data.nome is string
+                    && request.resource.data.nome.size() > 1
+                    && request.resource.data.nome.size() < 200
+                    && request.resource.data.valor is number
+                    && request.resource.data.valor >= 0
+                    && request.resource.data.valor < 100000
+                    && request.resource.data.status == 'aguardando'
+                    && request.resource.data.origem == 'evento_publico';
+      allow update, delete: if request.auth != null;
+    }
+
     // ── atendimentos FECHADO publicamente ─────────────────────────────────
     // adm_atendimentos NÃO precisa de regra pública — coberto pela regra
     // genérica de auth no topo. Slots ocupados estão em pub_slots_ocupados.
