@@ -2237,7 +2237,7 @@ async function abrirPagamentosEvento(eventoId) {
 
   // Re-render quando S.eventoInscricoes mudar
   window._app.renderPagamentos = () => {
-    const modal = document.querySelector('.modal-overlay.show .modal');
+    const modal = document.getElementById('modal-body');
     if(modal) modal.innerHTML = renderModal();
   };
 }
@@ -2271,7 +2271,7 @@ function abrirPagamentosProduto(produtoId) {
   _pagProdState.filtro = 'todos';
   openModal(_renderPagProdContent(), { lg: true });
   window._app.renderPagProd = () => {
-    const modal = document.querySelector('.modal-overlay.show .modal');
+    const modal = document.getElementById('modal-body');
     if(modal) modal.innerHTML = _renderPagProdContent();
   };
 }
