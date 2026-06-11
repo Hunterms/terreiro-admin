@@ -272,6 +272,16 @@ function renderProduto(prod) {
         <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
         <div class="fi-group"><label>Telefone (WhatsApp) <span class="req">*</span></label><input class="fi" id="b-tel" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" required/></div>
         <div class="fi-group"><label>Email <span class="req">*</span></label><input class="fi" id="b-email" type="email" placeholder="seu@email.com" autocomplete="email" required/></div>
+        <div class="fi-group"><label>Como soube da gente? <span style="color:var(--text3);font-weight:400">(opcional)</span></label>
+          <select class="fi" id="b-origem">
+            <option value="">— Selecione —</option>
+            <option value="instagram">📷 Instagram</option>
+            <option value="indicacao">👥 Indicação de amigo</option>
+            <option value="gira_aberta">🪷 Conheci numa gira</option>
+            <option value="site">🌐 Site / Google</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
         <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Alguma coisa que queira deixar registrado?"></textarea></div>
       `}
       <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
@@ -311,6 +321,7 @@ function renderProduto(prod) {
 
     try {
       const efetivoAgora = precoEfetivo(prod);
+      const comoSoube = !prod.evento_filho ? ($('#b-origem')?.value || null) : null;
       await addDoc(collection(db,'vendas_pedidos'), {
         nome, tel, email: email||null,
         filho_id: filhoId,
@@ -326,6 +337,7 @@ function renderProduto(prod) {
         comprovante_anexado: false,
         status: 'pendente',
         origem: prod.evento_filho ? 'vendas_filho' : 'vendas_publico',
+        como_soube: comoSoube,
         criadoEm: serverTimestamp()
       });
       mostrarSucesso(prod, nome, efetivoAgora);

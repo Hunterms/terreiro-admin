@@ -349,6 +349,12 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         Pedidos <span id="ped-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
       </button>
 
+      <div class="section-label">Análise</div>
+      <button data-route="inteligencia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
+        Inteligência
+      </button>
+
       <div class="section-label">Comunicação</div>
       <button data-route="avisos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -1010,6 +1016,7 @@ function renderRoute() {
     case 'config-agendamento': return renderConfigAgendamento(c);
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
+    case 'inteligencia':  return renderInteligencia(c);
     case 'avisos':        return renderAvisos(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
@@ -3943,14 +3950,28 @@ function openAtendimentoForm(id=null) {
           </select>
         </div>
       </div>
-      <div class="fi-group"><label>Status do atendimento</label>
-        <select class="fi" id="at-st">
-          <option value="agendado" ${(!a||a?.status_atendimento==='agendado')?'selected':''}>Agendado</option>
-          <option value="confirmado" ${a?.status_atendimento==='confirmado'?'selected':''}>Confirmado</option>
-          <option value="realizado" ${a?.status_atendimento==='realizado'?'selected':''}>Realizado</option>
-          <option value="nao_compareceu" ${a?.status_atendimento==='nao_compareceu'?'selected':''}>Não compareceu</option>
-          <option value="cancelado" ${a?.status_atendimento==='cancelado'?'selected':''}>Cancelado</option>
-        </select>
+      <div class="row-2">
+        <div class="fi-group"><label>Status do atendimento</label>
+          <select class="fi" id="at-st">
+            <option value="agendado" ${(!a||a?.status_atendimento==='agendado')?'selected':''}>Agendado</option>
+            <option value="confirmado" ${a?.status_atendimento==='confirmado'?'selected':''}>Confirmado</option>
+            <option value="realizado" ${a?.status_atendimento==='realizado'?'selected':''}>Realizado</option>
+            <option value="nao_compareceu" ${a?.status_atendimento==='nao_compareceu'?'selected':''}>Não compareceu</option>
+            <option value="cancelado" ${a?.status_atendimento==='cancelado'?'selected':''}>Cancelado</option>
+          </select>
+        </div>
+        <div class="fi-group"><label>Tema da consulta <span style="color:var(--text3);font-weight:400">— pra análise</span></label>
+          <select class="fi" id="at-tema">
+            <option value="" ${!a?.tema?'selected':''}>— Não informado —</option>
+            <option value="amor" ${a?.tema==='amor'?'selected':''}>💕 Amor / relacionamento</option>
+            <option value="saude" ${a?.tema==='saude'?'selected':''}>🌿 Saúde</option>
+            <option value="familia" ${a?.tema==='familia'?'selected':''}>👨‍👩‍👧 Família</option>
+            <option value="financeiro" ${a?.tema==='financeiro'?'selected':''}>💰 Financeiro / trabalho</option>
+            <option value="luto" ${a?.tema==='luto'?'selected':''}>🕯️ Luto</option>
+            <option value="orientacao" ${a?.tema==='orientacao'?'selected':''}>🧭 Orientação espiritual</option>
+            <option value="outro" ${a?.tema==='outro'?'selected':''}>Outro</option>
+          </select>
+        </div>
       </div>
       <div class="fi-group"><label>Observação (privada, só você e o Pai veem)</label><textarea class="fi" id="at-obs">${a?.observacao||''}</textarea></div>
     </div>
@@ -3986,6 +4007,7 @@ function openAtendimentoForm(id=null) {
       status_pagamento: stPag,
       pago_em: stPag.startsWith('pago') && (!a || !a.status_pagamento || !a.status_pagamento.startsWith('pago')) ? serverTimestamp() : (a?.pago_em||null),
       status_atendimento: stAt,
+      tema: $('#at-tema').value || null,
       observacao: $('#at-obs').value.trim(),
       atualizadoEm: serverTimestamp()
     };
@@ -5661,6 +5683,537 @@ async function deletarPedido(id, nome) {
   });
 }
 
+// ── INTELIGÊNCIA ─────────────────────────────────────────────────────────
+// Cruza dados de adm_atendimentos + adm_consulentes + vendas_pedidos pra
+// construir perfil de pessoas + segmentos + insights de produtos + oportunidades.
+// Não inclui PDV/sales (vendas anônimas de gira ficam fora por design).
+let _intelTab = 'oportunidades';
+let _intelPeriodo = '12m';
+
+function _intelDataLimite() {
+  if (_intelPeriodo === 'tudo') return null;
+  const d = new Date();
+  if (_intelPeriodo === '30d') d.setDate(d.getDate()-30);
+  else if (_intelPeriodo === '90d') d.setDate(d.getDate()-90);
+  else if (_intelPeriodo === '12m') d.setFullYear(d.getFullYear()-1);
+  return d.toISOString().slice(0,10);
+}
+function _intelNormTel(tel) { return (tel||'').replace(/\D/g,'').slice(-11); }
+function _intelNormNome(nome) {
+  return (nome||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+
+function _intelConstruirPessoas() {
+  const limite = _intelDataLimite();
+  const pessoas = new Map();
+  const acharOuCriar = (filhoId, nome, tel, email) => {
+    const tn = _intelNormTel(tel);
+    const nn = _intelNormNome(nome);
+    let key = null;
+    if (filhoId) {
+      for (const [k,p] of pessoas) if (p.filhoId === filhoId) { key = k; break; }
+      if (!key) key = 'f:'+filhoId;
+    } else if (tn && tn.length >= 8) {
+      for (const [k,p] of pessoas) if (p.tel && _intelNormTel(p.tel) === tn) { key = k; break; }
+      if (!key) key = 't:'+tn;
+    } else if (nn) {
+      for (const [k,p] of pessoas) if (_intelNormNome(p.nome) === nn) { key = k; break; }
+      if (!key) key = 'n:'+nn;
+    }
+    if (!key) return null;
+    if (!pessoas.has(key)) {
+      pessoas.set(key, { key, nome, tel, email, filhoId, interacoes: [] });
+    } else {
+      const p = pessoas.get(key);
+      if (!p.tel && tel) p.tel = tel;
+      if (!p.email && email) p.email = email;
+      if (!p.filhoId && filhoId) p.filhoId = filhoId;
+      if ((p.nome||'').length < (nome||'').length) p.nome = nome;
+    }
+    return pessoas.get(key);
+  };
+
+  // Atendimentos
+  (S.atendimentos||[]).forEach(at => {
+    if (limite && at.data && at.data < limite) return;
+    if (at.status_atendimento === 'cancelado') return;
+    const cons = (S.consulentes||[]).find(c => c.id === at.consulente_id);
+    const nome = at.consulente_nome || cons?.nome || '?';
+    const tel = at.consulente_tel || cons?.tel || '';
+    const email = cons?.email || null;
+    const p = acharOuCriar(null, nome, tel, email);
+    if (p) p.interacoes.push({
+      type: 'atendimento', data: at.data || '',
+      valor: Number(at.valor) || 0,
+      pago: (at.status_pagamento||'').startsWith('pago') || at.status_pagamento === 'isento',
+      tema: at.tema || null,
+      ref: at.id,
+      label: at.tipo_oraculo === 'buzios' ? 'Búzios' : 'Baralho cigano'
+    });
+  });
+
+  // Pedidos
+  (S.pedidos||[]).forEach(pd => {
+    const dt = pd.criadoEm?.toDate ? pd.criadoEm.toDate() : (pd.criadoEm?.seconds ? new Date(pd.criadoEm.seconds*1000) : null);
+    const dataISO = dt ? dt.toISOString().slice(0,10) : '';
+    if (limite && dataISO && dataISO < limite) return;
+    if (pd.status === 'cancelado') return;
+    const prod = (S.produtos||[]).find(x => x.id === pd.produto_id);
+    const p = acharOuCriar(pd.filho_id, pd.nome, pd.tel, pd.email);
+    if (p) p.interacoes.push({
+      type: 'pedido', data: dataISO,
+      valor: Number(pd.valor) || 0,
+      pago: pd.status === 'confirmado',
+      ref: pd.id,
+      label: pd.produto_nome || 'Pedido',
+      produtoId: pd.produto_id,
+      categoria: prod?.evento_filho ? 'evento_filho' : 'produto',
+      comoSoube: pd.como_soube || null
+    });
+  });
+
+  const lista = [];
+  for (const [, p] of pessoas) {
+    p.qtdAtendimentos = p.interacoes.filter(i => i.type === 'atendimento').length;
+    p.qtdAtendimentosPagos = p.interacoes.filter(i => i.type === 'atendimento' && i.pago).length;
+    p.valorAtendimentos = p.interacoes.filter(i => i.type === 'atendimento' && i.pago).reduce((s,i)=>s+i.valor,0);
+    p.qtdPedidos = p.interacoes.filter(i => i.type === 'pedido').length;
+    p.qtdPedidosPagos = p.interacoes.filter(i => i.type === 'pedido' && i.pago).length;
+    p.valorPedidos = p.interacoes.filter(i => i.type === 'pedido' && i.pago).reduce((s,i)=>s+i.valor,0);
+    p.valorTotal = p.valorAtendimentos + p.valorPedidos;
+    p.qtdTotal = p.qtdAtendimentos + p.qtdPedidos;
+    const datas = p.interacoes.map(i => i.data).filter(Boolean).sort();
+    p.primeiraData = datas[0] || null;
+    p.ultimaData = datas[datas.length-1] || null;
+    lista.push(p);
+  }
+  return lista.sort((a,b) => b.valorTotal - a.valorTotal);
+}
+
+function renderInteligencia(c) {
+  const pessoas = _intelConstruirPessoas();
+  const totalReceita = pessoas.reduce((s,p)=>s+p.valorTotal, 0);
+  const totalAtPagos = pessoas.reduce((s,p)=>s+p.qtdAtendimentosPagos, 0);
+  const totalPdPagos = pessoas.reduce((s,p)=>s+p.qtdPedidosPagos, 0);
+  const pessoasComReceita = pessoas.filter(p => p.valorTotal > 0).length;
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Inteligência</div>
+        <div class="page-sub">${pessoas.length} pessoa${pessoas.length===1?'':'s'} cruzada${pessoas.length===1?'':'s'} · ${pessoasComReceita} com receita · ${totalAtPagos} atendimentos + ${totalPdPagos} pedidos pagos · <strong style="color:var(--green)">R$ ${totalReceita.toFixed(0)}</strong></div>
+      </div>
+      <div class="page-actions">
+        <select class="fi" id="intel-periodo" onchange="window._app.setIntelPeriodo(this.value)" style="min-width:170px;padding:8px 12px">
+          <option value="30d" ${_intelPeriodo==='30d'?'selected':''}>Últimos 30 dias</option>
+          <option value="90d" ${_intelPeriodo==='90d'?'selected':''}>Últimos 90 dias</option>
+          <option value="12m" ${_intelPeriodo==='12m'?'selected':''}>Últimos 12 meses</option>
+          <option value="tudo" ${_intelPeriodo==='tudo'?'selected':''}>Tudo</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${_intelTab==='oportunidades'?'active':''}" onclick="window._app.setIntelTab('oportunidades')">💡 Oportunidades</button>
+      <button class="${_intelTab==='segmentos'?'active':''}" onclick="window._app.setIntelTab('segmentos')">🎯 Segmentos</button>
+      <button class="${_intelTab==='produtos'?'active':''}" onclick="window._app.setIntelTab('produtos')">📦 Produtos</button>
+      <button class="${_intelTab==='pessoas'?'active':''}" onclick="window._app.setIntelTab('pessoas')">👥 Pessoas</button>
+    </div>
+
+    <div id="intel-body"></div>
+  `;
+
+  if (_intelTab === 'oportunidades') _renderIntelOportunidades(pessoas);
+  else if (_intelTab === 'segmentos') _renderIntelSegmentos(pessoas);
+  else if (_intelTab === 'produtos') _renderIntelProdutos(pessoas);
+  else _renderIntelPessoas(pessoas);
+}
+
+function setIntelTab(t) { _intelTab = t; renderRoute(); }
+function setIntelPeriodo(p) { _intelPeriodo = p; renderRoute(); }
+
+function _renderIntelPessoas(pessoas) {
+  const body = $('#intel-body');
+  if (pessoas.length === 0) {
+    body.innerHTML = '<div class="card"><div class="empty"><div class="empty-t">Sem dados</div><div class="empty-s">Nenhum atendimento ou pedido no período selecionado.</div></div></div>';
+    return;
+  }
+  body.innerHTML = `
+    <div class="card">
+      ${pessoas.slice(0, 100).map(p => {
+        const chips = [];
+        if (p.filhoId) chips.push('<span class="chip chip-gold" style="font-size:9.5px">🏠 filha</span>');
+        if (p.qtdAtendimentos > 0) chips.push('<span class="chip" style="font-size:9.5px">👁 consulente</span>');
+        if (p.qtdPedidos > 0) chips.push('<span class="chip" style="font-size:9.5px">🛒 comprador</span>');
+        const ultima = p.ultimaData ? new Date(p.ultimaData+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—';
+        return `
+          <div class="list-item">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(p.nome)}</div>
+            <div class="li-main">
+              <div class="li-name">${p.nome} ${chips.join(' ')}</div>
+              <div class="li-meta">
+                ${p.tel ? `<span>${p.tel}</span>` : ''}
+                ${p.qtdAtendimentosPagos > 0 ? `<span>👁 ${p.qtdAtendimentosPagos}× · R$ ${p.valorAtendimentos.toFixed(0)}</span>` : ''}
+                ${p.qtdPedidosPagos > 0 ? `<span>🛒 ${p.qtdPedidosPagos}× · R$ ${p.valorPedidos.toFixed(0)}</span>` : ''}
+                <span style="color:var(--text3)">Última: ${ultima}</span>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:17px;font-weight:700;color:var(--gold)">R$ ${p.valorTotal.toFixed(0)}</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+      ${pessoas.length > 100 ? `<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">+${pessoas.length-100} pessoas — refine o período pra ver tudo</div>` : ''}
+    </div>
+  `;
+}
+
+function _renderIntelSegmentos(pessoas) {
+  const sorted = [...pessoas].filter(p => p.valorTotal > 0).sort((a,b)=>b.valorTotal-a.valorTotal);
+  const pilares = sorted.slice(0, Math.max(1, Math.ceil(sorted.length * 0.1)));
+  const recorrentes = pessoas.filter(p => p.qtdAtendimentos >= 3);
+  const multicanal = pessoas.filter(p => p.qtdAtendimentos > 0 && p.qtdPedidos > 0);
+
+  const hoje30 = new Date(); hoje30.setDate(hoje30.getDate()-30);
+  const novos = pessoas.filter(p => p.primeiraData && p.primeiraData >= hoje30.toISOString().slice(0,10));
+  const hoje90 = new Date(); hoje90.setDate(hoje90.getDate()-90);
+  const dormentes = pessoas.filter(p => p.ultimaData && p.ultimaData < hoje90.toISOString().slice(0,10) && p.valorTotal >= 100);
+  const hoje180 = new Date(); hoje180.setMonth(hoje180.getMonth()-6);
+  const singleShot = pessoas.filter(p => p.qtdTotal === 1 && p.ultimaData && p.ultimaData < hoje180.toISOString().slice(0,10));
+  const soComprou = pessoas.filter(p => p.qtdPedidos > 0 && p.qtdAtendimentos === 0);
+  const soConsultou = pessoas.filter(p => p.qtdAtendimentos > 0 && p.qtdPedidos === 0);
+
+  const segs = [
+    { icon:'⭐', nome:'Pilares', sub:'Top 10% por receita', pessoas:pilares, acao:'Mantenha relacionamento próximo — essas pessoas sustentam a casa. Atenção e cuidado individuais.' },
+    { icon:'🔁', nome:'Recorrentes', sub:'3+ atendimentos no período', pessoas:recorrentes, acao:'Pacote ou plano contínuo (5 sessões com 10% off). Cliente fiel adora previsibilidade.' },
+    { icon:'🌐', nome:'Multicanal', sub:'Consulta + compra', pessoas:multicanal, acao:'Conhecem a casa por múltiplos ângulos. Excelentes pra testar nova oferta antes de lançar pra todos.' },
+    { icon:'🆕', nome:'Novos', sub:'Primeira interação < 30d', pessoas:novos, acao:'Follow-up em 7 dias pra checar experiência. Resgate antes de virar single-shot.' },
+    { icon:'😴', nome:'Dormentes', sub:'Sem atividade > 90d, histórico forte', pessoas:dormentes, acao:'Reativa por WhatsApp pessoal. Mostra novidade. Conversão típica: 15-25%.' },
+    { icon:'👋', nome:'Single-shot', sub:'1 interação, > 6 meses', pessoas:singleShot, acao:'Provavelmente perdidos. Vale entender o motivo (atendimento ruim? expectativa frustrada?).' },
+    { icon:'🛒→👁', nome:'Compradores sem consulta', sub:'Compraram mas nunca consultaram', pessoas:soComprou, acao:'Pitch direto: "Quer entender mais sobre seu caminho? Marca uma consulta".' },
+    { icon:'👁→🛒', nome:'Consulentes sem compra', sub:'Consultaram mas nunca compraram', pessoas:soConsultou, acao:'Sugira produto correlato ao tema da consulta (amor → curso de tarô, financeiro → curso prosperidade).' }
+  ];
+
+  $('#intel-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+      ${segs.map(s => {
+        const receita = s.pessoas.reduce((sum,p)=>sum+p.valorTotal, 0);
+        return `
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <span style="font-size:24px">${s.icon}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:15px;font-weight:700;color:var(--text)">${s.nome}</div>
+                <div style="font-size:11.5px;color:var(--text3)">${s.sub}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+              <div style="font-size:30px;font-weight:700;color:var(--gold);font-family:var(--font-display)">${s.pessoas.length}</div>
+              <div style="font-size:12.5px;color:var(--text2)">pessoa${s.pessoas.length===1?'':'s'}</div>
+              ${receita > 0 ? `<div style="margin-left:auto;font-size:13px;color:var(--green);font-weight:700">R$ ${receita.toFixed(0)}</div>` : ''}
+            </div>
+            <div style="font-size:12.5px;color:var(--text2);line-height:1.5;padding:10px 12px;background:var(--glass2);border-left:3px solid var(--gold);border-radius:6px">
+              <strong style="color:var(--text)">Ação:</strong> ${s.acao}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function _renderIntelProdutos(pessoas) {
+  const produtos = {};
+  pessoas.forEach(p => {
+    p.interacoes.filter(i => i.pago).forEach(i => {
+      if (!produtos[i.label]) produtos[i.label] = { nome: i.label, unidades: 0, receita: 0, pessoasIds: new Set(), tipo: i.type };
+      produtos[i.label].unidades += 1;
+      produtos[i.label].receita += i.valor;
+      produtos[i.label].pessoasIds.add(p.key);
+    });
+  });
+  const lista = Object.values(produtos);
+  const topReceita = [...lista].sort((a,b)=>b.receita-a.receita).slice(0,10);
+  const topUnidades = [...lista].sort((a,b)=>b.unidades-a.unidades).slice(0,10);
+
+  const totalAtend = pessoas.reduce((s,p)=>s+p.valorAtendimentos,0);
+  const totalCursos = pessoas.reduce((s,p) => s + p.interacoes.filter(i => i.type==='pedido' && i.pago && i.categoria !== 'evento_filho').reduce((a,i)=>a+i.valor,0), 0);
+  const totalEvFilho = pessoas.reduce((s,p) => s + p.interacoes.filter(i => i.type==='pedido' && i.pago && i.categoria === 'evento_filho').reduce((a,i)=>a+i.valor,0), 0);
+  const totalGeral = totalAtend + totalCursos + totalEvFilho;
+
+  // Co-ocorrência
+  const pares = {};
+  pessoas.forEach(p => {
+    const labels = [...new Set(p.interacoes.filter(i => i.pago).map(i => i.label))];
+    if (labels.length < 2) return;
+    for (let i=0; i<labels.length; i++) for (let j=i+1; j<labels.length; j++) {
+      const key = [labels[i], labels[j]].sort().join(' + ');
+      pares[key] = (pares[key]||0) + 1;
+    }
+  });
+  const topPares = Object.entries(pares).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Temas (de atendimentos)
+  const temas = {};
+  const temaLabel = { amor:'💕 Amor', saude:'🌿 Saúde', familia:'👨‍👩‍👧 Família', financeiro:'💰 Financeiro', luto:'🕯️ Luto', orientacao:'🧭 Orientação', outro:'Outro' };
+  pessoas.forEach(p => p.interacoes.filter(i => i.type==='atendimento' && i.pago && i.tema).forEach(i => {
+    temas[i.tema] = (temas[i.tema]||0) + 1;
+  }));
+  const topTemas = Object.entries(temas).sort((a,b)=>b[1]-a[1]);
+
+  $('#intel-body').innerHTML = `
+    ${totalGeral > 0 ? `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="card-title">Mix de receita por canal</div></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+          <div style="padding:14px;background:var(--gold-bg);border:1px solid rgba(212,168,67,.3);border-radius:8px">
+            <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Atendimentos</div>
+            <div style="font-size:22px;font-weight:700;color:var(--gold);margin-top:4px">R$ ${totalAtend.toFixed(0)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${((totalAtend/totalGeral)*100).toFixed(0)}% do total</div>
+          </div>
+          <div style="padding:14px;background:rgba(52,152,219,.08);border:1px solid rgba(52,152,219,.25);border-radius:8px">
+            <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Cursos / produtos</div>
+            <div style="font-size:22px;font-weight:700;color:#3498db;margin-top:4px">R$ ${totalCursos.toFixed(0)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${((totalCursos/totalGeral)*100).toFixed(0)}% do total</div>
+          </div>
+          <div style="padding:14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px">
+            <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Eventos pros filhos</div>
+            <div style="font-size:22px;font-weight:700;color:var(--green);margin-top:4px">R$ ${totalEvFilho.toFixed(0)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${((totalEvFilho/totalGeral)*100).toFixed(0)}% do total</div>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+      <div class="card">
+        <div class="card-h"><div class="card-title">Top por receita</div></div>
+        ${topReceita.length === 0 ? '<div class="empty"><div class="empty-s">Sem dados.</div></div>' : topReceita.map((p,idx) => `
+          <div class="list-item">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:12px">${idx+1}</div>
+            <div class="li-main">
+              <div class="li-name">${p.nome}</div>
+              <div class="li-meta"><span>${p.unidades} venda${p.unidades===1?'':'s'} · ${p.pessoasIds.size} pessoa${p.pessoasIds.size===1?'':'s'}</span></div>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--gold)">R$ ${p.receita.toFixed(0)}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-h"><div class="card-title">Top por volume</div></div>
+        ${topUnidades.length === 0 ? '<div class="empty"><div class="empty-s">Sem dados.</div></div>' : topUnidades.map((p,idx) => `
+          <div class="list-item">
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:12px">${idx+1}</div>
+            <div class="li-main">
+              <div class="li-name">${p.nome}</div>
+              <div class="li-meta"><span>R$ ${p.receita.toFixed(0)} · ${p.pessoasIds.size} pessoa${p.pessoasIds.size===1?'':'s'}</span></div>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">${p.unidades}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    ${topPares.length > 0 ? `
+      <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="card-title">Co-ocorrência — comprados em conjunto</div></div>
+        ${topPares.map(([par, count]) => `
+          <div class="list-item">
+            <div class="li-main">
+              <div class="li-name">${par}</div>
+              <div class="li-meta"><span>${count} pessoa${count===1?'':'s'} compraram ambos</span></div>
+            </div>
+          </div>
+        `).join('')}
+        <div style="font-size:12.5px;color:var(--text2);margin-top:10px;padding:10px 12px;background:var(--glass2);border-left:3px solid var(--gold);border-radius:6px;line-height:1.5">
+          💡 Pares fortes podem virar pacotes/combos com desconto pra acelerar conversão.
+        </div>
+      </div>
+    ` : ''}
+
+    ${topTemas.length > 0 ? `
+      <div class="card" style="margin-top:14px">
+        <div class="card-h"><div class="card-title">Temas das consultas</div></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${topTemas.map(([t, count]) => `
+            <div style="padding:10px 14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:14px">${temaLabel[t]||t}</span>
+              <span style="font-size:13px;font-weight:700;color:var(--gold)">${count}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div style="font-size:12.5px;color:var(--text2);margin-top:10px;padding:10px 12px;background:var(--glass2);border-left:3px solid var(--gold);border-radius:6px;line-height:1.5">
+          💡 Tema com demanda alta pode virar oferta dedicada (curso, festa temática, palestra).
+        </div>
+      </div>
+    ` : '<div class="card" style="margin-top:14px"><div class="empty"><div class="empty-t">Nenhum tema marcado ainda</div><div class="empty-s">Marque o tema da consulta no form de atendimento pra desbloquear análise de demanda por tema.</div></div></div>'}
+  `;
+}
+
+function _renderIntelOportunidades(pessoas) {
+  const opps = [];
+  const hoje90ISO = (() => { const d = new Date(); d.setDate(d.getDate()-90); return d.toISOString().slice(0,10); })();
+  const dormentes = pessoas.filter(p => p.ultimaData && p.ultimaData < hoje90ISO && p.valorTotal >= 100);
+  if (dormentes.length > 0) {
+    const acc = dormentes.reduce((s,p)=>s+p.valorTotal, 0);
+    opps.push({
+      icon:'🔁', tone:'gold',
+      titulo:`Reativar ${dormentes.length} dormente${dormentes.length===1?'':'s'} de valor`,
+      evidencia:`Histórico acumulado deles: R$ ${acc.toFixed(0)}. Sem aparecer há 3+ meses.`,
+      acao:'Mensagem pessoal no WhatsApp perguntando como estão. Mencione uma novidade da casa (festa, curso novo).',
+      conv:'15-25%',
+      potencial: acc * 0.2
+    });
+  }
+
+  const crossConsulta = pessoas.filter(p => p.qtdPedidosPagos > 0 && p.qtdAtendimentosPagos === 0);
+  const todasConsultas = pessoas.flatMap(p => p.interacoes.filter(i => i.type==='atendimento' && i.pago));
+  if (crossConsulta.length > 0 && todasConsultas.length > 0) {
+    const tkt = todasConsultas.reduce((s,i)=>s+i.valor,0) / todasConsultas.length;
+    opps.push({
+      icon:'🎯', tone:'blue',
+      titulo:`${crossConsulta.length} compradores nunca consultaram com Pai`,
+      evidencia:`Ticket médio histórico de consulta: R$ ${tkt.toFixed(0)}. Já conhecem a casa, conversão tende a ser melhor.`,
+      acao:'Pitch direto pós-compra. WhatsApp ou email: "Que tal aprofundar com Pai Nando em uma consulta?"',
+      conv:'20-30%',
+      potencial: crossConsulta.length * tkt * 0.25
+    });
+  }
+
+  const crossProduto = pessoas.filter(p => p.qtdAtendimentosPagos > 0 && p.qtdPedidosPagos === 0);
+  const todosProdutos = pessoas.flatMap(p => p.interacoes.filter(i => i.type==='pedido' && i.pago));
+  if (crossProduto.length > 0 && todosProdutos.length > 0) {
+    const tkt = todosProdutos.reduce((s,i)=>s+i.valor,0) / todosProdutos.length;
+    opps.push({
+      icon:'📦', tone:'green',
+      titulo:`${crossProduto.length} consulentes nunca compraram produto`,
+      evidencia:`Ticket médio histórico de pedido: R$ ${tkt.toFixed(0)}. Bons candidatos pra cursos ou festas.`,
+      acao:'Sugira produto correlato ao tema da consulta. Use o WhatsApp pra abordagem pessoal.',
+      conv:'10-20%',
+      potencial: crossProduto.length * tkt * 0.15
+    });
+  }
+
+  // Bundle opps
+  const pares = {};
+  pessoas.forEach(p => {
+    const labels = [...new Set(p.interacoes.filter(i => i.pago).map(i => i.label))];
+    if (labels.length < 2) return;
+    for (let i=0; i<labels.length; i++) for (let j=i+1; j<labels.length; j++) {
+      const key = [labels[i], labels[j]].sort().join(' + ');
+      pares[key] = (pares[key]||0) + 1;
+    }
+  });
+  const fortes = Object.entries(pares).filter(([_,c]) => c >= 3).sort((a,b)=>b[1]-a[1]);
+  fortes.slice(0,3).forEach(([par, count]) => {
+    opps.push({
+      icon:'📦', tone:'blue',
+      titulo:`Bundle ${par}`,
+      evidencia:`${count} pessoas compraram os 2 separadamente — demanda natural pelo combo.`,
+      acao:`Criar produto combo "${par}" com 10-15% off. Audiência alvo já conhece os dois lados.`,
+      conv:'20-40%',
+      potencial: 0
+    });
+  });
+
+  // Tema dominante
+  const temas = {};
+  pessoas.forEach(p => p.interacoes.filter(i => i.type==='atendimento' && i.tema && i.pago).forEach(i => {
+    temas[i.tema] = (temas[i.tema]||0) + 1;
+  }));
+  const topTema = Object.entries(temas).sort((a,b)=>b[1]-a[1])[0];
+  if (topTema && topTema[1] >= 5) {
+    const labelMap = { amor:'amor / relacionamento', saude:'saúde', familia:'família', financeiro:'financeiro / trabalho', luto:'luto', orientacao:'orientação espiritual' };
+    opps.push({
+      icon:'🌱', tone:'green',
+      titulo:`Tema dominante: ${labelMap[topTema[0]]||topTema[0]} (${topTema[1]} consultas)`,
+      evidencia:`Concentração clara de demanda. Pode virar produto dedicado (curso, palestra, festa temática).`,
+      acao:`Idealize oferta que atende esse tema. Ex: curso de 4 semanas, R$ 400. Pitch direto pra quem consultou nele.`,
+      conv:'—',
+      potencial: 0
+    });
+  }
+
+  // Sazonalidade
+  const porMes = {};
+  pessoas.forEach(p => p.interacoes.filter(i => i.pago && i.data).forEach(i => {
+    const m = i.data.slice(0,7);
+    porMes[m] = (porMes[m]||0) + i.valor;
+  }));
+  const mesesArr = Object.entries(porMes).sort((a,b)=>b[1]-a[1]);
+  if (mesesArr.length >= 4) {
+    const media = Object.values(porMes).reduce((s,v)=>s+v,0) / Object.keys(porMes).length;
+    const mediaTop3 = mesesArr.slice(0,3).reduce((s,m)=>s+m[1],0) / 3;
+    if (mediaTop3 > media * 1.4) {
+      const meses = mesesArr.slice(0,3).map(m => {
+        const [y,mn] = m[0].split('-');
+        return new Date(parseInt(y), parseInt(mn)-1, 1).toLocaleDateString('pt-BR', {month:'short',year:'2-digit'});
+      }).join(', ');
+      opps.push({
+        icon:'📈', tone:'gold',
+        titulo:`Sazonalidade detectada`,
+        evidencia:`Top 3 meses (${meses}) geram ${((mediaTop3/media-1)*100).toFixed(0)}% acima da média.`,
+        acao:'Antecipe ações e campanhas pros meses fortes. Reduza despesas nos meses fracos.',
+        conv:'—',
+        potencial: 0
+      });
+    }
+  }
+
+  // Origens (como_soube)
+  const origens = {};
+  pessoas.forEach(p => p.interacoes.filter(i => i.type==='pedido' && i.comoSoube).forEach(i => {
+    origens[i.comoSoube] = (origens[i.comoSoube]||0) + 1;
+  }));
+  const origensArr = Object.entries(origens).sort((a,b)=>b[1]-a[1]);
+  if (origensArr.length > 0) {
+    const total = origensArr.reduce((s,o)=>s+o[1],0);
+    const top = origensArr[0];
+    if (top[1] / total > 0.35) {
+      const labelMap = { instagram:'Instagram', indicacao:'Indicação', gira_aberta:'Gira aberta', site:'Site / Google', outro:'Outro' };
+      opps.push({
+        icon:'📣', tone:'blue',
+        titulo:`${labelMap[top[0]]||top[0]} é o canal #1 de aquisição (${((top[1]/total)*100).toFixed(0)}%)`,
+        evidencia:`${top[1]} de ${total} compradores citaram esse canal.`,
+        acao:`Invista esforço onde já funciona. Se Instagram, intensifique posts/reels. Se indicação, crie programa de referral.`,
+        conv:'—',
+        potencial: 0
+      });
+    }
+  }
+
+  opps.sort((a,b) => (b.potencial||0) - (a.potencial||0));
+
+  const toneBg = {
+    gold:'background:linear-gradient(135deg,rgba(212,168,67,.06),rgba(212,168,67,.01));border:1px solid rgba(212,168,67,.25)',
+    green:'background:linear-gradient(135deg,var(--green-bg),rgba(46,204,113,.02));border:1px solid var(--green-bd)',
+    blue:'background:linear-gradient(135deg,rgba(52,152,219,.06),rgba(52,152,219,.01));border:1px solid rgba(52,152,219,.25)'
+  };
+
+  $('#intel-body').innerHTML = opps.length === 0
+    ? '<div class="card"><div class="empty"><div class="empty-t">Sem oportunidades detectadas ainda</div><div class="empty-s">Conforme aparecem mais atendimentos e pedidos, recomendações vão surgir automaticamente. Período: ' + _intelPeriodo + '.</div></div></div>'
+    : opps.map(o => `
+        <div class="card" style="${toneBg[o.tone]||''};margin-bottom:14px">
+          <div style="display:flex;align-items:start;gap:14px">
+            <div style="font-size:28px;flex-shrink:0;line-height:1">${o.icon}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:16px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:8px">${o.titulo}</div>
+              <div style="font-size:13.5px;color:var(--text2);line-height:1.55;margin-bottom:10px">📊 ${o.evidencia}</div>
+              <div style="font-size:13.5px;color:var(--text);line-height:1.55;padding:10px 12px;background:rgba(0,0,0,.18);border-left:3px solid var(--gold);border-radius:6px"><strong>Ação:</strong> ${o.acao}</div>
+              ${(o.conv !== '—' || o.potencial > 0) ? `
+                <div style="display:flex;gap:14px;margin-top:10px;font-size:11.5px;color:var(--text3)">
+                  ${o.conv !== '—' ? `<span>Conversão esperada: <strong style="color:var(--text2)">${o.conv}</strong></span>` : ''}
+                  ${o.potencial > 0 ? `<span>Potencial de receita: <strong style="color:var(--green)">R$ ${o.potencial.toFixed(0)}</strong></span>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('');
+}
+
 // ── CONFIG AGENDAMENTO ─────────────────────────────────────────────────────
 let configAgCarregado = null;
 
@@ -6164,6 +6717,9 @@ window._app = {
   salvarDisp,
   openEvento: (id) => openEventoForm(id),
   copiarLinkServico,
+  // Inteligência
+  setIntelTab,
+  setIntelPeriodo,
   // Vendas externas
   openProdutoForm,
   copiarLinkProduto,
