@@ -251,12 +251,6 @@ function renderProduto(prod) {
         ${dataBr ? `<dt>Quando</dt><dd style="text-transform:capitalize">${dataBr}</dd>`:''}
         ${prod.local ? `<dt>Onde</dt><dd>${prod.local}</dd>`:''}
       </dl>
-      ${prod.pix ? `
-        <div class="pix-box">
-          <div class="pix-l">💳 PIX pra pagar</div>
-          <div class="pix-k">${prod.pix}</div>
-        </div>
-      `:''}
     </div>
 
     <div class="card">
@@ -595,7 +589,10 @@ function mostrarSucesso(prod, nome, efetivo) {
   const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${valorPago}${labelPromo}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}\n\nSegue o comprovante do pagamento.`;
   const waLink = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
 
-  const cardLink = (efetivo && efetivo.ehPromo && prod.infinity_link_promo) || prod.infinity_link;
+  // Escolhe o link de crédito certo conforme o desconto aplicado
+  const cardLink = (efetivo?.ehAfirmativo && prod.desconto_afirmativo?.infinity_link)
+                || (efetivo?.ehPromo && prod.infinity_link_promo)
+                || prod.infinity_link;
   const pixKey = prod.pix || CFG_AGENDAMENTO.pix;
   const pixTit = CFG_AGENDAMENTO.pix_titular;
   const temPix = !!pixKey;

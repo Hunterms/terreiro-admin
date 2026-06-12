@@ -5492,6 +5492,7 @@ function openProdutoForm(id=null) {
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Valor com desconto (R$)</label><input type="number" step="0.01" min="0" class="fi" id="pd-desc-valor" value="${p?.desconto_afirmativo?.valor||''}" placeholder="ex: 150"/></div>
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Texto pro checkbox público</label><input class="fi" id="pd-desc-texto" value="${(p?.desconto_afirmativo?.texto||'Sou pessoa preta, indígena ou trans').replace(/"/g,'&quot;')}"/></div>
           </div>
+          <div style="margin-top:10px"><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Link InfinityPay com valor afirmativo (cartão)</label><input class="fi" id="pd-desc-infinity" value="${(p?.desconto_afirmativo?.infinity_link||'').replace(/"/g,'&quot;')}" placeholder="ex: https://pay.infinitepay.io/candieiro/XXXXXX-150,00"/></div>
           <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45;font-style:italic">Lembrete: o desconto é opt-in. A pessoa pode ser de minoria e escolher pagar cheio — respeite a autodeclaração intencional.</div>
         </div>
       </div>
@@ -5587,7 +5588,8 @@ function openProdutoForm(id=null) {
       data.desconto_afirmativo = {
         ativo: true,
         valor: isNaN(dvalor) ? null : dvalor,
-        texto: $('#pd-desc-texto').value.trim() || 'Sou pessoa preta, indígena ou trans'
+        texto: $('#pd-desc-texto').value.trim() || 'Sou pessoa preta, indígena ou trans',
+        infinity_link: $('#pd-desc-infinity').value.trim() || null
       };
     } else {
       data.desconto_afirmativo = { ativo: false };
