@@ -5384,6 +5384,26 @@ function copiarLinkServico(slug) {
   });
 }
 
+// Adiciona uma linha de turma vazia no editor de produto (chamado pelo "+ Adicionar turma")
+function addTurmaRow() {
+  const list = document.getElementById('pd-turmas-list');
+  if (!list) return;
+  const idx = list.querySelectorAll('.pd-turma-row').length;
+  const row = document.createElement('div');
+  row.className = 'pd-turma-row';
+  row.dataset.idx = idx;
+  row.style.cssText = 'padding:10px;background:var(--glass2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px';
+  row.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:start">
+      <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Nome da turma</label><input class="fi pd-turma-nome" placeholder="Ex: Turma 1 — Sábado"/></div>
+      <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Detalhes (dia/hora/início)</label><input class="fi pd-turma-detalhes" placeholder="Ex: Sábados 10h às 12h · início 25/07"/></div>
+      <button type="button" class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red);margin-top:18px" onclick="this.closest('.pd-turma-row').remove()">×</button>
+    </div>
+  `;
+  list.appendChild(row);
+  row.querySelector('.pd-turma-nome')?.focus();
+}
+
 function openProdutoForm(id=null) {
   const p = id ? S.produtos.find(x => x.id === id) : null;
   const isEdit = !!p;
@@ -5442,6 +5462,52 @@ function openProdutoForm(id=null) {
         <label class="checkbox-row"><input type="checkbox" id="pd-eh-filho" ${p?.evento_filho?'checked':''}/> <strong>💰 É evento pros filhos da casa</strong></label>
         <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Marque pra ativar a aba de Pagamentos: o item ganha um botão na lista pra acompanhar quem da casa já pagou e quem falta (com filtro). No vendas.html, o comprador escolhe o nome no dropdown em vez de digitar.</div>
       </div>
+
+      <!-- TURMAS — produto com várias opções de horário/início -->
+      <div class="fi-group" style="padding:14px;background:rgba(52,152,219,0.06);border:1px solid rgba(52,152,219,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-tem-turmas" ${p?.turmas&&p.turmas.length>0?'checked':''} onchange="document.getElementById('pd-turmas-box').style.display=this.checked?'block':'none'"/> <strong>🗓️ Esse produto tem turmas (várias opções de horário)</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Marca quando for um curso com mais de uma turma (ex: sábado 10h e sexta 19h). O comprador escolhe qual quer.</div>
+        <div id="pd-turmas-box" style="display:${p?.turmas&&p.turmas.length>0?'block':'none'};margin-top:12px">
+          <div id="pd-turmas-list">
+            ${(p?.turmas||[]).map((t, i) => `
+              <div class="pd-turma-row" data-idx="${i}" style="padding:10px;background:var(--glass2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:start">
+                  <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Nome da turma</label><input class="fi pd-turma-nome" value="${(t.nome||'').replace(/"/g,'&quot;')}" placeholder="Ex: Turma 1 — Sábado"/></div>
+                  <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Detalhes (dia/hora/início)</label><input class="fi pd-turma-detalhes" value="${(t.detalhes||'').replace(/"/g,'&quot;')}" placeholder="Ex: Sábados 10h às 12h · início 25/07"/></div>
+                  <button type="button" class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red);margin-top:18px" onclick="this.closest('.pd-turma-row').remove()">×</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <button type="button" class="btn btn-sm" style="margin-top:4px" onclick="window._app.addTurmaRow()">+ Adicionar turma</button>
+        </div>
+      </div>
+
+      <!-- DESCONTO AFIRMATIVO — preto, indígena, trans -->
+      <div class="fi-group" style="padding:14px;background:rgba(155,89,182,0.06);border:1px solid rgba(155,89,182,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-desc-on" ${p?.desconto_afirmativo?.ativo?'checked':''} onchange="document.getElementById('pd-desc-box').style.display=this.checked?'block':'none'"/> <strong>✊🏿 Desconto afirmativo (pretos, indígenas, pessoas trans)</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Comprador autodeclara no checkout. Texto editável.</div>
+        <div id="pd-desc-box" style="display:${p?.desconto_afirmativo?.ativo?'block':'none'};margin-top:12px">
+          <div class="row-2">
+            <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Valor com desconto (R$)</label><input type="number" step="0.01" min="0" class="fi" id="pd-desc-valor" value="${p?.desconto_afirmativo?.valor||''}" placeholder="ex: 150"/></div>
+            <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Texto pro checkbox público</label><input class="fi" id="pd-desc-texto" value="${(p?.desconto_afirmativo?.texto||'Sou pessoa preta, indígena ou trans').replace(/"/g,'&quot;')}"/></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PARCELAMENTO -->
+      <div class="fi-group" style="padding:14px;background:rgba(46,204,113,0.06);border:1px solid rgba(46,204,113,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-parc-on" ${p?.parcelamento?.ativo?'checked':''} onchange="document.getElementById('pd-parc-box').style.display=this.checked?'block':'none'"/> <strong>📅 Parcelamento (curso com mensalidade)</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Mostra no checkout que tem parcelas. A primeira (matrícula) é o pagamento atual; as outras são manuais via PIX.</div>
+        <div id="pd-parc-box" style="display:${p?.parcelamento?.ativo?'block':'none'};margin-top:12px">
+          <div class="row-2">
+            <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Qtd de parcelas</label><input type="number" min="2" max="24" class="fi" id="pd-parc-qtd" value="${p?.parcelamento?.qtd||4}"/></div>
+            <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Vencimento (dia)</label><input type="number" min="1" max="28" class="fi" id="pd-parc-dia" value="${p?.parcelamento?.vencimento_dia||10}"/></div>
+          </div>
+          <div style="margin-top:8px"><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Texto extra (opcional)</label><input class="fi" id="pd-parc-texto" value="${(p?.parcelamento?.texto||'1ª parcela paga no ato da matrícula. Demais via PIX.').replace(/"/g,'&quot;')}"/></div>
+        </div>
+      </div>
+
       <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="pd-ord" value="${p?.ordem||(S.produtos.length+1)}"/></div>
     </div>
     <div class="modal-f">
@@ -5495,6 +5561,40 @@ function openProdutoForm(id=null) {
       ordem: parseInt($('#pd-ord').value) || 999,
       atualizadoEm: serverTimestamp()
     };
+    // Turmas
+    if ($('#pd-tem-turmas').checked) {
+      const turmas = [];
+      document.querySelectorAll('.pd-turma-row').forEach(row => {
+        const nome = row.querySelector('.pd-turma-nome').value.trim();
+        const detalhes = row.querySelector('.pd-turma-detalhes').value.trim();
+        if (nome) turmas.push({ id: 't_'+Math.random().toString(36).slice(2,8), nome, detalhes });
+      });
+      data.turmas = turmas;
+    } else {
+      data.turmas = [];
+    }
+    // Desconto afirmativo
+    if ($('#pd-desc-on').checked) {
+      const dvalor = parseFloat($('#pd-desc-valor').value);
+      data.desconto_afirmativo = {
+        ativo: true,
+        valor: isNaN(dvalor) ? null : dvalor,
+        texto: $('#pd-desc-texto').value.trim() || 'Sou pessoa preta, indígena ou trans'
+      };
+    } else {
+      data.desconto_afirmativo = { ativo: false };
+    }
+    // Parcelamento
+    if ($('#pd-parc-on').checked) {
+      data.parcelamento = {
+        ativo: true,
+        qtd: parseInt($('#pd-parc-qtd').value) || 4,
+        vencimento_dia: parseInt($('#pd-parc-dia').value) || 10,
+        texto: $('#pd-parc-texto').value.trim() || ''
+      };
+    } else {
+      data.parcelamento = { ativo: false };
+    }
     try {
       if(isEdit) await updateDoc(doc(dbPvd,'vendas_produtos',id), data);
       else { data.criadoEm = serverTimestamp(); await addDoc(collection(dbPvd,'vendas_produtos'), data); }
@@ -6734,6 +6834,7 @@ window._app = {
   setIntelPeriodo,
   // Vendas externas
   openProdutoForm,
+  addTurmaRow,
   copiarLinkProduto,
   abrirPagamentosProduto,
   setFiltroPagProd,

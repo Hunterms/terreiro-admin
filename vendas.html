@@ -208,7 +208,11 @@ function mostrarErro(titulo, msg) {
   }
 })();
 
-function precoEfetivo(prod) {
+function precoEfetivo(prod, descontoAfirmativo=false) {
+  // Desconto afirmativo tem prioridade sobre promo (autodeclaração tem peso superior)
+  if (descontoAfirmativo && prod.desconto_afirmativo?.ativo && prod.desconto_afirmativo.valor != null) {
+    return { valor: Number(prod.desconto_afirmativo.valor), ehPromo: false, ehAfirmativo: true, valorCheio: prod.valor||0 };
+  }
   if(!prod.promo_ativa || !prod.promo_valor || !prod.promo_ate) {
     return { valor: prod.valor||0, ehPromo: false };
   }
@@ -256,7 +260,33 @@ function renderProduto(prod) {
     </div>
 
     <div class="card">
-      <h2 style="font-size:16px;color:var(--text)">${prod.evento_filho?'Pagar como filho da casa':'Reservar / Comprar'}</h2>
+      <h2 style="font-size:16px;color:var(--text)">${prod.evento_filho?'Pagar como filho da casa':(prod.parcelamento?.ativo?'Matrícula':'Reservar / Comprar')}</h2>
+
+      ${prod.parcelamento?.ativo ? `
+        <div style="padding:12px 14px;background:linear-gradient(135deg,rgba(46,204,113,.1),rgba(46,204,113,.02));border:1px solid rgba(46,204,113,.3);border-radius:10px;margin-bottom:14px">
+          <div style="font-size:11px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">📅 Curso parcelado</div>
+          <div style="font-size:13.5px;color:var(--text);line-height:1.55"><strong>R$ ${efetivo.valor.toFixed(0)}/mês × ${prod.parcelamento.qtd} parcelas</strong> · vencimento dia ${prod.parcelamento.vencimento_dia}.</div>
+          ${prod.parcelamento.texto ? `<div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5">${prod.parcelamento.texto}</div>` : ''}
+        </div>
+      ` : ''}
+
+      ${prod.turmas && prod.turmas.length > 0 ? `
+        <div class="fi-group">
+          <label>Escolha a turma <span class="req">*</span></label>
+          <div id="b-turma-pills" style="display:flex;flex-direction:column;gap:8px">
+            ${prod.turmas.map((t, i) => `
+              <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--glass);border:1.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:all .15s" data-turma-id="${t.id}">
+                <input type="radio" name="b-turma" value="${t.id}" ${i===0?'checked':''} style="margin-top:3px;accent-color:var(--gold)"/>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3">${t.nome}</div>
+                  ${t.detalhes ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;line-height:1.4">${t.detalhes}</div>` : ''}
+                </div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
       ${prod.evento_filho ? `
         <div class="filho-banner">💰 Esse evento é só pra galera da casa — selecione seu nome abaixo.</div>
         <div class="fi-group">
@@ -284,13 +314,51 @@ function renderProduto(prod) {
         </div>
         <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Alguma coisa que queira deixar registrado?"></textarea></div>
       `}
+
+      ${prod.desconto_afirmativo?.ativo && prod.desconto_afirmativo.valor != null ? `
+        <div class="fi-group" style="padding:12px 14px;background:rgba(155,89,182,.08);border:1px solid rgba(155,89,182,.3);border-radius:10px">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <input type="checkbox" id="b-desc-afirmativo" style="margin-top:3px;accent-color:#9b59b6;width:18px;height:18px;flex-shrink:0"/>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text);line-height:1.4">${prod.desconto_afirmativo.texto || 'Sou pessoa preta, indígena ou trans'}</div>
+              <div style="font-size:12px;color:#b07cce;margin-top:4px;line-height:1.5;font-weight:600">Aplica desconto: R$ ${Number(prod.desconto_afirmativo.valor).toFixed(0)}${prod.parcelamento?.ativo?'/mês':''} (em vez de R$ ${(prod.valor||0).toFixed(0)})</div>
+            </div>
+          </label>
+        </div>
+      ` : ''}
+
       <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
-        ✓ ${prod.evento_filho ? 'Você é registrado ao confirmar — depois o admin valida seu pagamento pelo extrato.' : 'Sua vaga é reservada ao confirmar — instruções de pagamento aparecem em seguida.'}
+        ✓ ${prod.evento_filho ? 'Você é registrado ao confirmar — depois o admin valida seu pagamento pelo extrato.' : (prod.parcelamento?.ativo ? 'Sua matrícula é registrada ao confirmar. Você paga a 1ª parcela e o admin valida pelo extrato.' : 'Sua vaga é reservada ao confirmar — instruções de pagamento aparecem em seguida.')}
       </div>
-      <button class="btn btn-primary" id="b-submit">Confirmar${prod.evento_filho?'':' reserva'} e pagar — R$ ${efetivo.valor.toFixed(0)}${efetivo.ehPromo?` <span style="font-weight:400;opacity:.7;font-size:13px;margin-left:4px">(promo)</span>`:''}</button>
+      <button class="btn btn-primary" id="b-submit">${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ <span id="b-submit-valor">${efetivo.valor.toFixed(0)}</span>${efetivo.ehPromo?` <span style="font-weight:400;opacity:.7;font-size:13px;margin-left:4px">(promo)</span>`:''}</button>
       <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
     </div>
   `;
+
+  // Atualiza o valor exibido no botão quando muda o checkbox de desconto afirmativo
+  const btnSubmit = $('#b-submit');
+  const btnValor = $('#b-submit-valor');
+  const descChk = $('#b-desc-afirmativo');
+  if (descChk) {
+    descChk.addEventListener('change', () => {
+      const ef = precoEfetivo(prod, descChk.checked);
+      if (btnValor) btnValor.textContent = ef.valor.toFixed(0);
+    });
+  }
+  // Visual feedback na seleção de turma (border dourada)
+  document.querySelectorAll('#b-turma-pills label').forEach(lbl => {
+    const radio = lbl.querySelector('input[type="radio"]');
+    const sync = () => {
+      lbl.style.borderColor = radio.checked ? 'var(--gold)' : 'var(--border2)';
+      lbl.style.background = radio.checked ? 'rgba(212,168,67,.08)' : 'var(--glass)';
+    };
+    sync();
+    radio.addEventListener('change', () => document.querySelectorAll('#b-turma-pills label').forEach(l => {
+      const r = l.querySelector('input[type="radio"]');
+      l.style.borderColor = r.checked ? 'var(--gold)' : 'var(--border2)';
+      l.style.background = r.checked ? 'rgba(212,168,67,.08)' : 'var(--glass)';
+    }));
+  });
 
   // Search-select dos filhos se for evento_filho
   if(prod.evento_filho) initFilhoSearch();
@@ -316,11 +384,24 @@ function renderProduto(prod) {
       if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent='Informe um email válido pra contato'; err.style.display='block'; return; }
     }
 
+    // Turma (se produto tem turmas configuradas)
+    let turmaId = null, turmaNome = null;
+    if(prod.turmas && prod.turmas.length > 0) {
+      const sel = document.querySelector('input[name="b-turma"]:checked');
+      if(!sel) { err.textContent='Escolha uma turma'; err.style.display='block'; return; }
+      turmaId = sel.value;
+      const t = prod.turmas.find(x => x.id === turmaId);
+      turmaNome = t?.nome || null;
+    }
+
+    // Desconto afirmativo (autodeclarado)
+    const descAfirmativo = !!($('#b-desc-afirmativo')?.checked);
+
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = 'Reservando...';
 
     try {
-      const efetivoAgora = precoEfetivo(prod);
+      const efetivoAgora = precoEfetivo(prod, descAfirmativo);
       const comoSoube = !prod.evento_filho ? ($('#b-origem')?.value || null) : null;
       await addDoc(collection(db,'vendas_pedidos'), {
         nome, tel, email: email||null,
@@ -333,6 +414,11 @@ function renderProduto(prod) {
         valor_cheio: prod.valor || 0,
         promo_aplicada: efetivoAgora.ehPromo,
         promo_label: efetivoAgora.ehPromo ? (efetivoAgora.label||null) : null,
+        desconto_afirmativo: descAfirmativo,
+        turma_id: turmaId,
+        turma_nome: turmaNome,
+        parcelas_total: prod.parcelamento?.ativo ? (Number(prod.parcelamento.qtd)||1) : 1,
+        parcela_num: prod.parcelamento?.ativo ? 1 : null,
         metodo_pagamento: null,
         comprovante_anexado: false,
         status: 'pendente',
@@ -345,7 +431,8 @@ function renderProduto(prod) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
       err.style.display = 'block';
-      btn.disabled = false; btn.textContent = `Confirmar${prod.evento_filho?'':' reserva'} e pagar — R$ ${efetivo.valor.toFixed(0)}`;
+      const efBtn = precoEfetivo(prod, descAfirmativo);
+      btn.disabled = false; btn.textContent = `${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ ${efBtn.valor.toFixed(0)}`;
     }
   };
 }
