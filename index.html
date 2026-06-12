@@ -2501,22 +2501,47 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
       : '<span class="chip chip-amber">⏳ Pendente</span>';
     const dt = x.criadoEm?.toDate ? x.criadoEm.toDate() : (x.criadoEm?.seconds ? new Date(x.criadoEm.seconds*1000) : null);
     const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    const d = x.demografia;
+    const demoSummary = d ? [
+      d.genero ? ({fem_cis:'Fem Cis',fem_trans:'Fem Trans',masc_cis:'Masc Cis',masc_trans:'Masc Trans',nao_binario:'NB',outro:'Outro'}[d.genero]||d.genero) : null,
+      d.pronome ? ({ele:'ele',ela:'ela',elu:'elu'}[d.pronome]||d.pronome) : null,
+      d.raca ? ({preto:'preto/a',pardo:'pardo/a',indigena:'indígena',amarelo:'amarelo/a',branco:'branco/a'}[d.raca]||d.raca) : null
+    ].filter(Boolean).join(' · ') : '';
     return `
-      <div class="list-item" style="background:var(--glass2)">
-        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(x.nome||'?')}</div>
-        <div class="li-main">
-          <div class="li-name">${x.nome||'(sem nome)'}</div>
-          <div class="li-meta">
-            ${stChip}
-            <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
-            ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
-            ${x.tel?`<span style="color:var(--text3)">📱 ${x.tel}</span>`:''}
+      <div class="list-item" style="background:var(--glass2);flex-direction:column;align-items:stretch">
+        <div style="display:flex;gap:10px;align-items:flex-start;width:100%">
+          <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(x.nome||'?')}</div>
+          <div class="li-main">
+            <div class="li-name">${x.nome||'(sem nome)'}</div>
+            <div class="li-meta">
+              ${stChip}
+              <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
+              ${x.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${x.turma_nome}</span>`:''}
+              ${x.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
+              ${x.parcela_num && x.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 ${x.parcela_num}/${x.parcelas_total}</span>`:''}
+              ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
+              ${x.tel?`<span style="color:var(--text3)">📱 ${x.tel}</span>`:''}
+            </div>
+            ${demoSummary?`<div style="font-size:11.5px;color:var(--text3);margin-top:3px">📊 ${demoSummary}${d.ja_terreiro==='sim'?' · ex-terreiro':''}</div>`:''}
+          </div>
+          <div class="li-actions">
+            ${(x.status==='pendente'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${x.id}')">Confirmar</button>` : ''}
+            ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${x.id}')">Desfazer</button>` : ''}
           </div>
         </div>
-        <div class="li-actions">
-          ${(x.status==='pendente'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${x.id}')">Confirmar</button>` : ''}
-          ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${x.id}')">Desfazer</button>` : ''}
-        </div>
+        ${d ? `
+          <details style="margin-top:6px;margin-left:50px">
+            <summary style="cursor:pointer;font-size:11.5px;color:#3498db;font-weight:600">Ver dados demográficos completos</summary>
+            <div style="margin-top:6px;font-size:12px;color:var(--text2);line-height:1.6;padding:8px 10px;background:rgba(52,152,219,.04);border-left:2px solid #3498db;border-radius:4px">
+              ${d.instagram?`<div><strong>Instagram:</strong> <a href="${d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+d.instagram.replace('@','')}" target="_blank" rel="noopener" style="color:#e91e63">${d.instagram}</a></div>`:''}
+              ${d.genero?`<div><strong>Gênero:</strong> ${({fem_cis:'Feminino Cis',fem_trans:'Feminino Trans',masc_cis:'Masculino Cis',masc_trans:'Masculino Trans',nao_binario:'Não-binárie',outro:'Outro'}[d.genero]||d.genero)}${d.genero_outro?` · "${d.genero_outro}"`:''}</div>`:''}
+              ${d.pronome?`<div><strong>Pronome:</strong> ${({ele:'Ele/Dele',ela:'Ela/Dela',elu:'Elu/Delu'}[d.pronome]||d.pronome)}</div>`:''}
+              ${d.deficiencia?`<div><strong>Deficiência:</strong> ${({nao:'Não',visual:'Visual',fisica:'Física',psicossocial:'Psicossocial',auditiva:'Auditiva',multipla:'Múltipla',intelectual:'Intelectual'}[d.deficiencia]||d.deficiencia)}</div>`:''}
+              ${d.raca?`<div><strong>Cor/Raça:</strong> ${({preto:'Preto/a',pardo:'Pardo/a',indigena:'Indígena',amarelo:'Amarelo/a',branco:'Branco/a'}[d.raca]||d.raca)}</div>`:''}
+              ${d.ja_terreiro?`<div><strong>Já fez parte de outro terreiro:</strong> ${d.ja_terreiro==='sim'?'Sim':'Não'}</div>`:''}
+            </div>
+          </details>
+        `:''}
       </div>
     `;
   };
@@ -5753,6 +5778,27 @@ function renderPedidos(c) {
           const dataBr = p.criadoEm ? fmt.rel(p.criadoEm) : '';
           const msgConfirm = `Oi ${(p.nome||'').split(' ')[0]}, recebemos seu pedido pra *${p.produto_nome||'compra'}* (R$ ${p.valor||0}). Tô confirmando aqui!`;
           const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(msgConfirm)}` : null;
+          const demoLabels = {
+            genero: { fem_cis:'Feminino Cis', fem_trans:'Feminino Trans', masc_cis:'Masculino Cis', masc_trans:'Masculino Trans', nao_binario:'Não-binárie', outro:'Outro' },
+            pronome: { ele:'Ele/Dele', ela:'Ela/Dela', elu:'Elu/Delu' },
+            deficiencia: { nao:'Não', visual:'Visual', fisica:'Física', psicossocial:'Psicossocial', auditiva:'Auditiva', multipla:'Múltipla', intelectual:'Intelectual' },
+            raca: { preto:'Preto/a', pardo:'Pardo/a', indigena:'Indígena', amarelo:'Amarelo/a', branco:'Branco/a' },
+            ja_terreiro: { sim:'Já frequentou outro terreiro', nao:'Primeira vez em terreiro' }
+          };
+          const d = p.demografia;
+          const demoBlock = d ? `
+            <details style="margin-top:8px;padding:8px 10px;background:rgba(52,152,219,.06);border:1px solid rgba(52,152,219,.2);border-radius:6px">
+              <summary style="cursor:pointer;font-size:12px;color:#3498db;font-weight:700;letter-spacing:.02em">📊 Dados demográficos</summary>
+              <div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:12.5px">
+                ${d.instagram?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Instagram</div><a href="${d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+d.instagram.replace('@','')}" target="_blank" rel="noopener" style="color:#e91e63;text-decoration:none;word-break:break-all">${d.instagram}</a></div>`:''}
+                ${d.genero?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Gênero</div><div>${demoLabels.genero[d.genero]||d.genero}${d.genero_outro?` · "${d.genero_outro}"`:''}</div></div>`:''}
+                ${d.pronome?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pronome</div><div>${demoLabels.pronome[d.pronome]||d.pronome}</div></div>`:''}
+                ${d.deficiencia?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Deficiência</div><div>${demoLabels.deficiencia[d.deficiencia]||d.deficiencia}</div></div>`:''}
+                ${d.raca?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Cor/Raça</div><div>${demoLabels.raca[d.raca]||d.raca}</div></div>`:''}
+                ${d.ja_terreiro?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Outro terreiro</div><div>${demoLabels.ja_terreiro[d.ja_terreiro]||d.ja_terreiro}</div></div>`:''}
+              </div>
+            </details>
+          ` : '';
           return `
           <div class="list-item" style="align-items:flex-start">
             <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${fmt.initials(p.nome||'?')}</div>
@@ -5761,6 +5807,9 @@ function renderPedidos(c) {
               <div class="li-meta" style="margin-top:4px">
                 <strong style="color:var(--text)">${p.produto_nome||'?'}</strong>
                 <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${p.valor_cheio}</span>`:''}</span>
+                ${p.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${p.turma_nome}</span>`:''}
+                ${p.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
+                ${p.parcela_num && p.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 parcela ${p.parcela_num}/${p.parcelas_total}</span>`:''}
                 ${p.promo_aplicada?`<span class="chip chip-green" style="font-size:10px">${p.promo_label||'promo'}</span>`:''}
                 ${p.metodo_pagamento?`<span>${p.metodo_pagamento}</span>`:''}
                 ${p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
@@ -5768,9 +5817,11 @@ function renderPedidos(c) {
               <div class="li-meta" style="margin-top:4px">
                 ${p.tel?`<span>📱 ${p.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
                 ${p.email?`<span>✉️ ${p.email}</span>`:''}
+                ${p.como_soube?`<span style="color:var(--text3)">via ${p.como_soube}</span>`:''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${dataBr}</span>
               </div>
               ${p.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${p.observacao}"</div>`:''}
+              ${demoBlock}
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:130px">
               ${waLink?`<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}
