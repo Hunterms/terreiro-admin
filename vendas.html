@@ -315,6 +315,69 @@ function renderProduto(prod) {
         <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Alguma coisa que queira deixar registrado?"></textarea></div>
       `}
 
+      ${!prod.evento_filho && prod.coleta_demografia ? `
+        <div style="padding:14px;background:rgba(52,152,219,.06);border:1px solid rgba(52,152,219,.25);border-radius:10px;margin-bottom:14px">
+          <div style="font-size:11px;color:#3498db;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px">📊 Sobre você (a casa precisa conhecer)</div>
+          <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">Esses dados ajudam a casa a entender quem está presente e construir um espaço mais acolhedor. Tudo confidencial.</div>
+
+          <div class="fi-group"><label>Link do Instagram <span style="color:var(--text3);font-weight:400">(opcional)</span></label><input class="fi" id="b-ig" placeholder="@seu_perfil ou instagram.com/seu_perfil"/></div>
+
+          <div class="fi-group"><label>Gênero <span class="req">*</span></label>
+            <select class="fi" id="b-genero" required>
+              <option value="">— Selecione —</option>
+              <option value="fem_cis">Feminino Cis</option>
+              <option value="fem_trans">Feminino Trans</option>
+              <option value="masc_cis">Masculino Cis</option>
+              <option value="masc_trans">Masculino Trans</option>
+              <option value="nao_binario">Não-binárie</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+          <div class="fi-group" id="b-genero-outro-wrap" style="display:none"><label>Como prefere descrever?</label><input class="fi" id="b-genero-outro" placeholder="Descreva como preferir"/></div>
+
+          <div class="fi-group"><label>Pronome de tratamento <span class="req">*</span></label>
+            <select class="fi" id="b-pronome" required>
+              <option value="">— Selecione —</option>
+              <option value="ele">Ele / Dele</option>
+              <option value="ela">Ela / Dela</option>
+              <option value="elu">Elu / Delu</option>
+            </select>
+          </div>
+
+          <div class="fi-group"><label>Você possui alguma deficiência? <span class="req">*</span></label>
+            <select class="fi" id="b-deficiencia" required>
+              <option value="">— Selecione —</option>
+              <option value="nao">Não</option>
+              <option value="visual">Sim, deficiência visual</option>
+              <option value="fisica">Sim, deficiência física</option>
+              <option value="psicossocial">Sim, deficiência psicossocial</option>
+              <option value="auditiva">Sim, deficiência auditiva</option>
+              <option value="multipla">Sim, deficiência múltipla</option>
+              <option value="intelectual">Sim, deficiência intelectual</option>
+            </select>
+          </div>
+
+          <div class="fi-group"><label>Cor / Raça <span class="req">*</span></label>
+            <select class="fi" id="b-raca" required>
+              <option value="">— Selecione —</option>
+              <option value="preto">Preto/a</option>
+              <option value="pardo">Pardo/a</option>
+              <option value="indigena">Indígena</option>
+              <option value="amarelo">Amarelo/a</option>
+              <option value="branco">Branco/a</option>
+            </select>
+          </div>
+
+          <div class="fi-group" style="margin-bottom:0"><label>Já fez parte de algum terreiro? <span class="req">*</span></label>
+            <select class="fi" id="b-ja-terreiro" required>
+              <option value="">— Selecione —</option>
+              <option value="sim">Sim</option>
+              <option value="nao">Não</option>
+            </select>
+          </div>
+        </div>
+      ` : ''}
+
       ${prod.desconto_afirmativo?.ativo && prod.desconto_afirmativo.valor != null ? `
         <div class="fi-group" style="padding:12px 14px;background:rgba(155,89,182,.08);border:1px solid rgba(155,89,182,.3);border-radius:10px">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
@@ -360,6 +423,15 @@ function renderProduto(prod) {
     }));
   });
 
+  // Toggle do campo "outro" no gênero
+  const generoSel = $('#b-genero');
+  if (generoSel) {
+    generoSel.addEventListener('change', () => {
+      const wrap = $('#b-genero-outro-wrap');
+      if (wrap) wrap.style.display = generoSel.value === 'outro' ? '' : 'none';
+    });
+  }
+
   // Search-select dos filhos se for evento_filho
   if(prod.evento_filho) initFilhoSearch();
 
@@ -397,6 +469,32 @@ function renderProduto(prod) {
     // Desconto afirmativo (autodeclarado)
     const descAfirmativo = !!($('#b-desc-afirmativo')?.checked);
 
+    // Dados demográficos (se produto coleta)
+    let demografia = null;
+    if (!prod.evento_filho && prod.coleta_demografia) {
+      const genero = $('#b-genero')?.value;
+      const generoOutro = $('#b-genero-outro')?.value?.trim();
+      const pronome = $('#b-pronome')?.value;
+      const deficiencia = $('#b-deficiencia')?.value;
+      const raca = $('#b-raca')?.value;
+      const jaTerreiro = $('#b-ja-terreiro')?.value;
+      if (!genero) { err.textContent='Informe o gênero'; err.style.display='block'; return; }
+      if (genero === 'outro' && !generoOutro) { err.textContent='Descreva como prefere se identificar'; err.style.display='block'; return; }
+      if (!pronome) { err.textContent='Informe o pronome de tratamento'; err.style.display='block'; return; }
+      if (!deficiencia) { err.textContent='Informe sobre deficiência'; err.style.display='block'; return; }
+      if (!raca) { err.textContent='Informe cor/raça'; err.style.display='block'; return; }
+      if (!jaTerreiro) { err.textContent='Informe se já fez parte de algum terreiro'; err.style.display='block'; return; }
+      demografia = {
+        instagram: $('#b-ig')?.value?.trim() || null,
+        genero,
+        genero_outro: genero === 'outro' ? generoOutro : null,
+        pronome,
+        deficiencia,
+        raca,
+        ja_terreiro: jaTerreiro
+      };
+    }
+
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = 'Reservando...';
 
@@ -419,6 +517,7 @@ function renderProduto(prod) {
         turma_nome: turmaNome,
         parcelas_total: prod.parcelamento?.ativo ? (Number(prod.parcelamento.qtd)||1) : 1,
         parcela_num: prod.parcelamento?.ativo ? 1 : null,
+        demografia,
         metodo_pagamento: null,
         comprovante_anexado: false,
         status: 'pendente',
