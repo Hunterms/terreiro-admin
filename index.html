@@ -5492,7 +5492,14 @@ function openProdutoForm(id=null) {
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Valor com desconto (R$)</label><input type="number" step="0.01" min="0" class="fi" id="pd-desc-valor" value="${p?.desconto_afirmativo?.valor||''}" placeholder="ex: 150"/></div>
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Texto pro checkbox público</label><input class="fi" id="pd-desc-texto" value="${(p?.desconto_afirmativo?.texto||'Sou pessoa preta, indígena ou trans').replace(/"/g,'&quot;')}"/></div>
           </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45;font-style:italic">Lembrete: o desconto é opt-in. A pessoa pode ser de minoria e escolher pagar cheio — respeite a autodeclaração intencional.</div>
         </div>
+      </div>
+
+      <!-- DADOS DEMOGRÁFICOS — coleta no checkout (cursos, festas, etc) -->
+      <div class="fi-group" style="padding:14px;background:rgba(52,152,219,0.06);border:1px solid rgba(52,152,219,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-demo-on" ${p?.coleta_demografia?'checked':''}/> <strong>📊 Coletar dados demográficos no checkout</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Pra cursos, festas e produtos que precisam saber quem está comprando: gênero, pronome, deficiência, raça, instagram, se já fez parte de terreiro. Não use em produtos de venda rápida (coxinha, guia) pra não atrapalhar a compra.</div>
       </div>
 
       <!-- PARCELAMENTO -->
@@ -5558,6 +5565,7 @@ function openProdutoForm(id=null) {
       publico: $('#pd-pub').checked,
       ativo: $('#pd-ativo').checked,
       evento_filho: $('#pd-eh-filho').checked,
+      coleta_demografia: $('#pd-demo-on')?.checked || false,
       ordem: parseInt($('#pd-ord').value) || 999,
       atualizadoEm: serverTimestamp()
     };
