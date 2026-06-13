@@ -2461,7 +2461,13 @@ async function enviarEmailConfirmacao(pedidoId) {
     await new Promise(r => setTimeout(r, 250));
     const p = S.pedidos.find(x => x.id === pedidoId);
     if (!p) return;
-    if (!p.email) { console.warn('Pedido sem email — pulando'); return; }
+    // Email pode vir do pedido OU do filho vinculado (pedidos antigos / mensalidades não têm email salvo)
+    let email = p.email;
+    if (!email && p.filho_id) {
+      const filho = (S.consulentes||[]).find(c => c.id === p.filho_id);
+      email = filho?.auth_email || filho?.email || null;
+    }
+    if (!email) { console.warn('Pedido sem email — pulando', { pedidoId, filho_id: p.filho_id }); return; }
     if (p.email_confirmacao_enviado_em) return; // idempotente
 
     const cfg = await _carregarEmailCfg();
@@ -2483,7 +2489,7 @@ async function enviarEmailConfirmacao(pedidoId) {
         'X-Auth-Secret': cfg.worker_secret
       },
       body: JSON.stringify({
-        to: p.email,
+        to: email,
         to_name: p.nome || '',
         from: cfg.from || undefined,
         reply_to: cfg.reply_to || undefined,
