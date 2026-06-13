@@ -2519,6 +2519,35 @@ async function enviarEmailConfirmacao(pedidoId) {
   }
 }
 
+// Backfill: reenvia confirmação pra todos os pedidos confirmados sem email_confirmacao_enviado_em
+async function reenviarEmailsPendentes() {
+  const candidatos = (S.pedidos||[]).filter(p =>
+    p.status === 'confirmado' && !p.email_confirmacao_enviado_em
+  );
+  if (candidatos.length === 0) { toast('Nenhum pedido pendente de email','ok'); return; }
+  if (!confirm(`Reenviar email de confirmação pra ${candidatos.length} pedidos confirmados?\n\nVai disparar 1 a cada ~600ms (~${Math.ceil(candidatos.length*0.6)}s no total).\nPedidos sem email cadastrado serão pulados automaticamente.`)) return;
+
+  let ok = 0, semEmail = 0, erro = 0;
+  for (let i = 0; i < candidatos.length; i++) {
+    const p = candidatos[i];
+    const antes = p.email_confirmacao_enviado_em;
+    try {
+      await enviarEmailConfirmacao(p.id);
+      // Confere se realmente enviou (a função pula silenciosamente quando sem email)
+      const atualizado = S.pedidos.find(x => x.id === p.id);
+      if (atualizado?.email_confirmacao_enviado_em && !antes) ok++;
+      else semEmail++;
+    } catch(e) {
+      erro++;
+      console.warn('Erro no pedido', p.id, e);
+    }
+    // Throttle pra não floodar Resend (free tier: 2 req/seg)
+    await new Promise(r => setTimeout(r, 600));
+    if (i % 5 === 0 && i > 0) toast(`📧 ${i+1}/${candidatos.length}...`,'ok');
+  }
+  toast(`✅ ${ok} enviados · ⏭️ ${semEmail} sem email · ❌ ${erro} erros`,'ok');
+}
+
 function _emailConfirmacaoSubject(p, produto) {
   const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
   const isInscricao = produto?.turmas && produto.turmas.length > 0;
@@ -7189,7 +7218,8 @@ window._app = {
   marcarPagoSemPedido,
   setPedTab,
   setPedidoStatus,
-  deletarPedido
+  deletarPedido,
+  reenviarEmailsPendentes
 };
 
 // Mantém badge de solicitações atualizado mesmo quando não está na rota
