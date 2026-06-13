@@ -2435,8 +2435,34 @@ async function confirmarPedido(pedidoId) {
 
 // ── EMAIL DE CONFIRMAÇÃO ─────────────────────────────────────────────────
 // Escreve um doc em /mail/ que é processado pela Firebase Extension "Trigger
-// Email from Firestore" — a extensão envia o email via SMTP configurado no
-// console. Setup uma vez: Console → Extensions → Trigger Email.
+// Email enviado via EmailJS (grátis até 200/mês — não exige Blaze).
+// Setup: cria conta em emailjs.com, conecta email (Gmail/Outlook),
+// cria template com {{{html_content}}} no body, e cola as 3 chaves
+// no doc adm_config/email no Firestore.
+let _emailCfg = null;
+let _emailJsLoaded = false;
+
+async function _carregarEmailCfg() {
+  if (_emailCfg !== null) return _emailCfg;
+  try {
+    const snap = await getDoc(doc(dbPvd, 'adm_config', 'email'));
+    _emailCfg = snap.exists() ? snap.data() : {};
+  } catch(e) { _emailCfg = {}; }
+  return _emailCfg;
+}
+
+async function _carregarEmailJsSdk() {
+  if (_emailJsLoaded && window.emailjs) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Falha ao carregar EmailJS SDK'));
+    document.head.appendChild(s);
+  });
+  _emailJsLoaded = true;
+}
+
 async function enviarEmailConfirmacao(pedidoId) {
   try {
     // Pequeno delay pra o listener atualizar S.pedidos com o status novo
@@ -2445,21 +2471,37 @@ async function enviarEmailConfirmacao(pedidoId) {
     if (!p) return;
     if (!p.email) { console.warn('Pedido sem email — pulando'); return; }
     if (p.email_confirmacao_enviado_em) return; // idempotente
+
+    const cfg = await _carregarEmailCfg();
+    if (!cfg?.enabled) { console.warn('Email desativado (adm_config/email.enabled=false)'); return; }
+    if (!cfg.emailjs_service_id || !cfg.emailjs_template_id || !cfg.emailjs_public_key) {
+      console.warn('Config de email incompleta — pulando');
+      return;
+    }
+
     const produto = S.produtos.find(x => x.id === p.produto_id) || {};
     const subject = _emailConfirmacaoSubject(p, produto);
     const html = _buildEmailConfirmacaoHTML(p, produto);
     const text = _buildEmailConfirmacaoText(p, produto);
-    await addDoc(collection(dbPvd, 'mail'), {
-      to: [{ email: p.email, name: p.nome || '' }],
-      message: { subject, html, text },
-      pedido_id: pedidoId,
-      criadoEm: serverTimestamp()
+
+    await _carregarEmailJsSdk();
+    window.emailjs.init({ publicKey: cfg.emailjs_public_key });
+    await window.emailjs.send(cfg.emailjs_service_id, cfg.emailjs_template_id, {
+      to_email: p.email,
+      to_name: p.nome || '',
+      from_name: cfg.from_name || 'Terreiro do Candieiro',
+      reply_to: cfg.reply_to || '',
+      subject,
+      html_content: html,
+      text_content: text
     });
+
     await updateDoc(doc(dbPvd, 'vendas_pedidos', pedidoId), {
       email_confirmacao_enviado_em: serverTimestamp()
     });
+    toast('📧 Email enviado','ok');
   } catch(e) {
-    console.warn('Falha ao enviar email:', e.message);
+    console.warn('Falha ao enviar email:', e?.text || e?.message || e);
     // Não bloqueia o fluxo do admin
   }
 }
