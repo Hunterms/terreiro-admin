@@ -7219,7 +7219,22 @@ window._app = {
   setPedTab,
   setPedidoStatus,
   deletarPedido,
-  reenviarEmailsPendentes
+  reenviarEmailsPendentes,
+  // Debug helpers
+  _checarEmailsPendentes: () => {
+    const pend = (S.pedidos||[]).filter(p => p.status==='confirmado' && !p.email_confirmacao_enviado_em);
+    const enviados = (S.pedidos||[]).filter(p => p.email_confirmacao_enviado_em);
+    console.table(pend.map(p => ({
+      id: p.id.slice(0,8),
+      nome: p.nome,
+      produto: p.produto_nome,
+      email: p.email || (p.filho_id ? '(buscar no filho)' : '(sem email)'),
+      tem_filho: !!p.filho_id
+    })));
+    console.log(`📊 Pendentes: ${pend.length} · Já enviados: ${enviados.length}`);
+    return { pendentes: pend.length, enviados: enviados.length };
+  },
+  _S: () => S
 };
 
 // Mantém badge de solicitações atualizado mesmo quando não está na rota
