@@ -2434,13 +2434,17 @@ async function confirmarPedido(pedidoId) {
 }
 
 // ── EMAIL DE CONFIRMAÇÃO ─────────────────────────────────────────────────
-// Escreve um doc em /mail/ que é processado pela Firebase Extension "Trigger
-// Email enviado via EmailJS (grátis até 200/mês — não exige Blaze).
-// Setup: cria conta em emailjs.com, conecta email (Gmail/Outlook),
-// cria template com {{{html_content}}} no body, e cola as 3 chaves
-// no doc adm_config/email no Firestore.
+// Cloudflare Worker (grátis) → Resend (grátis 3000/mês) → email customizado
+// pelo domínio próprio (ex: contato@terreirodocandieiro.com.br).
+//
+// Setup uma vez:
+// 1. Resend.com: cria conta, adiciona domínio, configura DNS (SPF/DKIM)
+// 2. Cloudflare Workers: deploy o código em worker/email-worker.js (instruções no README do worker)
+// 3. Cria doc adm_config/email no Firestore com:
+//    { enabled: true, worker_url: 'https://...', worker_secret: '...',
+//      from: 'Terreiro <contato@terreirodocandieiro.com.br>',
+//      reply_to: 'contato@terreirodocandieiro.com.br' }
 let _emailCfg = null;
-let _emailJsLoaded = false;
 
 async function _carregarEmailCfg() {
   if (_emailCfg !== null) return _emailCfg;
@@ -2449,18 +2453,6 @@ async function _carregarEmailCfg() {
     _emailCfg = snap.exists() ? snap.data() : {};
   } catch(e) { _emailCfg = {}; }
   return _emailCfg;
-}
-
-async function _carregarEmailJsSdk() {
-  if (_emailJsLoaded && window.emailjs) return;
-  await new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Falha ao carregar EmailJS SDK'));
-    document.head.appendChild(s);
-  });
-  _emailJsLoaded = true;
 }
 
 async function enviarEmailConfirmacao(pedidoId) {
@@ -2474,8 +2466,8 @@ async function enviarEmailConfirmacao(pedidoId) {
 
     const cfg = await _carregarEmailCfg();
     if (!cfg?.enabled) { console.warn('Email desativado (adm_config/email.enabled=false)'); return; }
-    if (!cfg.emailjs_service_id || !cfg.emailjs_template_id || !cfg.emailjs_public_key) {
-      console.warn('Config de email incompleta — pulando');
+    if (!cfg.worker_url || !cfg.worker_secret) {
+      console.warn('Config de email incompleta — pulando (worker_url ou worker_secret)');
       return;
     }
 
@@ -2484,24 +2476,31 @@ async function enviarEmailConfirmacao(pedidoId) {
     const html = _buildEmailConfirmacaoHTML(p, produto);
     const text = _buildEmailConfirmacaoText(p, produto);
 
-    await _carregarEmailJsSdk();
-    window.emailjs.init({ publicKey: cfg.emailjs_public_key });
-    await window.emailjs.send(cfg.emailjs_service_id, cfg.emailjs_template_id, {
-      to_email: p.email,
-      to_name: p.nome || '',
-      from_name: cfg.from_name || 'Terreiro do Candieiro',
-      reply_to: cfg.reply_to || '',
-      subject,
-      html_content: html,
-      text_content: text
+    const resp = await fetch(cfg.worker_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-Secret': cfg.worker_secret
+      },
+      body: JSON.stringify({
+        to: p.email,
+        to_name: p.nome || '',
+        from: cfg.from || undefined,
+        reply_to: cfg.reply_to || undefined,
+        subject, html, text
+      })
     });
+    if (!resp.ok) {
+      const errTxt = await resp.text().catch(() => '');
+      throw new Error(`Worker retornou ${resp.status}: ${errTxt.slice(0,200)}`);
+    }
 
     await updateDoc(doc(dbPvd, 'vendas_pedidos', pedidoId), {
       email_confirmacao_enviado_em: serverTimestamp()
     });
     toast('📧 Email enviado','ok');
   } catch(e) {
-    console.warn('Falha ao enviar email:', e?.text || e?.message || e);
+    console.warn('Falha ao enviar email:', e?.message || e);
     // Não bloqueia o fluxo do admin
   }
 }
