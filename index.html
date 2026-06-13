@@ -2464,10 +2464,18 @@ async function enviarEmailConfirmacao(pedidoId) {
     // Email pode vir do pedido OU do filho vinculado (pedidos antigos / mensalidades não têm email salvo)
     let email = p.email;
     if (!email && p.filho_id) {
-      const filho = (S.consulentes||[]).find(c => c.id === p.filho_id);
+      const filho = (S.filhos||[]).find(f => f.id === p.filho_id)
+                 || (S.consulentes||[]).find(c => c.id === p.filho_id);
       email = filho?.auth_email || filho?.email || null;
     }
-    if (!email) { console.warn('Pedido sem email — pulando', { pedidoId, filho_id: p.filho_id }); return; }
+    if (!email) {
+      console.warn('Pedido sem email — pulando', {
+        pedidoId, filho_id: p.filho_id, pedido_nome: p.nome,
+        achou_filho: !!(S.filhos||[]).find(f => f.id === p.filho_id),
+        achou_consulente: !!(S.consulentes||[]).find(c => c.id === p.filho_id)
+      });
+      return;
+    }
     if (p.email_confirmacao_enviado_em) return; // idempotente
 
     const cfg = await _carregarEmailCfg();
