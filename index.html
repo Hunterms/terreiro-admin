@@ -2429,7 +2429,236 @@ async function confirmarPedido(pedidoId) {
   try {
     await updateDoc(doc(dbPvd,'vendas_pedidos', pedidoId), { status: 'confirmado', confirmadoEm: serverTimestamp() });
     toast('Pagamento confirmado','ok');
+    enviarEmailConfirmacao(pedidoId); // não bloqueia o fluxo
   } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+// ── EMAIL DE CONFIRMAÇÃO ─────────────────────────────────────────────────
+// Escreve um doc em /mail/ que é processado pela Firebase Extension "Trigger
+// Email from Firestore" — a extensão envia o email via SMTP configurado no
+// console. Setup uma vez: Console → Extensions → Trigger Email.
+async function enviarEmailConfirmacao(pedidoId) {
+  try {
+    // Pequeno delay pra o listener atualizar S.pedidos com o status novo
+    await new Promise(r => setTimeout(r, 250));
+    const p = S.pedidos.find(x => x.id === pedidoId);
+    if (!p) return;
+    if (!p.email) { console.warn('Pedido sem email — pulando'); return; }
+    if (p.email_confirmacao_enviado_em) return; // idempotente
+    const produto = S.produtos.find(x => x.id === p.produto_id) || {};
+    const subject = _emailConfirmacaoSubject(p, produto);
+    const html = _buildEmailConfirmacaoHTML(p, produto);
+    const text = _buildEmailConfirmacaoText(p, produto);
+    await addDoc(collection(dbPvd, 'mail'), {
+      to: [{ email: p.email, name: p.nome || '' }],
+      message: { subject, html, text },
+      pedido_id: pedidoId,
+      criadoEm: serverTimestamp()
+    });
+    await updateDoc(doc(dbPvd, 'vendas_pedidos', pedidoId), {
+      email_confirmacao_enviado_em: serverTimestamp()
+    });
+  } catch(e) {
+    console.warn('Falha ao enviar email:', e.message);
+    // Não bloqueia o fluxo do admin
+  }
+}
+
+function _emailConfirmacaoSubject(p, produto) {
+  const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
+  const isInscricao = produto?.turmas && produto.turmas.length > 0;
+  const acao = isParcelado ? 'Matrícula confirmada' : (isInscricao ? 'Inscrição confirmada' : 'Pedido confirmado');
+  return `${acao} — ${p.produto_nome || 'Terreiro do Candieiro'}`;
+}
+
+function _proximasParcelas(p, produto) {
+  const total = Number(p.parcelas_total) || 1;
+  if (total <= 1 || !produto?.parcelamento?.ativo) return [];
+  const dia = Number(produto.parcelamento.vencimento_dia) || 10;
+  const valor = Number(p.valor) || 0;
+  const out = [];
+  const hoje = new Date();
+  // Próximo dia X — se hoje > dia X do mês atual, pula pro próximo mês
+  let baseMes = hoje.getDate() > dia ? hoje.getMonth() + 1 : hoje.getMonth() + 1; // sempre próximo mês como 2ª parcela
+  for (let i = 2; i <= total; i++) {
+    const d = new Date(hoje.getFullYear(), baseMes + (i - 2), dia);
+    out.push({
+      n: i,
+      data: d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      valor: valor.toFixed(2).replace('.', ',')
+    });
+  }
+  return out;
+}
+
+function _buildEmailConfirmacaoHTML(p, produto) {
+  const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
+  const isInscricao = produto?.turmas && produto.turmas.length > 0;
+  const acaoLabel = isParcelado ? 'matrícula' : (isInscricao ? 'inscrição' : 'compra');
+  const acaoTitulo = isParcelado ? 'Sua matrícula está confirmada' : (isInscricao ? 'Sua inscrição está confirmada' : 'Seu pedido está confirmado');
+  const turma = p.turma_id ? (produto?.turmas||[]).find(t => t.id === p.turma_id) : null;
+  const valor = (Number(p.valor) || 0).toFixed(2).replace('.', ',');
+  const proxParcelas = _proximasParcelas(p, produto);
+  const pixKey = produto?.pix || 'contato@terreirodocandieiro.com.br';
+  const mensagemInicial = isParcelado
+    ? `Recebemos sua primeira parcela. Bem-vindo(a) a esse caminho — a casa estará aqui pra te acolher.`
+    : (isInscricao ? `Sua vaga está garantida. Estamos preparando tudo pra te receber.` : `Recebemos o seu pagamento. Obrigado por estar com a gente.`);
+
+  const proxPassos = isParcelado
+    ? `Sua turma começa em <strong>${turma?.detalhes || 'breve'}</strong>. As próximas parcelas você paga via PIX (chave abaixo) e manda o comprovante pelo WhatsApp. Qualquer dúvida, a casa está aberta.`
+    : (isInscricao ? `Te esperamos no dia: <strong>${turma?.detalhes || 'a combinar'}</strong>. Se for sua primeira vez, chega 15 min antes pra se ambientar.` : `Em caso de dúvida ou pra confirmar detalhes, fala com a gente pelo WhatsApp.`);
+
+  const fundoEscuro = '#1a1410';
+  const fundoCard = '#fdf8ee';
+  const dourado = '#d4a843';
+  const douradoEscuro = '#b8922a';
+  const tinta = '#1a1209';
+  const tinta2 = '#3a2f24';
+  const muted = '#7a6a55';
+  const muted2 = '#a89880';
+  const border = '#ebe0c8';
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${acaoTitulo}</title>
+</head>
+<body style="margin:0;padding:0;background:${fundoEscuro};font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;color:${tinta2};-webkit-font-smoothing:antialiased">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${fundoEscuro};padding:32px 12px">
+  <tr><td align="center">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:${fundoCard};border-radius:14px;overflow:hidden;box-shadow:0 12px 50px rgba(0,0,0,0.4)">
+
+      <!-- Faixa dourada com logo -->
+      <tr><td style="background:linear-gradient(135deg,${dourado},${douradoEscuro});padding:36px 32px 28px;text-align:center">
+        <img src="https://terreirodocandieiro.com.br/logocandieiro.png" alt="Candieiro" width="64" height="64" style="display:block;margin:0 auto 14px;background:#fff;border-radius:50%;padding:6px;box-shadow:0 4px 16px rgba(0,0,0,0.2)">
+        <div style="color:${tinta};font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:800">Terreiro do Candieiro</div>
+        <div style="color:rgba(26,18,9,0.7);font-size:10.5px;letter-spacing:.15em;margin-top:6px;font-style:italic">Umbanda Omoloko · Jurema Sagrada</div>
+      </td></tr>
+
+      <!-- Hero confirmação -->
+      <tr><td style="padding:44px 32px 12px;text-align:center">
+        <div style="font-size:56px;line-height:1;margin-bottom:14px">🕯️</div>
+        <h1 style="color:${tinta};font-size:26px;font-weight:700;margin:0 0 10px;line-height:1.25;letter-spacing:-.01em">${acaoTitulo}, ${(p.nome||'').split(' ')[0]}!</h1>
+        <p style="color:${muted};font-size:15px;line-height:1.65;margin:0 auto;max-width:440px">${mensagemInicial}</p>
+      </td></tr>
+
+      <!-- Card do pedido -->
+      <tr><td style="padding:36px 32px 8px">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff;border:1px solid ${border};border-radius:12px">
+          <tr><td style="padding:22px 24px;border-bottom:1px solid #f5ecd6">
+            <div style="color:${muted2};font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;margin-bottom:8px">O que você ${acaoLabel === 'compra' ? 'comprou' : 'reservou'}</div>
+            <div style="color:${tinta};font-size:18px;font-weight:700;line-height:1.35">${p.produto_nome || 'Produto'}</div>
+            ${turma ? `<div style="color:${muted};font-size:13.5px;margin-top:10px;line-height:1.55">
+              <span style="color:${douradoEscuro};font-weight:700">🗓️ ${turma.nome}</span>${turma.detalhes ? `<br><span style="color:${muted2}">${turma.detalhes}</span>` : ''}
+            </div>` : ''}
+            ${produto?.local ? `<div style="color:${muted};font-size:13px;margin-top:8px;line-height:1.5">📍 ${produto.local}</div>` : ''}
+          </td></tr>
+          <tr><td style="padding:22px 24px">
+            <div style="color:${muted2};font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;margin-bottom:6px">${isParcelado ? '1ª parcela paga' : 'Valor pago'}</div>
+            <div style="color:${tinta};font-size:28px;font-weight:800;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif">R$ ${valor}</div>
+            ${isParcelado ? `<div style="color:${muted};font-size:12.5px;margin-top:8px;line-height:1.55">De ${p.parcelas_total} parcelas mensais · vencimento dia ${produto.parcelamento.vencimento_dia}</div>` : ''}
+            ${p.desconto_afirmativo ? `<div style="display:inline-block;margin-top:10px;padding:5px 11px;background:#f3eaf7;color:#7d3a9e;font-size:11.5px;font-weight:700;border-radius:14px;letter-spacing:.02em">✊🏿 Desconto afirmativo aplicado</div>` : ''}
+            ${p.promo_aplicada ? `<div style="display:inline-block;margin-top:10px;padding:5px 11px;background:#e3f5e8;color:#1e7e3c;font-size:11.5px;font-weight:700;border-radius:14px">🎉 ${p.promo_label || 'Promoção'} aplicada</div>` : ''}
+          </td></tr>
+        </table>
+      </td></tr>
+
+      ${proxParcelas.length > 0 ? `
+      <!-- Próximas parcelas -->
+      <tr><td style="padding:24px 32px 8px">
+        <div style="color:${muted2};font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;margin-bottom:12px">Próximas parcelas</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff;border:1px solid ${border};border-radius:12px">
+          ${proxParcelas.map((par, i) => `
+            <tr><td style="padding:14px 22px;${i < proxParcelas.length - 1 ? `border-bottom:1px solid #f5ecd6` : ''}">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="vertical-align:middle">
+                    <div style="color:${tinta};font-size:13.5px;font-weight:700">${par.n}ª parcela</div>
+                    <div style="color:${muted};font-size:12px;margin-top:2px;text-transform:capitalize">${par.data}</div>
+                  </td>
+                  <td style="vertical-align:middle;text-align:right">
+                    <div style="color:${douradoEscuro};font-size:15px;font-weight:700">R$ ${par.valor}</div>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          `).join('')}
+        </table>
+        <div style="background:#fff8e8;border-left:3px solid ${dourado};border-radius:6px;padding:14px 16px;margin-top:14px;color:${tinta2};font-size:13px;line-height:1.6">
+          <strong style="color:${tinta}">PIX pra pagar:</strong><br>
+          <span style="font-family:'SF Mono','Monaco','Menlo','Consolas',monospace;font-size:13.5px;color:${douradoEscuro};word-break:break-all">${pixKey}</span>
+        </div>
+      </td></tr>
+      ` : ''}
+
+      <!-- Próximos passos -->
+      <tr><td style="padding:28px 32px 8px">
+        <div style="color:${muted2};font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;margin-bottom:12px">O que vem agora</div>
+        <div style="background:#fff8e8;border-left:3px solid ${dourado};border-radius:8px;padding:18px 20px;color:${tinta2};font-size:14px;line-height:1.7">${proxPassos}</div>
+      </td></tr>
+
+      ${produto?.descricao && !isParcelado ? `
+      <!-- Descrição do produto -->
+      <tr><td style="padding:28px 32px 8px">
+        <div style="color:${muted2};font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;margin-bottom:12px">Sobre ${p.produto_nome}</div>
+        <div style="color:${tinta2};font-size:13.5px;line-height:1.7;white-space:pre-wrap">${(produto.descricao || '').slice(0, 1000)}${(produto.descricao || '').length > 1000 ? '...' : ''}</div>
+      </td></tr>
+      ` : ''}
+
+      <!-- CTA WhatsApp -->
+      <tr><td style="padding:32px;text-align:center">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+          <tr><td>
+            <a href="https://wa.me/5519992494267" target="_blank" style="display:inline-block;background:#25d366;color:#fff;font-weight:700;font-size:14.5px;padding:14px 30px;border-radius:10px;text-decoration:none;letter-spacing:.02em;box-shadow:0 4px 14px rgba(37,211,102,0.3)">💬 Falar com a casa</a>
+          </td></tr>
+        </table>
+        <div style="color:${muted2};font-size:12px;margin-top:16px">Qualquer dúvida, estamos aqui.</div>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:#f5ecd6;padding:28px 32px;text-align:center;border-top:1px solid ${border}">
+        <div style="color:${tinta};font-size:13px;font-weight:700;letter-spacing:.02em;margin-bottom:8px">Terreiro do Candieiro</div>
+        <div style="color:${muted};font-size:12px;line-height:1.7">
+          R. Angelo Vicentim, 236 · Barão Geraldo · Campinas-SP<br>
+          <a href="https://terreirodocandieiro.com.br" style="color:${douradoEscuro};text-decoration:none;font-weight:600">terreirodocandieiro.com.br</a>
+          &nbsp;·&nbsp;
+          <a href="https://instagram.com/terreirodocandieiro" style="color:${douradoEscuro};text-decoration:none;font-weight:600">@terreirodocandieiro</a>
+        </div>
+        <div style="color:${muted2};font-size:10.5px;margin-top:14px;font-style:italic">Pai Nando · Umbanda Omoloko + Jurema Sagrada em paralelo</div>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
+function _buildEmailConfirmacaoText(p, produto) {
+  const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
+  const turma = p.turma_id ? (produto?.turmas||[]).find(t => t.id === p.turma_id) : null;
+  const valor = (Number(p.valor) || 0).toFixed(2).replace('.', ',');
+  const linhas = [
+    `Olá ${(p.nome||'').split(' ')[0]},`,
+    '',
+    isParcelado ? 'Sua matrícula está confirmada.' : 'Seu pedido está confirmado.',
+    '',
+    `Produto: ${p.produto_nome}`,
+    turma ? `Turma: ${turma.nome}${turma.detalhes ? ' — ' + turma.detalhes : ''}` : '',
+    `Valor pago: R$ ${valor}${isParcelado ? ' (1ª parcela)' : ''}`,
+    isParcelado ? `Total de parcelas: ${p.parcelas_total}, vencimento dia ${produto.parcelamento.vencimento_dia}` : '',
+    p.desconto_afirmativo ? 'Desconto afirmativo aplicado.' : '',
+    '',
+    'Qualquer dúvida, fala com a gente pelo WhatsApp: https://wa.me/5519992494267',
+    '',
+    '—',
+    'Terreiro do Candieiro',
+    'R. Angelo Vicentim, 236 · Barão Geraldo · Campinas-SP',
+    'terreirodocandieiro.com.br'
+  ];
+  return linhas.filter(Boolean).join('\n');
 }
 
 async function reverterPedido(pedidoId) {
@@ -5845,7 +6074,8 @@ async function setPedidoStatus(id, status) {
       atualizadoEm: serverTimestamp(),
       confirmadoEm: status === 'confirmado' ? serverTimestamp() : null
     });
-    toast(status === 'confirmado' ? 'Confirmado' : (status === 'cancelado' ? 'Cancelado' : 'Atualizado'),'ok');
+    toast(status === 'confirmado' ? 'Confirmado · enviando email…' : (status === 'cancelado' ? 'Cancelado' : 'Atualizado'),'ok');
+    if (status === 'confirmado') enviarEmailConfirmacao(id);
   } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
