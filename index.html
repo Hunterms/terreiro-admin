@@ -349,6 +349,12 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         Pedidos <span id="ped-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
       </button>
 
+      <div class="section-label">Lojinha</div>
+      <button data-route="lojinha">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9"/><path d="M9 21V12h6v9"/></svg>
+        Lojinha
+      </button>
+
       <div class="section-label">Análise</div>
       <button data-route="inteligencia">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
@@ -461,6 +467,8 @@ const S = {
   servicos: [],
   produtos: [],
   pedidos: [],
+  pdvProdutos: [],
+  pdvVendas: [],
   eventoInscricoes: [],
   cfgEscalas: { janela_semanas: 8 },
   route: 'dashboard',
@@ -955,6 +963,18 @@ function attachListeners() {
     }));
   }
 
+  // Lojinha PDV — produtos e vendas (só admin)
+  if(S.role === 'admin') {
+    S.unsubs.push(onSnapshot(collection(dbPvd,'pdv_produtos'), snap => {
+      S.pdvProdutos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
+      if(S.route === 'lojinha') renderRoute();
+    }));
+    S.unsubs.push(onSnapshot(collection(dbPvd,'pdv_vendas'), snap => {
+      S.pdvVendas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(S.route === 'lojinha') renderRoute();
+    }));
+  }
+
   // Config das escalas (janela histórica do balanceamento)
   S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
     if(snap.exists()) S.cfgEscalas = { janela_semanas: 8, ...snap.data() };
@@ -1016,6 +1036,7 @@ function renderRoute() {
     case 'config-agendamento': return renderConfigAgendamento(c);
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
+    case 'lojinha':       return renderLojinha(c);
     case 'inteligencia':  return renderInteligencia(c);
     case 'avisos':        return renderAvisos(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
@@ -6228,6 +6249,479 @@ function renderPedidos(c) {
 
 function setPedTab(t) { pedTab = t; renderRoute(); }
 
+// ═══════════════════════════════════════════════════════════════════════
+// LOJINHA PDV — venda de produtos do dia + consignados de filhos
+// ═══════════════════════════════════════════════════════════════════════
+
+let lojinhaTab = 'pdv'; // pdv | produtos | fechamento
+let lojinhaFechamentoDe = null;
+let lojinhaFechamentoAte = null;
+
+function _lojaHojeISO() {
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function setLojinhaTab(t) { lojinhaTab = t; renderRoute(); }
+
+function renderLojinha(c) {
+  if (lojinhaTab === 'produtos') return renderLojinhaProdutos(c);
+  if (lojinhaTab === 'fechamento') return renderLojinhaFechamento(c);
+  return renderLojinhaPDV(c);
+}
+
+function _lojinhaTabs() {
+  return `
+    <div class="tabs">
+      <button class="${lojinhaTab==='pdv'?'active':''}" onclick="window._app.setLojinhaTab('pdv')">🛒 PDV</button>
+      <button class="${lojinhaTab==='produtos'?'active':''}" onclick="window._app.setLojinhaTab('produtos')">📦 Produtos</button>
+      <button class="${lojinhaTab==='fechamento'?'active':''}" onclick="window._app.setLojinhaTab('fechamento')">💰 Fechamento</button>
+    </div>
+  `;
+}
+
+// ── PDV: grid de produtos + vendas do dia ────────────────────────────────
+function renderLojinhaPDV(c) {
+  const ativos = S.pdvProdutos.filter(p => p.ativo !== false);
+  const hoje = _lojaHojeISO();
+  const vendasHoje = S.pdvVendas.filter(v => v.data === hoje).sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
+  const totalHoje = vendasHoje.reduce((s,v) => s + (v.total||0), 0);
+  const totalRepasse = vendasHoje.reduce((s,v) => s + (v.total_repasse||0), 0);
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lojinha</div>
+        <div class="page-sub">Hoje: R$ ${totalHoje.toFixed(0)} vendido · R$ ${totalRepasse.toFixed(0)} a repassar · <strong style="color:var(--green)">R$ ${(totalHoje-totalRepasse).toFixed(0)} pra casa</strong></div>
+      </div>
+    </div>
+    ${_lojinhaTabs()}
+    ${ativos.length === 0 ? `
+      <div class="card"><div class="empty"><div class="empty-t">Nenhum produto cadastrado</div><div class="empty-s">Cadastre na aba <strong>Produtos</strong> pra começar a vender.</div></div></div>
+    ` : `
+      <div style="display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start" id="pdv-layout">
+        <div class="card">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+            ${ativos.map(p => {
+              const filho = p.filho_id ? S.filhos.find(f => f.id === p.filho_id) : null;
+              const semEstoque = (p.estoque||0) <= 0;
+              return `
+                <button class="pdv-prod-btn" onclick="window._app.abrirVendaPDV('${p.id}')" ${semEstoque?'disabled':''} style="text-align:left;padding:14px 12px;background:${semEstoque?'rgba(231,76,60,.08)':'var(--glass)'};border:1px solid ${semEstoque?'rgba(231,76,60,.25)':'var(--border2)'};border-radius:10px;cursor:${semEstoque?'not-allowed':'pointer'};opacity:${semEstoque?'.6':'1'};color:var(--text);font-family:var(--font);transition:all .15s">
+                  <div style="font-size:13.5px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:4px">${p.nome}</div>
+                  ${filho?`<div style="font-size:10.5px;color:#9b59b6;font-weight:600;margin-bottom:6px">🤝 ${filho.nome.split(' ')[0]}</div>`:''}
+                  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:6px">
+                    <div style="font-size:15px;color:var(--gold);font-weight:700">R$ ${(p.preco_venda||0).toFixed(0)}</div>
+                    <div style="font-size:11px;color:${semEstoque?'#e74c3c':'var(--text3)'};font-weight:600">${semEstoque?'sem estoque':`${p.estoque||0} un`}</div>
+                  </div>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><div class="card-title">Vendas de hoje (${vendasHoje.length})</div></div>
+          ${vendasHoje.length === 0 ? `
+            <div style="color:var(--text3);font-size:13px;padding:14px 0;text-align:center">Nenhuma venda hoje ainda.</div>
+          ` : vendasHoje.slice(0, 50).map(v => `
+            <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:var(--text)">${v.qtd}× ${v.produto_nome}</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">${v.filho_nome?`${v.filho_nome.split(' ')[0]} · `:''}${v.metodo_pagamento||''}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:13px;color:var(--gold);font-weight:700">R$ ${(v.total||0).toFixed(0)}</div>
+                <button onclick="window._app.deletarVendaPDV('${v.id}')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:0;margin-top:2px" title="Cancelar venda">🗑 cancelar</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <style>
+        .pdv-prod-btn:hover:not([disabled]){border-color:var(--gold) !important;background:rgba(212,168,67,.08) !important;transform:translateY(-1px)}
+        @media (max-width: 900px) { #pdv-layout { grid-template-columns: 1fr !important; } }
+      </style>
+    `}
+  `;
+}
+
+function abrirVendaPDV(produtoId) {
+  const p = S.pdvProdutos.find(x => x.id === produtoId);
+  if (!p) return;
+  if ((p.estoque||0) <= 0) { toast('Sem estoque','err'); return; }
+  const filho = p.filho_id ? S.filhos.find(f => f.id === p.filho_id) : null;
+  openModal(`
+    <div class="modal-h"><h3>Vender ${p.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-b">
+      <div style="padding:12px 14px;background:var(--glass);border-radius:10px;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--text3)">Preço unitário · Estoque</div>
+        <div style="font-size:15px;font-weight:700;color:var(--text)">R$ ${(p.preco_venda||0).toFixed(0)} · ${p.estoque||0} un</div>
+        ${filho?`<div style="font-size:11.5px;color:#9b59b6;margin-top:4px">Repasse: R$ ${(p.preco_repasse||0).toFixed(0)}/un pra <strong>${filho.nome}</strong></div>`:''}
+      </div>
+      <div class="fi-group">
+        <label>Quantidade</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" id="pdv-qtd-menos" style="width:44px;padding:8px">−</button>
+          <input type="number" class="fi" id="pdv-qtd" value="1" min="1" max="${p.estoque||1}" style="text-align:center"/>
+          <button class="btn" id="pdv-qtd-mais" style="width:44px;padding:8px">+</button>
+        </div>
+      </div>
+      <div class="fi-group">
+        <label>Forma de pagamento <span style="color:var(--red)">*</span></label>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px" id="pdv-metodo-pills">
+          <label class="pdv-met"><input type="radio" name="pdv-met" value="dinheiro"/> 💵 Dinheiro</label>
+          <label class="pdv-met"><input type="radio" name="pdv-met" value="pix" checked/> 📱 PIX</label>
+          <label class="pdv-met"><input type="radio" name="pdv-met" value="cartao"/> 💳 Cartão</label>
+        </div>
+      </div>
+      <div style="padding:12px;background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);border-radius:10px;margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span>Total</span><strong style="color:var(--gold);font-size:18px" id="pdv-total">R$ ${(p.preco_venda||0).toFixed(0)}</strong></div>
+        ${filho?`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-top:4px"><span>Repasse pro ${filho.nome.split(' ')[0]}</span><span id="pdv-repasse">R$ ${(p.preco_repasse||0).toFixed(0)}</span></div>`:''}
+      </div>
+      <style>
+        .pdv-met { display:flex;align-items:center;gap:6px;padding:10px;border:1.5px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;justify-content:center }
+        .pdv-met input { accent-color:var(--gold) }
+        .pdv-met:has(input:checked) { border-color:var(--gold);background:rgba(212,168,67,.08) }
+      </style>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="pdv-confirmar">Confirmar venda</button>
+    </div>
+  `);
+
+  const qtdInp = $('#pdv-qtd');
+  const totalEl = $('#pdv-total');
+  const repasseEl = $('#pdv-repasse');
+  const atualizar = () => {
+    let q = parseInt(qtdInp.value) || 1;
+    if (q < 1) q = 1;
+    if (q > (p.estoque||1)) q = p.estoque||1;
+    qtdInp.value = q;
+    if (totalEl) totalEl.textContent = `R$ ${((p.preco_venda||0)*q).toFixed(0)}`;
+    if (repasseEl) repasseEl.textContent = `R$ ${((p.preco_repasse||0)*q).toFixed(0)}`;
+  };
+  qtdInp.oninput = atualizar;
+  $('#pdv-qtd-menos').onclick = () => { qtdInp.value = Math.max(1, (parseInt(qtdInp.value)||1) - 1); atualizar(); };
+  $('#pdv-qtd-mais').onclick = () => { qtdInp.value = Math.min(p.estoque||1, (parseInt(qtdInp.value)||1) + 1); atualizar(); };
+
+  $('#pdv-confirmar').onclick = async () => {
+    const qtd = parseInt(qtdInp.value) || 1;
+    const metodo = document.querySelector('input[name="pdv-met"]:checked')?.value || 'pix';
+    if (qtd > (p.estoque||0)) { toast('Estoque insuficiente','err'); return; }
+    try {
+      const filhoLocal = p.filho_id ? S.filhos.find(f => f.id === p.filho_id) : null;
+      await addDoc(collection(dbPvd, 'pdv_vendas'), {
+        data: _lojaHojeISO(),
+        produto_id: p.id,
+        produto_nome: p.nome,
+        qtd,
+        preco_unit: p.preco_venda || 0,
+        repasse_unit: p.preco_repasse || 0,
+        total: (p.preco_venda || 0) * qtd,
+        total_repasse: (p.preco_repasse || 0) * qtd,
+        filho_id: p.filho_id || null,
+        filho_nome: filhoLocal?.nome || null,
+        metodo_pagamento: metodo,
+        repassado_em: null,
+        criadoEm: serverTimestamp()
+      });
+      await updateDoc(doc(dbPvd, 'pdv_produtos', p.id), {
+        estoque: Math.max(0, (p.estoque||0) - qtd)
+      });
+      toast(`✓ ${qtd}× ${p.nome}`,'ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+async function deletarVendaPDV(id) {
+  const v = S.pdvVendas.find(x => x.id === id);
+  if (!v) return;
+  confirmar(`Cancelar venda de <strong>${v.qtd}× ${v.produto_nome}</strong>? Vai retornar ao estoque.`, async () => {
+    try {
+      await deleteDoc(doc(dbPvd, 'pdv_vendas', id));
+      const p = S.pdvProdutos.find(x => x.id === v.produto_id);
+      if (p) {
+        await updateDoc(doc(dbPvd, 'pdv_produtos', v.produto_id), {
+          estoque: (p.estoque||0) + (v.qtd||0)
+        });
+      }
+      toast('Venda cancelada','ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+// ── PRODUTOS: CRUD ───────────────────────────────────────────────────────
+function renderLojinhaProdutos(c) {
+  const lista = [...S.pdvProdutos].sort((a,b) => (a.ordem||999) - (b.ordem||999));
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lojinha</div>
+        <div class="page-sub">${lista.length} produtos · ${lista.filter(p=>(p.estoque||0)<=(p.estoque_minimo||0)&&p.ativo!==false).length} em estoque baixo</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openLojinhaProdutoForm()">+ Novo produto</button>
+      </div>
+    </div>
+    ${_lojinhaTabs()}
+    ${lista.length === 0 ? `
+      <div class="card"><div class="empty"><div class="empty-t">Nenhum produto cadastrado</div><div class="empty-s">Comece cadastrando velas, incensos, livros e produtos consignados de filhos.</div></div></div>
+    ` : `
+      <div class="card">
+        ${lista.map(p => {
+          const filho = p.filho_id ? S.filhos.find(f => f.id === p.filho_id) : null;
+          const estoqueBaixo = (p.estoque||0) <= (p.estoque_minimo||0);
+          return `
+            <div class="list-item" style="align-items:flex-start">
+              <div class="li-avatar" style="background:${filho?'rgba(155,89,182,.18)':'var(--gold-bg)'};color:${filho?'#9b59b6':'var(--gold)'};font-size:14px">${p.nome.slice(0,2).toUpperCase()}</div>
+              <div class="li-main">
+                <div class="li-name">
+                  ${p.nome}
+                  ${p.ativo===false?'<span class="chip" style="margin-left:6px;background:var(--glass2);color:var(--text3)">inativo</span>':''}
+                  ${filho?`<span class="chip" style="margin-left:6px;background:rgba(155,89,182,.18);color:#b07cce">🤝 ${filho.nome.split(' ')[0]}</span>`:''}
+                </div>
+                <div class="li-meta" style="margin-top:4px">
+                  <span><strong style="color:var(--gold)">R$ ${(p.preco_venda||0).toFixed(0)}</strong> venda</span>
+                  ${p.preco_repasse?`<span style="color:#9b59b6">R$ ${p.preco_repasse.toFixed(0)} repasse</span>`:''}
+                  ${p.preco_repasse?`<span style="color:var(--green)">R$ ${((p.preco_venda||0)-(p.preco_repasse||0)).toFixed(0)} casa/un</span>`:''}
+                  <span style="color:${estoqueBaixo?'#e74c3c':'var(--text2)'}">${p.estoque||0} em estoque${estoqueBaixo?' ⚠':''}</span>
+                  ${p.categoria?`<span class="chip" style="font-size:10px;background:var(--glass2);color:var(--text2)">${p.categoria}</span>`:''}
+                </div>
+              </div>
+              <div class="li-actions">
+                <button class="btn btn-sm" onclick="window._app.openLojinhaProdutoForm('${p.id}')">Editar</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `}
+  `;
+}
+
+function openLojinhaProdutoForm(id=null) {
+  const isEdit = !!id;
+  const p = isEdit ? S.pdvProdutos.find(x => x.id === id) : null;
+  const filhosAtivos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar':'Novo'} produto da lojinha</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-b">
+      <div class="fi-group"><label>Nome <span style="color:var(--red)">*</span></label><input class="fi" id="lp-nome" value="${p?.nome||''}" placeholder="Ex: Incenso de defumação"/></div>
+
+      <div class="row-2">
+        <div class="fi-group"><label>Preço de venda <span style="color:var(--red)">*</span></label><input type="number" step="0.01" min="0" class="fi" id="lp-venda" value="${p?.preco_venda||''}"/></div>
+        <div class="fi-group"><label>Estoque atual</label><input type="number" min="0" class="fi" id="lp-estoque" value="${p?.estoque||0}"/></div>
+      </div>
+
+      <div class="fi-group" style="padding:14px;background:rgba(155,89,182,.06);border:1px solid rgba(155,89,182,.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="lp-consig-on" ${p?.filho_id?'checked':''} onchange="document.getElementById('lp-consig-box').style.display=this.checked?'block':'none'"/> <strong>🤝 Produto consignado de um filho</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Quando vendido, o terreiro repassa um valor fixo por unidade. A diferença entre venda e repasse fica pra casa.</div>
+        <div id="lp-consig-box" style="display:${p?.filho_id?'block':'none'};margin-top:12px">
+          <div class="fi-group">
+            <label>Filho responsável</label>
+            <select class="fi" id="lp-filho">
+              <option value="">— Selecione —</option>
+              ${filhosAtivos.map(f => `<option value="${f.id}" ${p?.filho_id===f.id?'selected':''}>${f.nome}</option>`).join('')}
+            </select>
+          </div>
+          <div class="fi-group">
+            <label>Valor de repasse por unidade (R$)</label>
+            <input type="number" step="0.01" min="0" class="fi" id="lp-repasse" value="${p?.preco_repasse||''}" placeholder="Ex: 8 (vende a 15, terreiro fica com 7)"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div class="fi-group"><label>Estoque mínimo (alerta)</label><input type="number" min="0" class="fi" id="lp-min" value="${p?.estoque_minimo||0}"/></div>
+        <div class="fi-group"><label>Categoria (opcional)</label><input class="fi" id="lp-cat" value="${p?.categoria||''}" placeholder="incenso, vela, livro..."/></div>
+      </div>
+
+      <div class="row-2">
+        <div class="fi-group"><label class="checkbox-row"><input type="checkbox" id="lp-ativo" ${p?.ativo!==false?'checked':''}/> Ativo (aparece no PDV)</label></div>
+        <div class="fi-group"><label>Ordem</label><input type="number" class="fi" id="lp-ord" value="${p?.ordem||(S.pdvProdutos.length+1)}"/></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${isEdit?'<button class="btn btn-danger" id="lp-del">Excluir</button>':''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="lp-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#lp-save').onclick = async () => {
+    const nome = $('#lp-nome').value.trim();
+    if (!nome) { toast('Nome obrigatório','err'); return; }
+    const preco_venda = parseFloat($('#lp-venda').value);
+    if (!preco_venda || preco_venda <= 0) { toast('Preço de venda inválido','err'); return; }
+    const consigOn = $('#lp-consig-on').checked;
+    const filho_id = consigOn ? ($('#lp-filho').value || null) : null;
+    const preco_repasse = consigOn ? (parseFloat($('#lp-repasse').value) || 0) : 0;
+    if (consigOn && !filho_id) { toast('Selecione o filho responsável','err'); return; }
+    if (consigOn && preco_repasse >= preco_venda) { toast('Repasse não pode ser maior ou igual ao preço de venda','err'); return; }
+    const data = {
+      nome,
+      preco_venda,
+      preco_repasse,
+      filho_id,
+      estoque: parseInt($('#lp-estoque').value) || 0,
+      estoque_minimo: parseInt($('#lp-min').value) || 0,
+      categoria: $('#lp-cat').value.trim() || null,
+      ativo: $('#lp-ativo').checked,
+      ordem: parseInt($('#lp-ord').value) || 999,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if (isEdit) await updateDoc(doc(dbPvd, 'pdv_produtos', id), data);
+      else { data.criadoEm = serverTimestamp(); await addDoc(collection(dbPvd, 'pdv_produtos'), data); }
+      toast(isEdit ? 'Atualizado' : 'Criado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if (isEdit) $('#lp-del').onclick = () => confirmar(`Excluir <strong>${p.nome}</strong>? As vendas registradas continuam guardadas, mas o produto some.`, async () => {
+    try { await deleteDoc(doc(dbPvd, 'pdv_produtos', id)); toast('Excluído','ok'); closeModal(); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+// ── FECHAMENTO ───────────────────────────────────────────────────────────
+function renderLojinhaFechamento(c) {
+  const hoje = _lojaHojeISO();
+  const de = lojinhaFechamentoDe || hoje;
+  const ate = lojinhaFechamentoAte || hoje;
+  const vendas = S.pdvVendas.filter(v => v.data >= de && v.data <= ate);
+  const totalBruto = vendas.reduce((s,v) => s + (v.total||0), 0);
+  const totalRepasse = vendas.reduce((s,v) => s + (v.total_repasse||0), 0);
+
+  const porFilho = {};
+  vendas.forEach(v => {
+    if (!v.filho_id || (v.total_repasse||0) <= 0) return;
+    if (!porFilho[v.filho_id]) porFilho[v.filho_id] = { filho_id: v.filho_id, filho_nome: v.filho_nome, qtdItens: 0, totalRepasse: 0, pendenteRepasse: 0 };
+    porFilho[v.filho_id].qtdItens += v.qtd || 0;
+    porFilho[v.filho_id].totalRepasse += v.total_repasse || 0;
+    if (!v.repassado_em) porFilho[v.filho_id].pendenteRepasse += v.total_repasse || 0;
+  });
+  const filhos = Object.values(porFilho).sort((a,b) => b.totalRepasse - a.totalRepasse);
+
+  const porMetodo = {};
+  vendas.forEach(v => {
+    const m = v.metodo_pagamento || 'outro';
+    porMetodo[m] = (porMetodo[m] || 0) + (v.total||0);
+  });
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lojinha</div>
+        <div class="page-sub">${vendas.length} vendas no período</div>
+      </div>
+    </div>
+    ${_lojinhaTabs()}
+
+    <div class="card">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end">
+        <div class="fi-group" style="margin-bottom:0"><label>De</label><input type="date" class="fi" id="fech-de" value="${de}"/></div>
+        <div class="fi-group" style="margin-bottom:0"><label>Até</label><input type="date" class="fi" id="fech-ate" value="${ate}"/></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="window._app.setFechamentoPeriodo('hoje')">Hoje</button>
+          <button class="btn btn-sm" onclick="window._app.setFechamentoPeriodo('7d')">7 dias</button>
+          <button class="btn btn-sm" onclick="window._app.setFechamentoPeriodo('mes')">Mês</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px">
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Total bruto</div><div class="mv">R$ ${totalBruto.toFixed(0)}</div></div>
+      <div class="metric" style="--clr:#9b59b6"><div class="ml">A repassar pra filhos</div><div class="mv">R$ ${totalRepasse.toFixed(0)}</div></div>
+      <div class="metric" style="--clr:var(--green)"><div class="ml">Líquido pra casa</div><div class="mv">R$ ${(totalBruto-totalRepasse).toFixed(0)}</div></div>
+      <div class="metric" style="--clr:var(--blue)"><div class="ml">Vendas</div><div class="mv">${vendas.length}</div></div>
+    </div>
+
+    ${filhos.length > 0 ? `
+      <div class="card">
+        <div class="card-h"><div class="card-title">Repasses por filho</div></div>
+        ${filhos.map(f => {
+          const filhoObj = S.filhos.find(ff => ff.id === f.filho_id);
+          const tel = (filhoObj?.tel || '').replace(/\D/g,'');
+          const fmtBr = s => s.split('-').reverse().join('/');
+          const periodoTxt = de === ate ? fmtBr(de) : (fmtBr(de)+' a '+fmtBr(ate));
+          const waMsg = `Oi ${(f.filho_nome||'').split(' ')[0]}, fechamento da lojinha (${periodoTxt}): ${f.qtdItens} itens vendidos, repasse de R$ ${f.totalRepasse.toFixed(2)}. Vou te enviar pelo PIX.`;
+          const waLink = tel.length >= 10 ? `https://wa.me/55${tel}?text=${encodeURIComponent(waMsg)}` : null;
+          return `
+            <div class="list-item" style="align-items:flex-start">
+              <div class="li-avatar" style="background:rgba(155,89,182,.18);color:#9b59b6">${(f.filho_nome||'?').slice(0,2).toUpperCase()}</div>
+              <div class="li-main">
+                <div class="li-name">${f.filho_nome||'?'}</div>
+                <div class="li-meta" style="margin-top:4px">
+                  <span>${f.qtdItens} itens vendidos</span>
+                  <span><strong style="color:#9b59b6">R$ ${f.totalRepasse.toFixed(2)}</strong> total</span>
+                  ${f.pendenteRepasse > 0 && f.pendenteRepasse < f.totalRepasse ? `<span style="color:var(--text3)">R$ ${f.pendenteRepasse.toFixed(2)} pendente</span>` : ''}
+                  ${f.pendenteRepasse === 0 ? '<span class="chip chip-green" style="font-size:10px">✓ tudo pago</span>' : ''}
+                </div>
+              </div>
+              <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:130px">
+                ${waLink ? `<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 Avisar</a>` : ''}
+                ${f.pendenteRepasse > 0 ? `<button class="btn btn-sm btn-primary" onclick="window._app.marcarRepassePago('${f.filho_id}','${de}','${ate}')">Marcar pago</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : '<div class="card"><div class="empty"><div class="empty-t">Nenhum repasse no período</div><div class="empty-s">Vendas sem produtos consignados não geram repasse.</div></div></div>'}
+
+    <details class="card" style="margin-top:18px">
+      <summary style="cursor:pointer;font-weight:700;font-size:14px;color:var(--text)">Todas as vendas do período (${vendas.length})</summary>
+      <div style="margin-top:14px">
+        ${vendas.length === 0 ? '<div style="color:var(--text3);font-size:13px;text-align:center;padding:10px">Nenhuma venda.</div>' : `
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;font-size:11px;color:var(--text3)">
+            ${Object.entries(porMetodo).map(([m,v]) => `<span class="chip" style="background:var(--glass2)">${m}: R$ ${v.toFixed(0)}</span>`).join('')}
+          </div>
+          ${vendas.sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0)).map(v => `
+            <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;font-size:12.5px">
+              <div>
+                <div><strong>${v.qtd}× ${v.produto_nome}</strong> ${v.filho_nome?`<span style="color:#9b59b6">(${v.filho_nome.split(' ')[0]})</span>`:''}</div>
+                <div style="color:var(--text3);font-size:11px">${v.data} · ${v.metodo_pagamento||''} ${v.repassado_em?'· ✓ repassado':''}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="color:var(--gold);font-weight:700">R$ ${(v.total||0).toFixed(0)}</div>
+                ${v.total_repasse?`<div style="color:#9b59b6;font-size:11px">repasse R$ ${v.total_repasse.toFixed(0)}</div>`:''}
+              </div>
+            </div>
+          `).join('')}
+        `}
+      </div>
+    </details>
+  `;
+
+  $('#fech-de').onchange = e => { lojinhaFechamentoDe = e.target.value; renderRoute(); };
+  $('#fech-ate').onchange = e => { lojinhaFechamentoAte = e.target.value; renderRoute(); };
+}
+
+function setFechamentoPeriodo(p) {
+  const hoje = new Date();
+  const fmtD = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if (p === 'hoje') { lojinhaFechamentoDe = lojinhaFechamentoAte = fmtD(hoje); }
+  else if (p === '7d') { const d7 = new Date(hoje); d7.setDate(d7.getDate()-6); lojinhaFechamentoDe = fmtD(d7); lojinhaFechamentoAte = fmtD(hoje); }
+  else if (p === 'mes') { lojinhaFechamentoDe = fmtD(new Date(hoje.getFullYear(), hoje.getMonth(), 1)); lojinhaFechamentoAte = fmtD(hoje); }
+  renderRoute();
+}
+
+async function marcarRepassePago(filhoId, de, ate) {
+  const vendas = S.pdvVendas.filter(v => v.filho_id === filhoId && v.data >= de && v.data <= ate && !v.repassado_em && (v.total_repasse||0) > 0);
+  if (vendas.length === 0) { toast('Nada pendente','ok'); return; }
+  const total = vendas.reduce((s,v) => s + v.total_repasse, 0);
+  const filhoNome = vendas[0].filho_nome || '?';
+  confirmar(`Marcar <strong>${vendas.length} vendas</strong> de ${filhoNome} como repassadas? Total: R$ ${total.toFixed(2)}.`, async () => {
+    try {
+      await Promise.all(vendas.map(v =>
+        updateDoc(doc(dbPvd, 'pdv_vendas', v.id), { repassado_em: serverTimestamp() })
+      ));
+      toast(`✓ ${vendas.length} vendas marcadas como pagas`,'ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
 async function setPedidoStatus(id, status) {
   try {
     await updateDoc(doc(dbPvd,'vendas_pedidos',id), {
@@ -7301,6 +7795,13 @@ window._app = {
   deletarPedido,
   reenviarEmailsPendentes,
   backfillAlunosRecorrentes,
+  // Lojinha PDV
+  setLojinhaTab,
+  openLojinhaProdutoForm,
+  abrirVendaPDV,
+  deletarVendaPDV,
+  setFechamentoPeriodo,
+  marcarRepassePago,
   // Debug helpers
   _checarEmailsPendentes: () => {
     const pend = (S.pedidos||[]).filter(p => p.status==='confirmado' && !p.email_confirmacao_enviado_em);
