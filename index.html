@@ -2430,7 +2430,40 @@ async function confirmarPedido(pedidoId) {
     await updateDoc(doc(dbPvd,'vendas_pedidos', pedidoId), { status: 'confirmado', confirmadoEm: serverTimestamp() });
     toast('Pagamento confirmado','ok');
     enviarEmailConfirmacao(pedidoId); // não bloqueia o fluxo
+    upsertAlunoRecorrente(pedidoId); // se produto.recorrente, registra/atualiza aluno
   } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
+// Cria/atualiza doc em vendas_alunos pra produtos recorrentes (pilates, ninjutsu, curso desenvolvimento).
+// Chave: produto_id__email_normalizado. Permite o vendas.html identificar alunos antigos via email.
+async function upsertAlunoRecorrente(pedidoId) {
+  try {
+    await new Promise(r => setTimeout(r, 250));
+    const p = S.pedidos.find(x => x.id === pedidoId);
+    if (!p) return;
+    const produto = S.produtos.find(x => x.id === p.produto_id);
+    if (!produto?.recorrente) return;
+    let email = (p.email || '').trim().toLowerCase();
+    if (!email && p.filho_id) {
+      const filho = (S.filhos||[]).find(f => f.id === p.filho_id)
+                 || (S.consulentes||[]).find(c => c.id === p.filho_id);
+      email = (filho?.auth_email || filho?.email || '').trim().toLowerCase();
+    }
+    if (!email) return; // sem email, sem cadastro de aluno
+    const docId = `${p.produto_id}__${email.replace(/[^a-z0-9@._-]/g,'')}`;
+    await setDoc(doc(dbPvd, 'vendas_alunos', docId), {
+      produto_id: p.produto_id,
+      produto_nome: produto.nome,
+      produto_slug: produto.slug,
+      email,
+      nome: p.nome || '',
+      tel: p.tel || '',
+      ultimaCompraEm: serverTimestamp(),
+      ultimoPedidoId: pedidoId
+    }, { merge: true });
+  } catch(e) {
+    console.warn('Falha ao upsert aluno:', e?.message || e);
+  }
 }
 
 // ── EMAIL DE CONFIRMAÇÃO ─────────────────────────────────────────────────
@@ -2546,6 +2579,37 @@ async function reenviarEmailsPendentes() {
     if (i % 5 === 0 && i > 0) toast(`📧 ${i+1}/${candidatos.length}...`,'ok');
   }
   toast(`✅ ${ok} enviados · ⏭️ ${semEmail} sem email · ❌ ${erro} erros`,'ok');
+}
+
+// Backfill: popula vendas_alunos a partir de todos os pedidos confirmados de produtos recorrentes.
+// Usado uma vez, depois de marcar um produto como recorrente, pra trazer alunos antigos pro novo fluxo.
+async function backfillAlunosRecorrentes() {
+  const produtosRec = (S.produtos||[]).filter(x => x.recorrente);
+  if (produtosRec.length === 0) { toast('Nenhum produto marcado como recorrente','err'); return; }
+  const candidatos = (S.pedidos||[]).filter(p =>
+    p.status === 'confirmado' && produtosRec.some(pr => pr.id === p.produto_id)
+  );
+  if (candidatos.length === 0) { toast('Nenhum pedido confirmado pra processar','ok'); return; }
+  if (!confirm(`Vou processar ${candidatos.length} pedidos confirmados de ${produtosRec.length} produto(s) recorrente(s).\n\nProdutos: ${produtosRec.map(p=>p.nome).join(', ')}\n\nVai criar/atualizar docs em vendas_alunos. Idempotente — pode rodar de novo sem problema.`)) return;
+
+  let ok = 0, semEmail = 0, erro = 0;
+  for (let i = 0; i < candidatos.length; i++) {
+    try {
+      const p = candidatos[i];
+      const antesEmail = p.email;
+      await upsertAlunoRecorrente(p.id);
+      // Confere se realmente conseguiu pegar email
+      const filho = !antesEmail && p.filho_id ? ((S.filhos||[]).find(f=>f.id===p.filho_id) || (S.consulentes||[]).find(c=>c.id===p.filho_id)) : null;
+      const teveEmail = !!antesEmail || !!(filho?.auth_email || filho?.email);
+      if (teveEmail) ok++; else semEmail++;
+    } catch(e) {
+      erro++;
+      console.warn('Erro no backfill:', candidatos[i]?.id, e);
+    }
+    await new Promise(r => setTimeout(r, 200));
+    if (i % 10 === 0 && i > 0) toast(`📥 ${i+1}/${candidatos.length}...`,'ok');
+  }
+  toast(`✅ ${ok} alunos cadastrados · ⏭️ ${semEmail} sem email · ❌ ${erro} erros`,'ok');
 }
 
 function _emailConfirmacaoSubject(p, produto) {
@@ -5854,6 +5918,17 @@ function openProdutoForm(id=null) {
         </div>
       </div>
 
+      <!-- AULA/SERVIÇO RECORRENTE -->
+      <div class="fi-group" style="padding:14px;background:rgba(155,89,182,0.06);border:1px solid rgba(155,89,182,0.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="pd-rec-on" ${p?.recorrente?'checked':''} onchange="document.getElementById('pd-rec-box').style.display=this.checked?'block':'none'"/> <strong>🔁 Aula ou serviço recorrente</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Pra pilates, ninjutsu, curso com mensalidade: aluno antigo digita o email pra pagar de novo sem refazer o cadastro. Cria automaticamente em <code>vendas_alunos</code> quando você confirma o primeiro pedido.</div>
+        <div id="pd-rec-box" style="display:${p?.recorrente?'block':'none'};margin-top:12px">
+          <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Aceitar identificação por email a partir de (opcional)</label>
+          <input type="date" class="fi" id="pd-rec-data" value="${p?.aceita_aluno_a_partir_de||''}"/>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.45">Se preenchido, o botão "Já sou aluno" só aparece a partir dessa data. Útil pro curso de desenvolvimento: deixa em branco o mês 1 (todo mundo é novo) e marca a data do mês 2 pra começar a receber pagamentos recorrentes.</div>
+        </div>
+      </div>
+
       <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="pd-ord" value="${p?.ordem||(S.produtos.length+1)}"/></div>
     </div>
     <div class="modal-f">
@@ -5905,6 +5980,8 @@ function openProdutoForm(id=null) {
       ativo: $('#pd-ativo').checked,
       evento_filho: $('#pd-eh-filho').checked,
       coleta_demografia: $('#pd-demo-on')?.checked || false,
+      recorrente: $('#pd-rec-on')?.checked || false,
+      aceita_aluno_a_partir_de: ($('#pd-rec-on')?.checked && $('#pd-rec-data')?.value) ? $('#pd-rec-data').value : null,
       ordem: parseInt($('#pd-ord').value) || 999,
       atualizadoEm: serverTimestamp()
     };
@@ -6159,7 +6236,10 @@ async function setPedidoStatus(id, status) {
       confirmadoEm: status === 'confirmado' ? serverTimestamp() : null
     });
     toast(status === 'confirmado' ? 'Confirmado · enviando email…' : (status === 'cancelado' ? 'Cancelado' : 'Atualizado'),'ok');
-    if (status === 'confirmado') enviarEmailConfirmacao(id);
+    if (status === 'confirmado') {
+      enviarEmailConfirmacao(id);
+      upsertAlunoRecorrente(id);
+    }
   } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
@@ -7220,6 +7300,7 @@ window._app = {
   setPedidoStatus,
   deletarPedido,
   reenviarEmailsPendentes,
+  backfillAlunosRecorrentes,
   // Debug helpers
   _checarEmailsPendentes: () => {
     const pend = (S.pedidos||[]).filter(p => p.status==='confirmado' && !p.email_confirmacao_enviado_em);
