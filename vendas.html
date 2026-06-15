@@ -144,7 +144,13 @@ const params = new URLSearchParams(location.search);
 const slug = params.get('p');
 const WHATSAPP = '5519992494267';
 let CFG_AGENDAMENTO = {}; // PIX + InfinityPay handle compartilhado
-const APP = { filhos:[], filhoSel:null }; // só usado se produto.evento_filho === true
+const APP = { filhos:[], filhoSel:null, alunoMode:false, alunoData:null }; // alunoMode/alunoData: produtos recorrentes (pilates, ninjutsu, curso desenvolvimento)
+function _hojeISO(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _produtoAceitaAluno(prod){
+  if(!prod?.recorrente) return false;
+  if(!prod.aceita_aluno_a_partir_de) return true; // sem data = sempre aceita
+  return _hojeISO() >= prod.aceita_aluno_a_partir_de;
+}
 const _search = { idx:-1, results:[] };
 function _norm(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
 function _initials(nome){ return (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—'; }
@@ -255,6 +261,33 @@ function renderProduto(prod) {
 
     <div class="card">
       <h2 style="font-size:16px;color:var(--text)">${prod.evento_filho?'Pagar como filho da casa':(prod.parcelamento?.ativo?'Matrícula':'Reservar / Comprar')}</h2>
+
+      ${(_produtoAceitaAluno(prod) && !prod.evento_filho) ? `
+        <div id="aluno-banner" style="padding:14px 16px;background:linear-gradient(135deg,rgba(155,89,182,.12),rgba(155,89,182,.04));border:1px solid rgba(155,89,182,.35);border-radius:10px;margin-bottom:14px">
+          <div id="aluno-banner-collapsed" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:13.5px;color:var(--text);font-weight:600;flex:1;min-width:140px">🔁 Já fez aula aqui antes?</div>
+            <button id="b-mostrar-aluno" type="button" class="btn" style="width:auto;padding:10px 16px;font-size:13px;background:rgba(155,89,182,.18);border-color:rgba(155,89,182,.45);color:#d6a3e8">Sim, sou aluno</button>
+          </div>
+          <div id="aluno-banner-form" style="display:none">
+            <div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Digite o email que você usou na inscrição anterior — vamos buscar seus dados.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input class="fi" id="b-aluno-email" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:180px"/>
+              <button id="b-buscar-aluno" type="button" class="btn" style="width:auto;padding:12px 18px;background:rgba(155,89,182,.25);border-color:rgba(155,89,182,.45);color:#d6a3e8">Buscar</button>
+            </div>
+            <div id="b-aluno-err" style="color:var(--red);font-size:12.5px;margin-top:8px;display:none"></div>
+          </div>
+          <div id="aluno-banner-found" style="display:none">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:40px;height:40px;border-radius:50%;background:rgba(155,89,182,.25);color:#d6a3e8;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">✓</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3" id="b-aluno-nome">—</div>
+                <div style="font-size:12px;color:var(--text2);margin-top:2px;line-height:1.3" id="b-aluno-email-disp">—</div>
+              </div>
+              <button id="b-aluno-trocar" type="button" class="btn" style="width:auto;padding:6px 12px;font-size:12px;background:transparent;border-color:var(--border2);color:var(--text2)">Trocar</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
 
       ${prod.parcelamento?.ativo ? `
         <div style="padding:12px 14px;background:linear-gradient(135deg,rgba(46,204,113,.1),rgba(46,204,113,.02));border:1px solid rgba(46,204,113,.3);border-radius:10px;margin-bottom:14px">
@@ -429,6 +462,9 @@ function renderProduto(prod) {
   // Search-select dos filhos se for evento_filho
   if(prod.evento_filho) initFilhoSearch();
 
+  // Modo "Já sou aluno" (produtos recorrentes: pilates, ninjutsu, curso desenvolvimento)
+  if (_produtoAceitaAluno(prod) && !prod.evento_filho) initAlunoMode(prod);
+
   $('#b-submit').onclick = async () => {
     const obs = $('#b-obs').value.trim();
     const err = $('#b-err');
@@ -463,9 +499,9 @@ function renderProduto(prod) {
     // Desconto afirmativo (autodeclarado)
     const descAfirmativo = !!($('#b-desc-afirmativo')?.checked);
 
-    // Dados demográficos (se produto coleta)
+    // Dados demográficos (se produto coleta) — pulado se aluno antigo identificado
     let demografia = null;
-    if (!prod.evento_filho && prod.coleta_demografia) {
+    if (!prod.evento_filho && prod.coleta_demografia && !APP.alunoMode) {
       const genero = $('#b-genero')?.value;
       const generoOutro = $('#b-genero-outro')?.value?.trim();
       const pronome = $('#b-pronome')?.value;
@@ -515,8 +551,9 @@ function renderProduto(prod) {
         metodo_pagamento: null,
         comprovante_anexado: false,
         status: 'pendente',
-        origem: prod.evento_filho ? 'vendas_filho' : 'vendas_publico',
+        origem: prod.evento_filho ? 'vendas_filho' : (APP.alunoMode ? 'vendas_aluno_recorrente' : 'vendas_publico'),
         como_soube: comoSoube,
+        aluno_recorrente: !!APP.alunoMode,
         criadoEm: serverTimestamp()
       });
       mostrarSucesso(prod, nome, efetivoAgora);
@@ -528,6 +565,94 @@ function renderProduto(prod) {
       btn.disabled = false; btn.textContent = `${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ ${efBtn.valor.toFixed(0)}`;
     }
   };
+}
+
+// Modo "Já sou aluno": busca em vendas_alunos por produto_id__email e autofill o form.
+function initAlunoMode(prod) {
+  const banner = $('#aluno-banner');
+  const collapsed = $('#aluno-banner-collapsed');
+  const formBox = $('#aluno-banner-form');
+  const foundBox = $('#aluno-banner-found');
+  const btnMostrar = $('#b-mostrar-aluno');
+  const btnBuscar = $('#b-buscar-aluno');
+  const btnTrocar = $('#b-aluno-trocar');
+  const inpEmail = $('#b-aluno-email');
+  const errEl = $('#b-aluno-err');
+  if(!banner || !btnMostrar) return;
+
+  // Inputs do form principal que serão preenchidos + escondidos
+  const camposParaEsconder = ['#b-nome', '#b-tel', '#b-email', '#b-origem', '#b-obs'];
+  const blocoDemografia = document.querySelectorAll('.card > div[style*="rgba(52,152,219"]');
+
+  function setVisivel(seletor, visivel) {
+    const el = $(seletor);
+    if(!el) return;
+    const wrap = el.closest('.fi-group') || el;
+    wrap.style.display = visivel ? '' : 'none';
+  }
+
+  btnMostrar.onclick = () => {
+    collapsed.style.display = 'none';
+    formBox.style.display = 'block';
+    inpEmail.focus();
+  };
+
+  btnTrocar.onclick = () => {
+    APP.alunoMode = false;
+    APP.alunoData = null;
+    foundBox.style.display = 'none';
+    formBox.style.display = 'block';
+    inpEmail.value = '';
+    inpEmail.focus();
+    camposParaEsconder.forEach(s => setVisivel(s, true));
+    blocoDemografia.forEach(b => b.style.display = '');
+  };
+
+  btnBuscar.onclick = async () => {
+    errEl.style.display = 'none';
+    const email = (inpEmail.value || '').trim().toLowerCase();
+    if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Informe um email válido';
+      errEl.style.display = 'block';
+      return;
+    }
+    btnBuscar.disabled = true;
+    btnBuscar.textContent = 'Buscando...';
+    try {
+      const docId = `${prod.id}__${email.replace(/[^a-z0-9@._-]/g,'')}`;
+      const snap = await getDoc(doc(db, 'vendas_alunos', docId));
+      if (!snap.exists()) {
+        errEl.innerHTML = 'Não encontramos esse email. <a href="#" id="b-aluno-novo" style="color:#d6a3e8;text-decoration:underline">Cadastrar como aluno novo</a>';
+        errEl.style.display = 'block';
+        const linkNovo = $('#b-aluno-novo');
+        if(linkNovo) linkNovo.onclick = (ev) => { ev.preventDefault(); formBox.style.display='none'; collapsed.style.display='flex'; errEl.style.display='none'; inpEmail.value=''; };
+        return;
+      }
+      const data = snap.data();
+      APP.alunoMode = true;
+      APP.alunoData = { email, nome: data.nome || '', tel: data.tel || '' };
+      // Autofill nos inputs do form
+      const inpNome = $('#b-nome'); if(inpNome) inpNome.value = data.nome || '';
+      const inpTel = $('#b-tel'); if(inpTel) inpTel.value = data.tel || '';
+      const inpEm = $('#b-email'); if(inpEm) inpEm.value = email;
+      // Esconde campos preenchidos e demografia
+      camposParaEsconder.forEach(s => setVisivel(s, false));
+      blocoDemografia.forEach(b => b.style.display = 'none');
+      // Mostra confirmação
+      $('#b-aluno-nome').textContent = data.nome || '(sem nome cadastrado)';
+      $('#b-aluno-email-disp').textContent = email;
+      formBox.style.display = 'none';
+      foundBox.style.display = 'block';
+    } catch(e) {
+      errEl.textContent = 'Erro ao buscar: ' + (e?.message || 'tente de novo');
+      errEl.style.display = 'block';
+    } finally {
+      btnBuscar.disabled = false;
+      btnBuscar.textContent = 'Buscar';
+    }
+  };
+
+  inpEmail.addEventListener('keydown', e => { if(e.key === 'Enter') { e.preventDefault(); btnBuscar.click(); } });
 }
 
 function initFilhoSearch() {
