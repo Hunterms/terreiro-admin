@@ -145,6 +145,9 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 
 /* Dashboard sections (chevrons colapsáveis via <details>/<summary>) */
 .dash-secao{margin-bottom:10px;background:var(--glass);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s}
+a.dash-link{display:block;-webkit-tap-highlight-color:transparent;transition:background .15s,border-color .15s,transform .08s}
+a.dash-link:hover{background:rgba(212,168,67,.04);border-color:rgba(212,168,67,.28)}
+a.dash-link:active{transform:scale(.99)}
 .dash-secao[open]{border-color:rgba(212,168,67,.32)}
 .dash-secao > summary{padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none;user-select:none;transition:background .15s}
 .dash-secao > summary::-webkit-details-marker{display:none}
@@ -375,6 +378,17 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
               <div id="lojinha-container"></div>
             </div>
           </details>
+
+          <!-- Despensa — atalho pra página standalone (só pra quem gerencia) -->
+          <a href="despensa.html" class="dash-secao dash-link" id="dash-sec-despensa" style="display:none;text-decoration:none;color:inherit">
+            <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+              <div class="dash-head-text">
+                <h2>🏺 Despensa</h2>
+                <p class="dash-sub">Atualize os estoques sem precisar entrar no admin.</p>
+              </div>
+              <span class="dash-chevron" style="transform:rotate(-90deg);color:var(--gold,#d4a843)">▾</span>
+            </div>
+          </a>
         </div>
       </div>
 
@@ -588,6 +602,10 @@ async function selecionarFilho(id) {
     } catch(e) { console.warn('Erro escalas gira', e); APP.lojinhaEscalas = []; }
   } else { APP.lojinhaEscalas = []; }
 
+  // Despensa: atalho aparece pra quem gerencia
+  const despSec = document.getElementById('dash-sec-despensa');
+  if (despSec) despSec.style.display = filho.gerencia_despensa ? '' : 'none';
+
   renderDisp();
   renderEsc();
   renderTarefas();
@@ -701,6 +719,7 @@ function renderIdentityHero(f) {
   const roles = [];
   if(f.e_padrinho) roles.push('Padrinho/madrinha');
   if(f.gerencia_lojinha) roles.push('Lojinha');
+  if(f.gerencia_despensa) roles.push('Despensa');
   const meusPostos = f.postos || [];
   if(meusPostos.length) {
     const nomes = APP.funcoes
