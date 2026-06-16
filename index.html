@@ -1423,6 +1423,13 @@ function openFilhoForm(id=null) {
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra Giovana/Aline e quem mais cuidar da lojinha. Habilita a seção "Escala da lojinha" na área pessoal dela.</div>
       </div>
+      <div class="fi-group">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ff-despensa-flag" ${f?.gerencia_despensa?'checked':''}/>
+          Esse filho gerencia a despensa
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Habilita acesso à página pública <code>/despensa</code> pra atualizar estoques sem precisar entrar no admin. Acesso via nome + 4 últimos do celular.</div>
+      </div>
       <div class="fi-group"><label>Padrinho/madrinha (de quem é apadrinhado)</label>
         <select class="fi" id="ff-padrinho">
           <option value="">— Sem padrinho —</option>
@@ -1494,6 +1501,7 @@ function openFilhoForm(id=null) {
       postos,
       e_padrinho: $('#ff-padrinho-flag').checked,
       gerencia_lojinha: $('#ff-lojinha-flag').checked,
+      gerencia_despensa: $('#ff-despensa-flag').checked,
       padrinho_id: $('#ff-padrinho').value || null,
       auth_email: $('#ff-email').value.trim() || null,
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,

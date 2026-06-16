@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1"/>
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate"/>
+<title>Despensa — Terreiro do Candieiro</title>
+<meta name="description" content="Atualização da despensa do Terreiro do Candieiro."/>
+<meta name="robots" content="noindex"/>
+<link rel="icon" type="image/png" href="/logo-candieiro.png"/>
+<link rel="apple-touch-icon" href="/logo-candieiro.png"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --red:#e63329;--red2:#c0251c;
+  --gold:#d4a843;--gold2:#b8922a;
+  --green:#2ecc71;
+  --amber:#f39c12;
+  --blue:#3498db;
+  --purple:#9b59b6;
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html,body{background:var(--bg);min-height:100vh}
+body{font-family:var(--font);color:var(--text);background-image:radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);padding:18px 14px 100px;-webkit-tap-highlight-color:transparent}
+.container{max-width:760px;margin:0 auto}
+
+header{text-align:center;margin-bottom:18px;padding:10px 0}
+.logo{width:64px;height:64px;display:block;margin:0 auto 12px;object-fit:contain}
+h1{font-size:22px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
+h1 .accent{color:var(--gold)}
+.subtitle{font-size:10.5px;color:var(--text3);letter-spacing:.18em;text-transform:uppercase;margin-bottom:12px}
+
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:18px;margin-bottom:14px}
+.card h2{font-size:16px;font-weight:700;margin-bottom:10px;color:var(--gold)}
+
+.fi-group{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fi-group label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+.fi{padding:14px 14px;background:rgba(255,255,255,0.05);border:1.5px solid var(--border2);border-radius:var(--rad);color:var(--text);font-size:16px;font-family:var(--font);outline:none;width:100%}
+.fi:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,0.15)}
+textarea.fi{min-height:60px;resize:vertical}
+.req{color:var(--red)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:14px 20px;border-radius:var(--rad);border:1.5px solid var(--border2);background:var(--glass);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font);width:100%;transition:transform .08s, background .15s, border-color .15s}
+.btn:hover{background:var(--glass2)}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,var(--gold) 0%,var(--gold2) 100%);border-color:transparent;color:#1a1209}
+.btn-primary:disabled{opacity:.55;cursor:wait}
+.btn-sm{padding:10px 14px;font-size:13px;width:auto}
+.btn-ghost{background:transparent;border-color:var(--border2);color:var(--text2)}
+.btn-danger{background:rgba(231,51,41,.12);border-color:rgba(231,51,41,.35);color:var(--red)}
+
+/* SEARCH SELECT (do login) */
+.search-select{position:relative}
+.search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--text3);pointer-events:none}
+.search-select .fi{padding-left:42px}
+.search-results{position:absolute;top:100%;left:0;right:0;background:#1a1a1a;border:1px solid var(--border2);border-radius:var(--rad);margin-top:4px;max-height:280px;overflow-y:auto;z-index:10;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none}
+.search-results.show{display:block}
+.search-results .opt{padding:14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.search-results .opt:last-child{border-bottom:none}
+.search-results .opt:hover,.search-results .opt.active{background:rgba(212,168,67,0.08)}
+.avatar{width:36px;height:36px;border-radius:50%;background:rgba(212,168,67,.18);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;font-size:13px}
+
+/* PIN INPUT */
+.pin-input{font-family:monospace;letter-spacing:.5em;text-align:center;font-size:24px;font-weight:700}
+
+/* HEADER LOGADO */
+.who-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--rad);margin-bottom:14px}
+.who-bar .who-info{flex:1;min-width:0}
+.who-bar .who-nome{font-size:14px;font-weight:700;color:var(--text)}
+.who-bar .who-sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* MÉTRICAS */
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.metric-card{background:var(--glass);border:1px solid var(--border);border-radius:var(--rad);padding:12px 10px;text-align:center}
+.metric-card .mv{font-size:24px;font-weight:800;line-height:1;margin-bottom:4px}
+.metric-card .ml{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.metric-card.gold .mv{color:var(--gold)}
+.metric-card.red .mv{color:var(--red)}
+.metric-card.amber .mv{color:var(--amber)}
+
+/* FILTROS */
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.filters .fi{padding:10px 12px;font-size:13.5px}
+.filter-busca{grid-column:1 / -1}
+
+/* ITEM */
+.item{background:var(--glass);border:1px solid var(--border);border-radius:var(--rad);padding:14px;margin-bottom:10px}
+.item.zerado{background:rgba(231,51,41,.06);border-color:rgba(231,51,41,.25)}
+.item.baixo{background:rgba(243,156,18,.06);border-color:rgba(243,156,18,.2)}
+.item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.item-nome{font-size:15px;font-weight:700;color:var(--text);line-height:1.3}
+.item-meta{font-size:11px;color:var(--text3);margin-top:3px}
+.item-tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:6px;background:var(--glass2);color:var(--text2);font-weight:600}
+.item-tag.zerado{background:rgba(231,51,41,.15);color:var(--red)}
+.item-tag.baixo{background:rgba(243,156,18,.15);color:var(--amber)}
+
+.qty-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+.qty-btn{width:46px;height:46px;border-radius:10px;border:1.5px solid var(--border2);background:var(--glass);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .08s,background .15s}
+.qty-btn:active{transform:scale(.9)}
+.qty-btn.plus{border-color:rgba(46,204,113,.4);color:var(--green)}
+.qty-btn.minus{border-color:rgba(231,51,41,.4);color:var(--red)}
+.qty-input{flex:1;text-align:center;font-size:22px;font-weight:800;height:46px;padding:0 8px;background:rgba(255,255,255,0.05);border:1.5px solid var(--border2);border-radius:10px;color:var(--text);font-family:var(--font);outline:none}
+.qty-input:focus{border-color:var(--gold);background:rgba(212,168,67,.06)}
+.qty-un{font-size:13px;color:var(--text3);font-weight:600;min-width:32px;text-align:center}
+
+/* BOTÃO FLUTUANTE */
+.fab{position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1209;border:none;font-size:32px;font-weight:300;cursor:pointer;box-shadow:0 8px 24px rgba(212,168,67,.4);display:flex;align-items:center;justify-content:center;z-index:50;transition:transform .12s}
+.fab:active{transform:scale(.93)}
+@media(min-width:760px){.fab{right:calc(50vw - 360px)}}
+
+/* MODAL */
+.modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:500;display:none;align-items:flex-end;justify-content:center;padding:0;animation:fadeIn .15s}
+.modal-bd.show{display:flex}
+.modal{background:#161616;border:1px solid var(--border);border-radius:14px 14px 0 0;width:100%;max-width:640px;max-height:90vh;display:flex;flex-direction:column;animation:slideUp .2s}
+@media(min-width:760px){.modal-bd{align-items:center;padding:20px}.modal{border-radius:14px}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-h{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.modal-h h3{font-size:16px;font-weight:700;color:var(--text)}
+.modal-x{background:none;border:none;color:var(--text2);width:34px;height:34px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.modal-x:hover{background:var(--glass2)}
+.modal-x svg{width:18px;height:18px}
+.modal-b{padding:18px 20px;flex:1;overflow-y:auto}
+.modal-f{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px}
+.modal-f .btn{flex:1}
+
+/* TOAST */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1a1a1a;border:1px solid var(--border2);border-radius:10px;padding:12px 18px;color:var(--text);font-size:14px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:90vw;animation:popUp .2s}
+.toast.ok{border-color:rgba(46,204,113,.4)}
+.toast.err{border-color:rgba(231,51,41,.4)}
+@keyframes popUp{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+
+#estado-loading,#estado-erro{text-align:center;padding:60px 16px;color:var(--text3)}
+#estado-erro h2{font-size:16px;margin-bottom:8px;color:var(--text)}
+.spinner{width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.empty{text-align:center;padding:40px 18px;color:var(--text3)}
+.empty .et{color:var(--text);font-size:15px;font-weight:600;margin-bottom:4px}
+.empty .es{font-size:13px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <img class="logo" src="/logo-candieiro.png" alt=""/>
+    <h1>🏺 <span class="accent">Despensa</span></h1>
+    <div class="subtitle">Terreiro do Candieiro</div>
+  </header>
+
+  <div id="estado-loading">
+    <div class="spinner"></div>
+    <div>Conectando…</div>
+  </div>
+
+  <div id="estado-erro" style="display:none">
+    <h2>⚠ Erro</h2>
+    <p id="erro-msg" style="margin-bottom:16px"></p>
+    <button class="btn btn-sm" onclick="location.reload()">Tentar de novo</button>
+  </div>
+
+  <!-- LOGIN -->
+  <div id="painel-login" style="display:none">
+    <div class="card">
+      <h2>Quem é você?</h2>
+      <div class="fi-group" id="login-step-nome">
+        <label>Selecione seu nome</label>
+        <div class="search-select">
+          <input class="fi" id="login-input" type="text" placeholder="Comece a digitar…" autocomplete="off" autocapitalize="words" spellcheck="false"/>
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <div class="search-results" id="login-results"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:8px;line-height:1.4">Só aparecem os filhos com permissão de gerenciar a despensa.</div>
+      </div>
+
+      <div class="fi-group" id="login-step-pin" style="display:none">
+        <label>4 últimos dígitos do seu celular</label>
+        <input class="fi pin-input" id="login-pin" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="• • • •"/>
+        <div id="login-err" style="color:var(--red);font-size:12.5px;margin-top:6px;display:none"></div>
+      </div>
+
+      <button class="btn btn-primary" id="login-btn" style="display:none">Entrar</button>
+      <button class="btn btn-ghost btn-sm" id="login-trocar" style="display:none;margin-top:8px">Não sou eu, trocar</button>
+    </div>
+  </div>
+
+  <!-- MAIN (após login) -->
+  <div id="painel-main" style="display:none">
+    <div class="who-bar">
+      <div class="avatar" id="who-avatar">—</div>
+      <div class="who-info">
+        <div class="who-nome" id="who-nome">—</div>
+        <div class="who-sub">Atualização da despensa</div>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="sairLogin()">Sair</button>
+    </div>
+
+    <div class="metrics" id="metrics"></div>
+
+    <div class="filters">
+      <input class="fi filter-busca" id="f-busca" type="text" placeholder="Buscar item…" autocomplete="off"/>
+      <select class="fi" id="f-cat"><option value="">Todas categorias</option></select>
+      <select class="fi" id="f-est">
+        <option value="todos">Todos estoques</option>
+        <option value="baixo">Estoque baixo</option>
+        <option value="zerado">Zerados</option>
+      </select>
+    </div>
+
+    <div id="lista"></div>
+  </div>
+</div>
+
+<!-- FAB: Novo item -->
+<button class="fab" id="fab-novo" onclick="abrirModalNovo()" style="display:none" title="Adicionar item">+</button>
+
+<!-- Modal genérico -->
+<div class="modal-bd" id="modal-bd" onclick="if(event.target===this)fecharModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div id="toast-host"></div>
+
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
+  query, where, orderBy, serverTimestamp, onSnapshot
+} from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+};
+const db = getFirestore(initializeApp(firebaseConfig));
+
+const $ = q => document.querySelector(q);
+const SESSION_KEY = 'despensa_auth';
+
+const APP = {
+  filhos: [],     // filhos com gerencia_despensa=true
+  filhoSel: null, // selecionado no login
+  filhoLogged: null, // logado (passou na verificação)
+  despensa: [],
+  filtros: { busca:'', categoria:'', estoque:'todos' }
+};
+const _search = { idx:-1, results:[] };
+
+function _norm(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function _initials(nome){ return (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—'; }
+function _highlight(nome, q){
+  if(!q) return nome;
+  const nN = _norm(nome), qN = _norm(q);
+  const i = nN.indexOf(qN); if(i<0) return nome;
+  return nome.slice(0,i)+'<strong style="color:var(--gold)">'+nome.slice(i,i+q.length)+'</strong>'+nome.slice(i+q.length);
+}
+
+function toast(msg, kind='ok') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────────────
+async function boot() {
+  try {
+    // Carrega filhos com gerencia_despensa=true
+    const snap = await getDocs(collection(db, 'fin_filhos'));
+    APP.filhos = snap.docs
+      .map(d => ({ id:d.id, ...d.data() }))
+      .filter(f => f.gerencia_despensa && (!f.status || f.status === 'ativo'))
+      .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+
+    if (APP.filhos.length === 0) {
+      $('#estado-loading').style.display = 'none';
+      $('#estado-erro').style.display = 'block';
+      $('#erro-msg').innerHTML = 'Ninguém tá habilitado a mexer na despensa ainda. Peça pro admin marcar a flag <code>gerencia_despensa</code> no seu cadastro.';
+      return;
+    }
+
+    $('#estado-loading').style.display = 'none';
+
+    // Sessão ativa?
+    const sess = restaurarSessao();
+    if (sess) {
+      APP.filhoLogged = sess;
+      iniciarMain();
+    } else {
+      $('#painel-login').style.display = 'block';
+      initSearchSelect();
+    }
+  } catch(e) {
+    console.error(e);
+    $('#estado-loading').style.display = 'none';
+    $('#estado-erro').style.display = 'block';
+    $('#erro-msg').textContent = 'Não consegui carregar. Verifique sua conexão. ('+(e?.message||'erro')+')';
+  }
+}
+
+function restaurarSessao() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const sess = JSON.parse(raw);
+    // Confirma que o filho ainda existe e tem a permissão
+    const filho = APP.filhos.find(f => f.id === sess.filho_id);
+    if (!filho) return null;
+    return { filho_id: filho.id, nome: filho.nome };
+  } catch { return null; }
+}
+
+window.sairLogin = function() {
+  sessionStorage.removeItem(SESSION_KEY);
+  location.reload();
+};
+
+// ── LOGIN ────────────────────────────────────────────────────────────────
+function initSearchSelect() {
+  const inp = $('#login-input');
+  const box = $('#login-results');
+  const render = () => {
+    const q = inp.value.trim(); const qN = _norm(q);
+    const results = qN.length === 0
+      ? APP.filhos.slice(0, 20)
+      : APP.filhos.filter(f => _norm(f.nome).includes(qN)).slice(0, 20);
+    _search.results = results;
+    _search.idx = results.length > 0 ? 0 : -1;
+    if (results.length === 0) {
+      box.innerHTML = '<div style="padding:14px;color:var(--text3);font-size:13px">Nenhum filho encontrado.</div>';
+    } else {
+      box.innerHTML = results.map((f, i) => `
+        <div class="opt ${i===_search.idx?'active':''}" data-id="${f.id}">
+          <div class="avatar">${_initials(f.nome)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:var(--text)">${_highlight(f.nome, q)}</div>
+          </div>
+        </div>
+      `).join('');
+      box.querySelectorAll('.opt').forEach(opt => {
+        opt.onclick = () => _pickFilho(opt.dataset.id);
+      });
+    }
+    box.classList.add('show');
+  };
+  inp.oninput = render;
+  inp.onfocus = render;
+  inp.onkeydown = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); _search.idx = Math.min(_search.idx+1, _search.results.length-1); _updActive(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _search.idx = Math.max(_search.idx-1, 0); _updActive(); }
+    else if (e.key === 'Enter' && _search.results[_search.idx]) {
+      e.preventDefault();
+      _pickFilho(_search.results[_search.idx].id);
+    } else if (e.key === 'Escape') { box.classList.remove('show'); }
+  };
+  document.addEventListener('click', e => {
+    if (!box.contains(e.target) && e.target !== inp) box.classList.remove('show');
+  });
+}
+function _updActive() {
+  document.querySelectorAll('#login-results .opt').forEach((el, i) => el.classList.toggle('active', i === _search.idx));
+}
+function _pickFilho(id) {
+  const f = APP.filhos.find(x => x.id === id);
+  if (!f) return;
+  APP.filhoSel = f;
+  $('#login-input').value = f.nome;
+  $('#login-results').classList.remove('show');
+  $('#login-step-nome').style.display = 'none';
+  $('#login-step-pin').style.display = '';
+  $('#login-btn').style.display = '';
+  $('#login-trocar').style.display = '';
+  $('#login-btn').disabled = false;
+  $('#login-btn').textContent = 'Entrar';
+  setTimeout(() => $('#login-pin').focus(), 50);
+}
+
+$('#login-trocar').onclick = () => {
+  APP.filhoSel = null;
+  $('#login-input').value = '';
+  $('#login-pin').value = '';
+  $('#login-err').style.display = 'none';
+  $('#login-step-nome').style.display = '';
+  $('#login-step-pin').style.display = 'none';
+  $('#login-btn').style.display = 'none';
+  $('#login-trocar').style.display = 'none';
+  $('#login-input').focus();
+};
+
+$('#login-pin').oninput = e => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0,4);
+};
+$('#login-pin').onkeydown = e => { if (e.key === 'Enter') $('#login-btn').click(); };
+
+$('#login-btn').onclick = () => {
+  const f = APP.filhoSel;
+  if (!f) return;
+  const pin = $('#login-pin').value.trim();
+  if (pin.length !== 4) { $('#login-err').textContent = 'Digite os 4 dígitos.'; $('#login-err').style.display = 'block'; return; }
+  const digits = (f.tel || '').replace(/\D/g, '');
+  const expected = (f.pin || (digits.length >= 4 ? digits.slice(-4) : ''));
+  if (!expected) { $('#login-err').textContent = 'Sem telefone cadastrado e sem PIN. Peça pro admin atualizar seu cadastro.'; $('#login-err').style.display = 'block'; return; }
+  if (pin !== expected) { $('#login-err').textContent = 'PIN incorreto. Tenta de novo.'; $('#login-err').style.display = 'block'; return; }
+  // Auth ok
+  const sess = { filho_id: f.id, nome: f.nome, ts: Date.now() };
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
+  APP.filhoLogged = sess;
+  iniciarMain();
+};
+
+// ── MAIN ─────────────────────────────────────────────────────────────────
+function iniciarMain() {
+  $('#painel-login').style.display = 'none';
+  $('#painel-main').style.display = 'block';
+  $('#fab-novo').style.display = 'flex';
+  $('#who-nome').textContent = APP.filhoLogged.nome;
+  $('#who-avatar').textContent = _initials(APP.filhoLogged.nome);
+
+  // Listener da despensa
+  onSnapshot(collection(db, 'adm_despensa'), snap => {
+    APP.despensa = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+    renderMain();
+  });
+
+  $('#f-busca').oninput = e => { APP.filtros.busca = e.target.value; renderMain(); };
+  $('#f-cat').onchange = e => { APP.filtros.categoria = e.target.value; renderMain(); };
+  $('#f-est').onchange = e => { APP.filtros.estoque = e.target.value; renderMain(); };
+}
+
+function renderMain() {
+  // Métricas
+  const total = APP.despensa.length;
+  const zerados = APP.despensa.filter(p => (p.estoque||0) === 0).length;
+  const baixos = APP.despensa.filter(p => (p.estoque||0) > 0 && (p.estoque||0) <= (p.minimo||0)).length;
+  $('#metrics').innerHTML =
+    `<div class="metric-card gold"><div class="mv">${total}</div><div class="ml">Total</div></div>
+     <div class="metric-card red"><div class="mv">${zerados}</div><div class="ml">Zerados</div></div>
+     <div class="metric-card amber"><div class="mv">${baixos}</div><div class="ml">Baixo</div></div>`;
+
+  // Categorias
+  const cats = [...new Set(APP.despensa.map(p => p.categoria).filter(Boolean))].sort();
+  const catSel = $('#f-cat');
+  const catCur = catSel.value;
+  catSel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  if (cats.includes(catCur)) catSel.value = catCur;
+
+  // Filtros
+  let lista = [...APP.despensa];
+  if (APP.filtros.busca) {
+    const q = _norm(APP.filtros.busca);
+    lista = lista.filter(p => _norm(p.nome).includes(q));
+  }
+  if (APP.filtros.categoria) {
+    lista = lista.filter(p => p.categoria === APP.filtros.categoria);
+  }
+  if (APP.filtros.estoque === 'baixo') {
+    lista = lista.filter(p => (p.estoque||0) > 0 && (p.estoque||0) <= (p.minimo||0));
+  } else if (APP.filtros.estoque === 'zerado') {
+    lista = lista.filter(p => (p.estoque||0) === 0);
+  }
+
+  // Lista
+  const el = $('#lista');
+  if (lista.length === 0) {
+    el.innerHTML = `<div class="empty">
+      <div class="et">${APP.despensa.length === 0 ? 'Despensa vazia' : 'Nenhum item com esses filtros'}</div>
+      <div class="es">${APP.despensa.length === 0 ? 'Use o botão + pra adicionar o primeiro item.' : 'Tente ajustar os filtros.'}</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = lista.map(p => {
+    const est = Number(p.estoque)||0;
+    const min = Number(p.minimo)||0;
+    const cls = est === 0 ? 'zerado' : (est <= min && min > 0 ? 'baixo' : '');
+    const tagCls = est === 0 ? 'zerado' : (est <= min && min > 0 ? 'baixo' : '');
+    const tagText = est === 0 ? 'ZERADO' : (est <= min && min > 0 ? 'BAIXO' : '');
+    return `<div class="item ${cls}">
+      <div class="item-head">
+        <div style="flex:1;min-width:0">
+          <div class="item-nome">${p.nome}</div>
+          <div class="item-meta">
+            ${p.categoria ? `<span class="item-tag">${p.categoria}</span> ` : ''}
+            ${min > 0 ? `mínimo ${min} ${p.unidade||''}` : ''}
+            ${tagText ? `${min > 0 ? ' · ' : ''}<span class="item-tag ${tagCls}">${tagText}</span>` : ''}
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="abrirModalEditar('${p.id}')" title="Editar nome/cat/min"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+      </div>
+      <div class="qty-row">
+        <button class="qty-btn minus" onclick="ajustarEstoque('${p.id}', -1)">−</button>
+        <input class="qty-input" type="number" step="0.01" min="0" inputmode="decimal" value="${est}" data-id="${p.id}" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" onblur="atualizarEstoque(this)"/>
+        <span class="qty-un">${p.unidade||'un'}</span>
+        <button class="qty-btn plus" onclick="ajustarEstoque('${p.id}', 1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.ajustarEstoque = async function(id, delta) {
+  const p = APP.despensa.find(x => x.id === id);
+  if (!p) return;
+  const novo = Math.max(0, (Number(p.estoque)||0) + delta);
+  // Otimista: atualiza UI imediatamente
+  const inp = document.querySelector(`.qty-input[data-id="${id}"]`);
+  if (inp) inp.value = novo;
+  try {
+    await updateDoc(doc(db, 'adm_despensa', id), {
+      estoque: novo,
+      atualizadoEm: serverTimestamp(),
+      atualizadoPor: APP.filhoLogged?.nome || null
+    });
+  } catch(e) {
+    toast('Erro: ' + e.message, 'err');
+    if (inp) inp.value = p.estoque || 0;
+  }
+};
+
+window.atualizarEstoque = async function(inp) {
+  const id = inp.dataset.id;
+  const p = APP.despensa.find(x => x.id === id);
+  if (!p) return;
+  const novo = parseFloat(inp.value);
+  if (isNaN(novo) || novo < 0) { inp.value = p.estoque || 0; toast('Valor inválido', 'err'); return; }
+  if (novo === (Number(p.estoque)||0)) return;
+  try {
+    await updateDoc(doc(db, 'adm_despensa', id), {
+      estoque: novo,
+      atualizadoEm: serverTimestamp(),
+      atualizadoPor: APP.filhoLogged?.nome || null
+    });
+    toast(`✓ ${p.nome}: ${novo} ${p.unidade||''}`,'ok');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'err');
+    inp.value = p.estoque || 0;
+  }
+};
+
+// ── MODAIS ───────────────────────────────────────────────────────────────
+function abrirModal(html) {
+  $('#modal-content').innerHTML = html;
+  $('#modal-bd').classList.add('show');
+}
+window.fecharModal = function() { $('#modal-bd').classList.remove('show'); };
+
+window.abrirModalNovo = function() {
+  const cats = [...new Set(APP.despensa.map(p => p.categoria).filter(Boolean))].sort();
+  const catsSugeridas = ['velas','ervas','defumadores','bebidas','grãos e farinhas','flores','imagens','material'];
+  const catsListadas = [...new Set([...cats, ...catsSugeridas])];
+  abrirModal(`
+    <div class="modal-h"><h3>Novo item</h3><button class="modal-x" onclick="fecharModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-b">
+      <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" autofocus placeholder="ex: Vela branca, Alfazema..."/></div>
+      <div class="fi-group"><label>Categoria</label>
+        <input class="fi" id="m-cat" list="m-cats-list" placeholder="ex: velas, ervas..."/>
+        <datalist id="m-cats-list">${catsListadas.map(c=>`<option value="${c}">`).join('')}</datalist>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fi-group"><label>Quantidade <span class="req">*</span></label><input class="fi" id="m-est" type="number" step="0.01" min="0" inputmode="decimal" value="0"/></div>
+        <div class="fi-group"><label>Unidade</label>
+          <select class="fi" id="m-un">
+            ${['un','kg','g','L','ml','cx','mç','par','dz'].map(u=>`<option value="${u}" ${u==='un'?'selected':''}>${u}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="fi-group"><label>Estoque mínimo (alerta)</label><input class="fi" id="m-min" type="number" step="0.01" min="0" value="0"/></div>
+      <div class="fi-group" style="margin-bottom:0"><label>Observação</label><textarea class="fi" id="m-obs" placeholder="onde compra, marca preferida..."></textarea></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" id="m-save">Adicionar</button>
+    </div>
+  `);
+  $('#m-save').onclick = async () => {
+    const nome = $('#m-nome').value.trim();
+    if (!nome) { toast('Nome é obrigatório', 'err'); return; }
+    const data = {
+      nome,
+      categoria: $('#m-cat').value.trim(),
+      unidade: $('#m-un').value,
+      estoque: parseFloat($('#m-est').value) || 0,
+      minimo: parseFloat($('#m-min').value) || 0,
+      obs: $('#m-obs').value.trim(),
+      criadoEm: serverTimestamp(),
+      atualizadoEm: serverTimestamp(),
+      criadoPor: APP.filhoLogged?.nome || null,
+      atualizadoPor: APP.filhoLogged?.nome || null
+    };
+    try {
+      await addDoc(collection(db, 'adm_despensa'), data);
+      toast(`✓ ${nome} adicionado`, 'ok');
+      fecharModal();
+    } catch(e) { toast('Erro: ' + e.message, 'err'); }
+  };
+};
+
+window.abrirModalEditar = function(id) {
+  const p = APP.despensa.find(x => x.id === id);
+  if (!p) return;
+  const cats = [...new Set(APP.despensa.map(x => x.categoria).filter(Boolean))].sort();
+  abrirModal(`
+    <div class="modal-h"><h3>Editar item</h3><button class="modal-x" onclick="fecharModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-b">
+      <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" value="${(p.nome||'').replace(/"/g,'&quot;')}"/></div>
+      <div class="fi-group"><label>Categoria</label>
+        <input class="fi" id="m-cat" list="m-cats-list" value="${(p.categoria||'').replace(/"/g,'&quot;')}"/>
+        <datalist id="m-cats-list">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fi-group"><label>Unidade</label>
+          <select class="fi" id="m-un">
+            ${['un','kg','g','L','ml','cx','mç','par','dz'].map(u=>`<option value="${u}" ${p.unidade===u?'selected':''}>${u}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fi-group"><label>Mínimo (alerta)</label><input class="fi" id="m-min" type="number" step="0.01" min="0" value="${p.minimo||0}"/></div>
+      </div>
+      <div class="fi-group" style="margin-bottom:0"><label>Observação</label><textarea class="fi" id="m-obs">${p.obs||''}</textarea></div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:14px;line-height:1.4">A quantidade você edita direto no card. Pra apagar o item, peça pro admin.</div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" id="m-save">Salvar</button>
+    </div>
+  `);
+  $('#m-save').onclick = async () => {
+    const nome = $('#m-nome').value.trim();
+    if (!nome) { toast('Nome é obrigatório', 'err'); return; }
+    try {
+      await updateDoc(doc(db, 'adm_despensa', id), {
+        nome,
+        categoria: $('#m-cat').value.trim(),
+        unidade: $('#m-un').value,
+        minimo: parseFloat($('#m-min').value) || 0,
+        obs: $('#m-obs').value.trim(),
+        atualizadoEm: serverTimestamp(),
+        atualizadoPor: APP.filhoLogged?.nome || null
+      });
+      toast(`✓ ${nome} atualizado`, 'ok');
+      fecharModal();
+    } catch(e) { toast('Erro: ' + e.message, 'err'); }
+  };
+};
+
+boot();
+</script>
+</body>
+</html>
