@@ -318,7 +318,7 @@ function restaurarSessao() {
     // Confirma que o filho ainda existe e tem a permissão
     const filho = APP.filhos.find(f => f.id === sess.filho_id);
     if (!filho) return null;
-    return { filho_id: filho.id, nome: filho.nome };
+    return { filho_id: filho.id, nome: filho.nome, categorias: filho.despensa_categorias || [] };
   } catch { return null; }
 }
 
@@ -417,7 +417,7 @@ $('#login-btn').onclick = () => {
   if (!expected) { $('#login-err').textContent = 'Sem telefone cadastrado e sem PIN. Peça pro admin atualizar seu cadastro.'; $('#login-err').style.display = 'block'; return; }
   if (pin !== expected) { $('#login-err').textContent = 'PIN incorreto. Tenta de novo.'; $('#login-err').style.display = 'block'; return; }
   // Auth ok
-  const sess = { filho_id: f.id, nome: f.nome, ts: Date.now() };
+  const sess = { filho_id: f.id, nome: f.nome, categorias: f.despensa_categorias || [], ts: Date.now() };
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
   APP.filhoLogged = sess;
   iniciarMain();
@@ -444,24 +444,32 @@ function iniciarMain() {
 }
 
 function renderMain() {
-  // Métricas
-  const total = APP.despensa.length;
-  const zerados = APP.despensa.filter(p => (p.estoque||0) === 0).length;
-  const baixos = APP.despensa.filter(p => (p.estoque||0) > 0 && (p.estoque||0) <= (p.minimo||0)).length;
+  // Restringe pela permissão do filho: vê só itens das categorias que tem acesso.
+  // Se categorias vazias = vê tudo (default).
+  const minhasCategorias = APP.filhoLogged?.categorias || [];
+  const filtroPermissao = minhasCategorias.length === 0
+    ? APP.despensa
+    : APP.despensa.filter(p => minhasCategorias.includes(p.categoria));
+
+  // Métricas (escopo: itens visíveis pra esse filho)
+  const total = filtroPermissao.length;
+  const zerados = filtroPermissao.filter(p => (p.estoque||0) === 0).length;
+  const baixos = filtroPermissao.filter(p => (p.estoque||0) > 0 && (p.estoque||0) <= (p.minimo||0)).length;
   $('#metrics').innerHTML =
     `<div class="metric-card gold"><div class="mv">${total}</div><div class="ml">Total</div></div>
      <div class="metric-card red"><div class="mv">${zerados}</div><div class="ml">Zerados</div></div>
      <div class="metric-card amber"><div class="mv">${baixos}</div><div class="ml">Baixo</div></div>`;
 
-  // Categorias
-  const cats = [...new Set(APP.despensa.map(p => p.categoria).filter(Boolean))].sort();
+  // Categorias (só as do filho, ou todas se sem restrição)
+  const todasCats = [...new Set(APP.despensa.map(p => p.categoria).filter(Boolean))].sort();
+  const cats = minhasCategorias.length === 0 ? todasCats : todasCats.filter(c => minhasCategorias.includes(c));
   const catSel = $('#f-cat');
   const catCur = catSel.value;
   catSel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   if (cats.includes(catCur)) catSel.value = catCur;
 
   // Filtros
-  let lista = [...APP.despensa];
+  let lista = [...filtroPermissao];
   if (APP.filtros.busca) {
     const q = _norm(APP.filtros.busca);
     lista = lista.filter(p => _norm(p.nome).includes(q));
@@ -559,16 +567,21 @@ function abrirModal(html) {
 window.fecharModal = function() { $('#modal-bd').classList.remove('show'); };
 
 window.abrirModalNovo = function() {
+  const minhas = APP.filhoLogged?.categorias || [];
+  const restrito = minhas.length > 0;
   const cats = [...new Set(APP.despensa.map(p => p.categoria).filter(Boolean))].sort();
   const catsSugeridas = ['velas','ervas','defumadores','bebidas','grãos e farinhas','flores','imagens','material'];
-  const catsListadas = [...new Set([...cats, ...catsSugeridas])];
+  const catsDispo = restrito ? minhas : [...new Set([...cats, ...catsSugeridas])];
   abrirModal(`
     <div class="modal-h"><h3>Novo item</h3><button class="modal-x" onclick="fecharModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-b">
       <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" autofocus placeholder="ex: Vela branca, Alfazema..."/></div>
-      <div class="fi-group"><label>Categoria</label>
-        <input class="fi" id="m-cat" list="m-cats-list" placeholder="ex: velas, ervas..."/>
-        <datalist id="m-cats-list">${catsListadas.map(c=>`<option value="${c}">`).join('')}</datalist>
+      <div class="fi-group"><label>Categoria${restrito?' <span class="req">*</span>':''}</label>
+        ${restrito
+          ? `<select class="fi" id="m-cat"><option value="">— Selecione —</option>${catsDispo.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">${c}</option>`).join('')}</select>
+             <div style="font-size:11px;color:var(--text3);margin-top:4px">Você cuida de: ${minhas.join(', ')}.</div>`
+          : `<input class="fi" id="m-cat" list="m-cats-list" placeholder="ex: velas, ervas..."/>
+             <datalist id="m-cats-list">${catsDispo.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>`}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fi-group"><label>Quantidade <span class="req">*</span></label><input class="fi" id="m-est" type="number" step="0.01" min="0" inputmode="decimal" value="0"/></div>
@@ -589,9 +602,11 @@ window.abrirModalNovo = function() {
   $('#m-save').onclick = async () => {
     const nome = $('#m-nome').value.trim();
     if (!nome) { toast('Nome é obrigatório', 'err'); return; }
+    const categoria = $('#m-cat').value.trim();
+    if (restrito && !categoria) { toast('Selecione a categoria', 'err'); return; }
     const data = {
       nome,
-      categoria: $('#m-cat').value.trim(),
+      categoria,
       unidade: $('#m-un').value,
       estoque: parseFloat($('#m-est').value) || 0,
       minimo: parseFloat($('#m-min').value) || 0,
