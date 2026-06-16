@@ -7343,7 +7343,20 @@ window._app = {
     console.log(`📊 Pendentes: ${pend.length} · Já enviados: ${enviados.length}`);
     return { pendentes: pend.length, enviados: enviados.length };
   },
-  _S: () => S
+  _S: () => S,
+  // Migração: reagrupa itens da despensa por padrão de nome → categoria
+  _recategorizarDespensa: async (regex, novaCategoria) => {
+    const rx = regex instanceof RegExp ? regex : new RegExp(regex, 'i');
+    const cand = (S.despensa||[]).filter(p => rx.test(p.nome) && p.categoria !== novaCategoria);
+    if (cand.length === 0) { console.log('Nenhum candidato'); return; }
+    console.table(cand.map(p => ({ nome: p.nome, categoria_atual: p.categoria || '(vazio)' })));
+    if (!confirm(`Mover ${cand.length} item(ns) acima pra categoria "${novaCategoria}"?`)) return;
+    await Promise.all(cand.map(p => updateDoc(doc(dbPvd,'adm_despensa', p.id), {
+      categoria: novaCategoria,
+      atualizadoEm: serverTimestamp()
+    })));
+    toast(`✓ ${cand.length} itens movidos pra "${novaCategoria}"`,'ok');
+  }
 };
 
 // Mantém badge de solicitações atualizado mesmo quando não está na rota
