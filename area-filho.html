@@ -380,7 +380,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Despensa — atalho pra página standalone (só pra quem gerencia) -->
-          <a href="despensa.html" class="dash-secao dash-link" id="dash-sec-despensa" style="display:none;text-decoration:none;color:inherit">
+          <a href="https://hunterms.github.io/terreiro-admin/despensa.html" target="_blank" rel="noopener" class="dash-secao dash-link" id="dash-sec-despensa" style="display:none;text-decoration:none;color:inherit">
             <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px">
               <div class="dash-head-text">
                 <h2>🏺 Despensa</h2>
@@ -604,7 +604,6 @@ async function selecionarFilho(id) {
 
   // Despensa: atalho aparece pra quem gerencia
   const despSec = document.getElementById('dash-sec-despensa');
-  console.log('[despensa]', { gerencia_despensa: filho.gerencia_despensa, elementoExiste: !!despSec, nome: filho.nome });
   if (despSec) despSec.style.display = filho.gerencia_despensa ? '' : 'none';
 
   renderDisp();
