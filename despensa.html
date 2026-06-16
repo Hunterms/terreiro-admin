@@ -7,8 +7,8 @@
 <title>Despensa — Terreiro do Candieiro</title>
 <meta name="description" content="Atualização da despensa do Terreiro do Candieiro."/>
 <meta name="robots" content="noindex"/>
-<link rel="icon" type="image/png" href="/logo-candieiro.png"/>
-<link rel="apple-touch-icon" href="/logo-candieiro.png"/>
+<link rel="icon" type="image/png" href="logocandieiro.png"/>
+<link rel="apple-touch-icon" href="logocandieiro.png"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -150,7 +150,7 @@ textarea.fi{min-height:60px;resize:vertical}
 <body>
 <div class="container">
   <header>
-    <img class="logo" src="/logo-candieiro.png" alt=""/>
+    <img class="logo" src="logocandieiro.png" alt=""/>
     <h1>🏺 <span class="accent">Despensa</span></h1>
     <div class="subtitle">Terreiro do Candieiro</div>
   </header>
@@ -382,8 +382,9 @@ function _pickFilho(id) {
   $('#login-step-pin').style.display = '';
   $('#login-btn').style.display = '';
   $('#login-trocar').style.display = '';
-  $('#login-btn').disabled = false;
+  $('#login-btn').disabled = true; // só habilita após digitar 4 dígitos
   $('#login-btn').textContent = 'Entrar';
+  $('#login-pin').value = '';
   setTimeout(() => $('#login-pin').focus(), 50);
 }
 
@@ -401,8 +402,10 @@ $('#login-trocar').onclick = () => {
 
 $('#login-pin').oninput = e => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0,4);
+  $('#login-btn').disabled = e.target.value.length !== 4;
+  $('#login-err').style.display = 'none';
 };
-$('#login-pin').onkeydown = e => { if (e.key === 'Enter') $('#login-btn').click(); };
+$('#login-pin').onkeydown = e => { if (e.key === 'Enter' && e.target.value.length === 4) $('#login-btn').click(); };
 
 $('#login-btn').onclick = () => {
   const f = APP.filhoSel;
