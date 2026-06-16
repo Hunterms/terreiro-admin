@@ -604,6 +604,7 @@ async function selecionarFilho(id) {
 
   // Despensa: atalho aparece pra quem gerencia
   const despSec = document.getElementById('dash-sec-despensa');
+  console.log('[despensa]', { gerencia_despensa: filho.gerencia_despensa, elementoExiste: !!despSec, nome: filho.nome });
   if (despSec) despSec.style.display = filho.gerencia_despensa ? '' : 'none';
 
   renderDisp();
@@ -1901,6 +1902,7 @@ function trocarFilho() {
   // Esconde seções condicionais (próximo filho pode não ter as flags) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
   const lj = $('#dash-sec-lojinha'); if(lj) lj.style.display = 'none';
+  const dp = $('#dash-sec-despensa'); if(dp) dp.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
 
