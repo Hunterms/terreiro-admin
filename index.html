@@ -229,14 +229,17 @@ select.fi option{background:#1a1a1a;color:var(--text)}
 .disp-day.out{opacity:.25;cursor:default}
 
 @media (max-width:880px){
-  aside.sidebar{position:fixed;top:0;left:-280px;transition:left .2s;z-index:200}
+  aside.sidebar{position:fixed;top:0;left:-280px;transition:left .22s ease-out;z-index:210;box-shadow:0 0 30px rgba(0,0,0,.6)}
   aside.sidebar.open{left:0}
-  main{padding:18px}
+  main{padding:14px}
   .kanban{grid-template-columns:1fr}
   .cal-day{min-height:60px}
   .menu-toggle{display:inline-flex !important}
+  #sidebar-bd.show{display:block !important}
 }
-.menu-toggle{display:none;background:var(--glass);border:1px solid var(--border2);border-radius:var(--rad);padding:8px;color:var(--text);cursor:pointer}
+.menu-toggle{display:none;align-items:center;justify-content:center;background:var(--glass);backdrop-filter:blur(8px);border:1px solid var(--border2);border-radius:var(--rad);padding:9px 11px;color:var(--text);cursor:pointer;margin:0 0 12px 0;position:sticky;top:6px;z-index:50;-webkit-tap-highlight-color:transparent}
+.menu-toggle:active{transform:scale(.94)}
+#sidebar-bd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);z-index:200;animation:fadeIn .15s}
 </style>
 </head>
 <body>
@@ -397,8 +400,12 @@ select.fi option{background:#1a1a1a;color:var(--text)}
   </aside>
 
   <main id="main">
+    <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menu" onclick="document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-bd').classList.add('show')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
     <div id="route-content"></div>
   </main>
+  <div id="sidebar-bd" onclick="document.getElementById('sidebar').classList.remove('open');this.classList.remove('show')"></div>
 </div>
 
 <!-- MODAL CONTAINER -->
@@ -860,7 +867,12 @@ function setupNav() {
   $('#nav-filho').style.display = S.role === 'filho' ? '' : 'none';
   const navEl = S.role === 'admin' ? $('#nav-admin') : $('#nav-filho');
   navEl.querySelectorAll('button').forEach(b => {
-    b.onclick = () => navigate(b.dataset.route);
+    b.onclick = () => {
+      navigate(b.dataset.route);
+      // Fecha sidebar em mobile depois de navegar
+      const sb = $('#sidebar'); const bd = $('#sidebar-bd');
+      if (sb && sb.classList.contains('open')) { sb.classList.remove('open'); if (bd) bd.classList.remove('show'); }
+    };
   });
 }
 
