@@ -1425,10 +1425,27 @@ function openFilhoForm(id=null) {
       </div>
       <div class="fi-group">
         <label class="checkbox-row">
-          <input type="checkbox" id="ff-despensa-flag" ${f?.gerencia_despensa?'checked':''}/>
+          <input type="checkbox" id="ff-despensa-flag" ${f?.gerencia_despensa?'checked':''} onchange="document.getElementById('ff-despensa-cats-wrap').style.display=this.checked?'block':'none'"/>
           Esse filho gerencia a despensa
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Habilita acesso à página pública <code>/despensa</code> pra atualizar estoques sem precisar entrar no admin. Acesso via nome + 4 últimos do celular.</div>
+        <div id="ff-despensa-cats-wrap" style="display:${f?.gerencia_despensa?'block':'none'};margin-top:12px;padding:12px 14px;background:rgba(212,168,67,0.05);border:1px solid rgba(212,168,67,0.15);border-radius:8px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px">Categorias visíveis pra esse filho</div>
+          <div id="ff-despensa-cats" style="display:flex;flex-wrap:wrap;gap:6px">
+            ${(() => {
+              const cats = [...new Set(S.despensa.map(p => p.categoria).filter(Boolean))].sort();
+              const sel = new Set(f?.despensa_categorias || []);
+              if (cats.length === 0) return '<div style="font-size:12px;color:var(--text3)">Cadastre itens na despensa primeiro pra escolher categorias.</div>';
+              return cats.map(c => `
+                <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:${sel.has(c)?'rgba(212,168,67,.15)':'var(--glass)'};border:1px solid ${sel.has(c)?'var(--gold)':'var(--border2)'};border-radius:18px;cursor:pointer;font-size:13px;transition:all .12s">
+                  <input type="checkbox" class="ff-cat-chk" value="${c.replace(/"/g,'&quot;')}" ${sel.has(c)?'checked':''} style="accent-color:var(--gold);margin:0" onchange="this.closest('label').style.background=this.checked?'rgba(212,168,67,.15)':'var(--glass)';this.closest('label').style.borderColor=this.checked?'var(--gold)':'var(--border2)'"/>
+                  ${c}
+                </label>
+              `).join('');
+            })()}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4">Marque vazio pra ver todas as categorias. Cada filho pode ter o conjunto que faz sentido pro que ele cuida.</div>
+        </div>
       </div>
       <div class="fi-group"><label>Padrinho/madrinha (de quem é apadrinhado)</label>
         <select class="fi" id="ff-padrinho">
@@ -1502,6 +1519,9 @@ function openFilhoForm(id=null) {
       e_padrinho: $('#ff-padrinho-flag').checked,
       gerencia_lojinha: $('#ff-lojinha-flag').checked,
       gerencia_despensa: $('#ff-despensa-flag').checked,
+      despensa_categorias: $('#ff-despensa-flag').checked
+        ? Array.from(document.querySelectorAll('.ff-cat-chk:checked')).map(c => c.value)
+        : [],
       padrinho_id: $('#ff-padrinho').value || null,
       auth_email: $('#ff-email').value.trim() || null,
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
