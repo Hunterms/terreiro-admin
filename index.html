@@ -4855,10 +4855,13 @@ function renderRega(c) {
       if(ehHoje) bd = 'var(--red)';
       const nome = reserva ? (reserva.realizado_por_nome||reserva.filho_nome||'').split(' ')[0] : '';
       const tip = confirmado ? `✓ ${reserva.realizado_por_nome||reserva.filho_nome} confirmou` : (reserva ? `Reservado por ${reserva.filho_nome}` : (passado?'':'Sem cobertura'));
+      const pendente = reserva && !confirmado && !passado;
+      const ehAtrasada = reserva && !confirmado && passado; // reservou no passado e não confirmou
+      const icone = confirmado ? '🌱' : (pendente ? '⏳' : (ehAtrasada ? '⚠️' : ''));
       cells += `
-        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado&&!confirmado?'.3':'1'};padding:4px;position:relative" title="${tip}">
-          ${confirmado ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:9px;height:9px;position:absolute;top:3px;right:3px"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
-          <div style="font-weight:700">${d}</div>
+        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado&&!confirmado?'.45':'1'};padding:4px;position:relative" title="${tip}">
+          ${icone ? `<div style="font-size:14px;line-height:1;margin-bottom:1px">${icone}</div>` : ''}
+          <div style="font-weight:700;font-size:${icone?'12px':'14px'}">${d}</div>
           ${nome ? `<div style="font-size:9px;font-weight:600;line-height:1;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px">${nome}</div>` : ''}
         </div>
       `;
@@ -4906,10 +4909,10 @@ function renderRega(c) {
         ${reservaHoje?.realizado ? '<span class="chip chip-green">✓ CONFIRMADO</span>' : (reservaHoje?'<span class="chip chip-amber">PENDENTE DE CONFIRMAÇÃO</span>':'')}
       </div>
       ${reservaHoje && reservaHoje.realizado ? `
-        <div style="font-size:18px;font-weight:700;color:var(--green)">${reservaHoje.realizado_por_nome || reservaHoje.filho_nome} regou hoje 🌱</div>
+        <div style="font-size:18px;font-weight:700;color:var(--green)">🌱 ${reservaHoje.realizado_por_nome || reservaHoje.filho_nome} regou hoje</div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Confirmado pelo QR code ${reservaHoje.realizadoEm ? '· ' + fmt.rel(reservaHoje.realizadoEm) : ''}</div>
       ` : reservaHoje ? `
-        <div style="font-size:18px;font-weight:700;color:var(--green)">${reservaHoje.filho_nome}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--amber)">⏳ ${reservaHoje.filho_nome}</div>
         <div style="font-size:13px;color:var(--text2);margin-top:4px">Reservou — ainda não confirmou que regou (esperando QR no terreiro)</div>
       ` : `
         <div style="font-size:15px;color:var(--amber);font-weight:600">Sem cobertura pra hoje 😬</div>
@@ -4960,6 +4963,13 @@ function renderRega(c) {
         </div>
       </div>
     `:''}
+
+    <div class="card" style="margin-bottom:14px;padding:10px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;font-size:12px;color:var(--text2)">
+      <span><span style="font-size:14px">🌱</span> <strong style="color:var(--green)">Confirmou</strong> (regou + scaneou QR)</span>
+      <span><span style="font-size:14px">⏳</span> <strong style="color:var(--green)">Reservou</strong>, ainda não confirmou</span>
+      <span><span style="font-size:14px">⚠️</span> <strong style="color:var(--red)">Reservou mas faltou</strong> (passado sem confirmação)</span>
+      <span style="opacity:.7">Sem ícone = <strong style="color:var(--amber)">sem cobertura</strong></span>
+    </div>
 
     ${renderMesCal(mes1)}
     ${renderMesCal(mes2)}
