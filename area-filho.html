@@ -116,6 +116,15 @@ body{
 .tarefas-mais{margin-top:14px;border-top:1px dashed var(--border);padding-top:10px}
 .tarefas-mais > summary{cursor:pointer;font-size:11.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:4px 0;list-style:none;display:flex;align-items:center;gap:6px}
 .tarefas-mais > summary::-webkit-details-marker{display:none}
+.t-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.t-act-btn{padding:5px 10px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:transform .08s,background .15s,border-color .15s}
+.t-act-btn:hover{background:var(--glass2);border-color:var(--text3)}
+.t-act-btn:active{transform:scale(.96)}
+.t-act-btn.t-act-on{font-weight:700}
+.t-act-btn.t-soltar{margin-left:auto;color:var(--text3);border-style:dashed}
+.t-pegar-btn{padding:8px 14px;background:linear-gradient(135deg,var(--gold) 0%,#b8922a 100%);color:#1a1209;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:transform .08s,filter .15s;margin-top:8px}
+.t-pegar-btn:hover{filter:brightness(1.06)}
+.t-pegar-btn:active{transform:scale(.97)}
 .tarefas-mais > summary::before{content:'▸';display:inline-block;transition:transform .15s;font-size:10px}
 .tarefas-mais[open] > summary::before{transform:rotate(90deg)}
 
@@ -308,6 +317,20 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </div>
           </details>
 
+          <!-- Lista de afazeres da casa (tarefas abertas pra qualquer um pegar) -->
+          <details class="dash-secao" id="dash-sec-afazeres" style="display:none">
+            <summary>
+              <div class="dash-head-text">
+                <h2>📝 Lista de afazeres da casa <span class="dash-badge" id="dash-cnt-afazeres"></span></h2>
+                <p class="dash-sub">Tarefas abertas que qualquer um pode pegar. A primeira pessoa que clicar fica responsável.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="afazeres-container"></div>
+            </div>
+          </details>
+
           <!-- Próximas escalas -->
           <details class="dash-secao" id="dash-sec-escalas">
             <summary>
@@ -442,6 +465,7 @@ let APP = {
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
+  listaAfazeres: [], // kanban: cards com lista_aberta=true e responsaveis vazio (visível pra todos)
   lojinhaEscalas: [], // adm_escalas onde tipo='lojinha' (semanal). Só carrega se gerencia_lojinha
   eventos: [],
   avisos: [],
@@ -584,12 +608,13 @@ async function selecionarFilho(id) {
       .filter(es => (es.alocacoes||[]).some(a => a.filho_id === id));
   } catch(e) { console.warn('Erro escalas', e); }
 
-  // Carrega tarefas (kanban) onde o filho é responsável e ainda não foram concluídas
+  // Carrega tarefas (kanban): minhas + lista de afazeres da casa
   try {
     const tSnap = await getDocs(collection(dbPvd,'adm_kanban'));
-    APP.tarefas = tSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-      .filter(t => !t.arquivado && t.status !== 'done' && (t.responsaveis||[]).includes(id));
-  } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; }
+    const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
+    APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
+    APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
+  } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
 
   // Lojinha gerentes: carregam TODAS escalas de gira (mesmo padrão da aba "escala"
   // do admin). Cada doc é { tipo:'gira', evento_id, alocacoes:[{funcao_id,filho_id,...}] }.
@@ -609,6 +634,7 @@ async function selecionarFilho(id) {
   renderDisp();
   renderEsc();
   renderTarefas();
+  renderListaAfazeres();
   renderAfilhados();
   renderLojinha();
   renderReembolso();
@@ -1172,6 +1198,8 @@ function renderTarefas() {
     else prazoLabel = new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
     const desc = (t.descricao||'').trim();
     const descCurta = desc.length > 120 ? desc.slice(0,120)+'…' : desc;
+    const curr = t.status || 'todo';
+    const stBtn = (s, label, cor) => `<button class="t-act-btn ${curr===s?'t-act-on':''}" style="${curr===s?`border-color:${cor};color:${cor};background:${cor}22`:''}" onclick="event.preventDefault();event.stopPropagation();mudarStatusTarefa('${t.id}','${s}')">${label}</button>`;
     return `
       <div class="tarefa-card">
         <div class="tarefa-prio ${t.prioridade||'media'}"></div>
@@ -1182,6 +1210,13 @@ function renderTarefas() {
           <div class="tarefa-meta">
             <span class="tarefa-status ${t.status||'todo'}">${stLabels[t.status]||t.status||'todo'}</span>
             <span class="tarefa-prazo ${prazoClass}">${prazoLabel}</span>
+          </div>
+          <div class="t-acts">
+            ${stBtn('todo','A fazer','var(--text2)')}
+            ${stBtn('doing','Fazendo','var(--gold)')}
+            ${stBtn('blocked','Bloqueada','var(--red)')}
+            ${stBtn('done','Feita','var(--green)')}
+            ${t.lista_aberta ? `<button class="t-act-btn t-soltar" onclick="event.preventDefault();event.stopPropagation();soltarTarefa('${t.id}')">Soltar</button>` : ''}
           </div>
         </div>
       </div>
@@ -1201,6 +1236,147 @@ function renderTarefas() {
     ` : ''}
   `;
 }
+
+// ── LISTA DE AFAZERES DA CASA ────────────────────────────────────────────
+// Cards do kanban com lista_aberta=true e responsaveis vazio (qualquer um pode pegar).
+// Quando filho clica "Pego pra mim", entra no responsaveis e o card sai daqui (vai pra Minhas tarefas).
+function renderListaAfazeres() {
+  const f = APP.filhoAtual;
+  const sec = $('#dash-sec-afazeres');
+  const cont = $('#afazeres-container');
+  const badge = $('#dash-cnt-afazeres');
+  if(!f || !sec || !cont) return;
+  const itens = (APP.listaAfazeres||[]).slice();
+  if (itens.length === 0) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = '';
+
+  // Ordena por prazo (atrasadas primeiro), depois prioridade
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  itens.sort((a,b) => {
+    const pa = _diasAtePrazo(a.prazo, hoje);
+    const pb = _diasAtePrazo(b.prazo, hoje);
+    if (pa === null && pb !== null) return 1;
+    if (pa !== null && pb === null) return -1;
+    if (pa !== null && pb !== null && pa !== pb) return pa - pb;
+    return _ordPrioridade(a.prioridade) - _ordPrioridade(b.prioridade);
+  });
+
+  if (badge) {
+    badge.classList.remove('muted');
+    const atrasadas = itens.filter(t => { const d = _diasAtePrazo(t.prazo, hoje); return d !== null && d < 0; }).length;
+    badge.textContent = atrasadas > 0 ? `⚠ ${atrasadas} atrasada${atrasadas===1?'':'s'}` : `${itens.length} aberta${itens.length===1?'':'s'}`;
+  }
+
+  cont.innerHTML = itens.map(t => {
+    const dias = _diasAtePrazo(t.prazo, hoje);
+    let prazoLabel = ''; let prazoClass = '';
+    if (dias === null) prazoLabel = 'sem prazo';
+    else if (dias < 0) { prazoLabel = `atrasada ${-dias}d`; prazoClass = 'atrasada'; }
+    else if (dias === 0) { prazoLabel = 'hoje'; prazoClass = 'atrasada'; }
+    else if (dias === 1) { prazoLabel = 'amanhã'; prazoClass = 'urgente'; }
+    else if (dias <= 7) { prazoLabel = `em ${dias}d`; prazoClass = 'urgente'; }
+    else prazoLabel = new Date(t.prazo+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    const desc = (t.descricao||'').trim();
+    const descCurta = desc.length > 120 ? desc.slice(0,120)+'…' : desc;
+    return `
+      <div class="tarefa-card">
+        <div class="tarefa-prio ${t.prioridade||'media'}"></div>
+        <div class="tarefa-body">
+          <div class="tarefa-title">${t.titulo||'(sem título)'}</div>
+          ${descCurta ? `<div class="tarefa-desc">${descCurta}</div>` : ''}
+          <div class="tarefa-meta">
+            <span class="tarefa-prazo ${prazoClass}">${prazoLabel}</span>
+            ${t.prioridade && t.prioridade !== 'media' ? `<span style="color:var(--text3);font-size:11px">prio: ${t.prioridade}</span>` : ''}
+          </div>
+          <button class="t-pegar-btn" onclick="event.preventDefault();event.stopPropagation();pegarAfazer('${t.id}')">📌 Pego pra mim</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── AÇÕES DE TAREFA (filho) ──────────────────────────────────────────────
+// Cada ação atualiza o doc em adm_kanban e re-busca pra atualizar a UI.
+async function _recarregarTarefas() {
+  const id = APP.filhoAtual?.id;
+  if (!id) return;
+  try {
+    const tSnap = await getDocs(collection(dbPvd,'adm_kanban'));
+    const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
+    APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
+    APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
+    renderTarefas();
+    renderListaAfazeres();
+  } catch(e) { console.warn('Erro ao recarregar tarefas', e); }
+}
+
+window.pegarAfazer = async function(id) {
+  const filhoId = APP.filhoAtual?.id;
+  if (!filhoId) return;
+  try {
+    // Re-verifica o doc atual: garante exclusividade (race condition mínima)
+    const snap = await getDoc(doc(dbPvd, 'adm_kanban', id));
+    if (!snap.exists()) { toast('Tarefa não existe mais','error'); return; }
+    const atual = snap.data();
+    if ((atual.responsaveis||[]).length > 0) {
+      toast('Alguém pegou primeiro — atualizando lista','');
+      await _recarregarTarefas();
+      return;
+    }
+    // Pega: substitui responsaveis e sobe pra "fazendo"
+    await updateDoc(doc(dbPvd, 'adm_kanban', id), {
+      responsaveis: [filhoId],
+      status: atual.status === 'todo' ? 'doing' : (atual.status || 'doing'),
+      pega_em: serverTimestamp(),
+      atualizadoEm: serverTimestamp()
+    });
+    toast('Tarefa atribuída a você ✓','ok');
+    await _recarregarTarefas();
+  } catch(e) {
+    console.error(e);
+    toast('Erro ao pegar tarefa','error');
+  }
+};
+
+window.soltarTarefa = async function(id) {
+  if (!confirm('Soltar essa tarefa? Ela volta pra lista de afazeres da casa.')) return;
+  try {
+    await updateDoc(doc(dbPvd, 'adm_kanban', id), {
+      responsaveis: [],
+      status: 'todo',
+      pega_em: null,
+      atualizadoEm: serverTimestamp()
+    });
+    toast('Tarefa solta','ok');
+    await _recarregarTarefas();
+  } catch(e) {
+    console.error(e);
+    toast('Erro ao soltar tarefa','error');
+  }
+};
+
+window.mudarStatusTarefa = async function(id, novoStatus) {
+  try {
+    const data = { status: novoStatus, atualizadoEm: serverTimestamp() };
+    if (novoStatus === 'blocked') {
+      const motivo = prompt('Por que está bloqueada? (curto, vai aparecer pra todos)');
+      if (motivo === null) return;
+      data.motivo_bloqueio = motivo.trim() || 'sem motivo informado';
+    } else {
+      data.motivo_bloqueio = null;
+    }
+    if (novoStatus === 'done') data.movido_done_em = serverTimestamp();
+    await updateDoc(doc(dbPvd, 'adm_kanban', id), data);
+    toast('Status atualizado','ok');
+    await _recarregarTarefas();
+  } catch(e) {
+    console.error(e);
+    toast('Erro ao mudar status','error');
+  }
+};
 
 // ── LOJINHA: copia o sistema da aba "Escala" do admin ─────────────────────
 // Cada gira tem 1 doc em adm_escalas (tipo='gira', evento_id) com alocacoes[]
@@ -1893,15 +2069,17 @@ function trocarFilho() {
   if(selectorCard) selectorCard.style.display = '';
   resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
-  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha'].forEach(id => {
+  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha','dash-sec-afazeres'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
   });
   APP.tarefas = [];
+  APP.listaAfazeres = [];
   APP.lojinhaEscalas = [];
   // Esconde seções condicionais (próximo filho pode não ter as flags) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
   const lj = $('#dash-sec-lojinha'); if(lj) lj.style.display = 'none';
   const dp = $('#dash-sec-despensa'); if(dp) dp.style.display = 'none';
+  const az = $('#dash-sec-afazeres'); if(az) az.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
 
