@@ -1978,6 +1978,11 @@ function openKanbanForm(id=null) {
           }).join('') || '<span style="color:var(--text3)">Nenhum filho ativo</span>'}
         </div>
       </div>
+
+      <div class="fi-group" style="padding:12px 14px;background:rgba(212,168,67,.06);border:1px solid rgba(212,168,67,.2);border-radius:10px">
+        <label class="checkbox-row"><input type="checkbox" id="kc-lista" ${k?.lista_aberta?'checked':''}/> <strong>📝 Aberta pra lista de afazeres da casa</strong></label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Aparece na área pessoal de <strong>todos os filhos ativos</strong>. A primeira pessoa que clicar em "Pego pra mim" fica responsável e o card sai da lista pública. Ela pode soltar depois pra voltar pra geral.</div>
+      </div>
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="kc-del">Excluir</button>':''}
@@ -2005,6 +2010,7 @@ function openKanbanForm(id=null) {
       prioridade: $('#kc-prio').value,
       prazo: $('#kc-prazo').value || null,
       responsaveis,
+      lista_aberta: $('#kc-lista')?.checked || false,
       arquivado: false,
       origem: k?.origem || 'manual',
       origem_ref: k?.origem_ref || null,
