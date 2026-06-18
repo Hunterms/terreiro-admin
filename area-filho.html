@@ -294,6 +294,22 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             <button class="identity-trocar" onclick="trocarFilho()" title="Sair desta conta">trocar</button>
           </div>
 
+          <!-- Card pedindo email — só pra quem não tem auth_email -->
+          <div id="email-capture-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(52,152,219,.12),rgba(52,152,219,.02));border:1px solid rgba(52,152,219,.35);border-radius:12px;margin-bottom:14px">
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+              <span style="font-size:22px;line-height:1">📧</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">Cadastra seu email pra receber lembretes</div>
+                <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45">Manda a véspera pra você não esquecer da rega, escala da gira ou tarefa que tá com você. Você pode parar quando quiser.</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input class="fi" id="ec-email" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
+              <button class="btn btn-primary" id="ec-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
+            </div>
+            <div id="ec-err" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+          </div>
+
           <!-- Action items: o que precisa da atenção agora -->
           <div id="actions-wrap" style="display:none">
             <div class="actions-label">Pra você agora</div>
@@ -587,6 +603,7 @@ async function selecionarFilho(id) {
   APP.filhoAtual = filho;
   $('#filho-area').style.display = '';
   renderIdentityHero(filho);
+  renderEmailCapture(filho);
   const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = 'none';
 
@@ -734,6 +751,51 @@ function resetSearchSelect(){
   $('#filho-results')?.classList.remove('open');
   _search.idx = -1;
   _search.results = [];
+}
+
+function renderEmailCapture(f) {
+  const card = $('#email-capture-card');
+  if (!card) return;
+  // Mostra só pra quem ainda não tem email cadastrado
+  if (f.auth_email) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const inp = $('#ec-email');
+  const btn = $('#ec-save');
+  const err = $('#ec-err');
+  if (inp) inp.value = '';
+  if (err) err.style.display = 'none';
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'Salvar';
+    btn.onclick = async () => {
+      const email = (inp.value || '').trim().toLowerCase();
+      err.style.display = 'none';
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        err.textContent = 'Email inválido. Use o formato seu@email.com.';
+        err.style.display = 'block';
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Salvando…';
+      try {
+        await updateDoc(doc(dbPvd, 'fin_filhos', f.id), {
+          auth_email: email,
+          atualizadoEm: serverTimestamp()
+        });
+        // Atualiza estado local pra esconder o card
+        f.auth_email = email;
+        const idx = APP.filhos.findIndex(x => x.id === f.id);
+        if (idx >= 0) APP.filhos[idx].auth_email = email;
+        toast('Email salvo. Em breve você vai receber os lembretes ✓','ok');
+        card.style.display = 'none';
+      } catch(e) {
+        console.error(e);
+        err.textContent = 'Erro ao salvar. Tenta de novo em alguns segundos.';
+        err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Salvar';
+      }
+    };
+  }
+  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') btn.click(); };
 }
 
 function renderIdentityHero(f) {

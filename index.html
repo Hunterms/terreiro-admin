@@ -363,6 +363,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
         Avisos
       </button>
+      <button data-route="lembretes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Lembretes
+      </button>
     </nav>
 
     <nav class="sidebar-nav" id="nav-filho" style="display:none">
@@ -1030,6 +1034,7 @@ function renderRoute() {
     case 'pedidos':       return renderPedidos(c);
     case 'inteligencia':  return renderInteligencia(c);
     case 'avisos':        return renderAvisos(c);
+    case 'lembretes':     return renderLembretes(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
     case 'disponibilidade':return renderDisponibilidade(c);
@@ -4206,6 +4211,260 @@ async function arquivarAviso(id) {
     try { await updateDoc(doc(dbPvd,'adm_avisos',id), { arquivado:true, atualizadoEm: serverTimestamp() }); toast('Aviso arquivado','ok'); }
     catch(e) { toast('Erro: '+e.message,'err'); }
   });
+}
+
+// ── LEMBRETES (envio manual de email no dia anterior) ────────────────────
+// Agrega rega + escalas de gira + tarefas kanban pra um dia escolhido,
+// agrupa por tipo, deixa o admin marcar/desmarcar quem recebe e dispara
+// 1 email consolidado por filho via o Worker (mesma stack do confirmação).
+
+let lembretesDataSelecionada = null;
+
+function _lembHojeISO() {
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _lembAmanhaISO() {
+  const d = new Date(); d.setDate(d.getDate()+1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function renderLembretes(c) {
+  if (!lembretesDataSelecionada) lembretesDataSelecionada = _lembAmanhaISO();
+  const data = lembretesDataSelecionada;
+  const dataBr = new Date(data+'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+
+  // Agrega itens do dia
+  const itens = [];
+
+  // 1) Rega (filhos reservados pra esse dia que ainda não confirmaram)
+  (S.regas||[]).filter(r => r.data === data && !r.realizado).forEach(r => {
+    const filho = S.filhos.find(f => f.id === r.filho_id);
+    if (!filho) return;
+    itens.push({
+      tipo: 'rega', label: '🌱 Rega',
+      filho_id: r.filho_id, filho_nome: filho.nome,
+      descricao: 'Regar a casa', key: `rega_${r.filho_id}`
+    });
+  });
+
+  // 2) Escalas de gira (qualquer função) — limpeza e lojinha aparecem como funções aqui
+  (S.eventos||[]).filter(e => e.data === data && !e.arquivado).forEach(ev => {
+    const esc = (S.escalas||[]).find(es => es.tipo === 'gira' && es.evento_id === ev.id);
+    if (!esc) return;
+    (esc.alocacoes||[]).forEach(a => {
+      const filho = S.filhos.find(f => f.id === a.filho_id);
+      if (!filho) return;
+      const fn = (S.funcoes||[]).find(x => x.id === a.funcao_id);
+      const fnNome = fn?.nome || 'Função';
+      const fnLower = fnNome.toLowerCase();
+      const tipo = fnLower.includes('limpeza') ? 'limpeza' : (fnLower.includes('lojinha') ? 'lojinha' : 'gira');
+      const label = tipo === 'limpeza' ? '🧹 Limpeza' : (tipo === 'lojinha' ? '🛍️ Lojinha' : '📅 Escala da gira');
+      itens.push({
+        tipo, label,
+        filho_id: a.filho_id, filho_nome: filho.nome,
+        descricao: `${fnNome} — ${ev.nome || 'gira'}`,
+        key: `gira_${ev.id}_${a.funcao_id}_${a.filho_id}`
+      });
+    });
+  });
+
+  // 3) Kanban com prazo === data (todas funções juntas)
+  (S.kanban||[]).filter(k => k.prazo === data && !k.arquivado && k.status !== 'done').forEach(k => {
+    (k.responsaveis||[]).forEach(fid => {
+      const filho = S.filhos.find(f => f.id === fid);
+      if (!filho) return;
+      itens.push({
+        tipo: 'kanban', label: '✅ Kanban',
+        filho_id: fid, filho_nome: filho.nome,
+        descricao: k.titulo || '(tarefa sem título)',
+        key: `kanban_${k.id}_${fid}`
+      });
+    });
+  });
+
+  // Agrupa por tipo (preserva ordem de inserção)
+  const grupos = {};
+  itens.forEach(it => {
+    if (!grupos[it.tipo]) grupos[it.tipo] = { label: it.label, itens: [] };
+    grupos[it.tipo].itens.push(it);
+  });
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lembretes</div>
+        <div class="page-sub">Envia email avisando cada filho do que ele tem pra fazer no dia escolhido.</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" id="lemb-enviar" disabled>Enviar lembretes</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap;align-items:end">
+      <div class="fi-group" style="margin-bottom:0;flex:1;min-width:200px">
+        <label>Data dos lembretes</label>
+        <input type="date" class="fi" id="lemb-data" value="${data}"/>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Manda à véspera pra avisar quem tem coisa no dia seguinte.</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" id="lemb-hoje">Hoje</button>
+        <button class="btn btn-sm btn-primary" id="lemb-amanha">Amanhã</button>
+      </div>
+    </div>
+
+    <div style="text-transform:capitalize;font-size:13.5px;color:var(--text2);margin-bottom:12px;font-weight:600">📅 ${dataBr}</div>
+
+    ${itens.length === 0 ? `
+      <div class="card"><div class="empty"><div class="empty-t">Nada pra avisar nesse dia</div><div class="empty-s">Sem rega, escala de gira ou tarefa kanban pra essa data.</div></div></div>
+    ` : Object.values(grupos).map(g => `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-h"><div class="card-title">${g.label} <span style="color:var(--text3);font-weight:400">· ${g.itens.length}</span></div></div>
+        ${g.itens.map(it => {
+          const filho = S.filhos.find(f => f.id === it.filho_id);
+          const semEmail = !filho?.auth_email;
+          return `
+            <label style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:${semEmail?'not-allowed':'pointer'};opacity:${semEmail?'.55':'1'}">
+              <input type="checkbox" class="lemb-chk" data-key="${it.key}" data-filho-id="${it.filho_id}" data-filho-nome="${(it.filho_nome||'').replace(/"/g,'&quot;')}" data-desc="${(it.descricao||'').replace(/"/g,'&quot;')}" data-tipo="${it.tipo}" ${semEmail?'disabled':'checked'} style="accent-color:var(--gold);width:18px;height:18px;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;font-weight:600;color:var(--text)">${it.filho_nome||'?'}</div>
+                <div style="font-size:11.5px;color:var(--text3);margin-top:2px">${it.descricao}</div>
+              </div>
+              ${semEmail
+                ? '<span class="chip" style="background:rgba(231,51,41,.12);color:var(--red);font-size:10px">sem email</span>'
+                : `<span style="color:var(--text3);font-size:11px;white-space:nowrap">${filho.auth_email}</span>`}
+            </label>
+          `;
+        }).join('')}
+      </div>
+    `).join('')}
+  `;
+
+  $('#lemb-data').onchange = (e) => { lembretesDataSelecionada = e.target.value; renderRoute(); };
+  $('#lemb-hoje').onclick = () => { lembretesDataSelecionada = _lembHojeISO(); renderRoute(); };
+  $('#lemb-amanha').onclick = () => { lembretesDataSelecionada = _lembAmanhaISO(); renderRoute(); };
+
+  const btn = $('#lemb-enviar');
+  function atualizarBtn() {
+    const filhosSel = new Set();
+    document.querySelectorAll('.lemb-chk:checked').forEach(cb => filhosSel.add(cb.dataset.filhoId));
+    if (filhosSel.size === 0) { btn.disabled = true; btn.textContent = 'Enviar lembretes'; }
+    else { btn.disabled = false; btn.textContent = `Enviar ${filhosSel.size} lembrete${filhosSel.size===1?'':'s'}`; }
+  }
+  document.querySelectorAll('.lemb-chk').forEach(cb => cb.addEventListener('change', atualizarBtn));
+  atualizarBtn();
+
+  btn.onclick = () => enviarLembretes(data);
+}
+
+async function enviarLembretes(data) {
+  const cfg = await _carregarEmailCfg();
+  if (!cfg?.enabled || !cfg.worker_url || !cfg.worker_secret) {
+    toast('Config de email incompleta (adm_config/email)', 'err');
+    return;
+  }
+
+  // Consolida por filho
+  const porFilho = {};
+  document.querySelectorAll('.lemb-chk:checked').forEach(cb => {
+    const fid = cb.dataset.filhoId;
+    if (!porFilho[fid]) {
+      const filho = S.filhos.find(f => f.id === fid);
+      porFilho[fid] = { id: fid, nome: cb.dataset.filhoNome, email: filho?.auth_email, itens: [] };
+    }
+    porFilho[fid].itens.push({ tipo: cb.dataset.tipo, desc: cb.dataset.desc });
+  });
+
+  const filhos = Object.values(porFilho).filter(f => f.email);
+  if (filhos.length === 0) { toast('Ninguém selecionado com email','err'); return; }
+  const nomes = filhos.map(f => f.nome.split(' ')[0]).join(', ');
+  if (!confirm(`Enviar ${filhos.length} lembrete${filhos.length===1?'':'s'} pra:\n\n${nomes}\n\nReferente a ${data}.`)) return;
+
+  const btn = document.getElementById('lemb-enviar');
+  let ok = 0, err = 0;
+  btn.disabled = true;
+
+  for (const filho of filhos) {
+    btn.textContent = `Enviando... ${ok+err+1}/${filhos.length}`;
+    try {
+      const dataBr = new Date(data+'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+      const subject = `Lembrete pra ${dataBr.split(',')[0]} — ${filho.itens.length} coisa${filho.itens.length===1?'':'s'} na casa`;
+      const html = _buildLembreteHTML(filho, dataBr);
+      const text = _buildLembreteText(filho, dataBr);
+      const resp = await fetch(cfg.worker_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+        body: JSON.stringify({
+          to: filho.email, to_name: filho.nome,
+          from: cfg.from, reply_to: cfg.reply_to,
+          subject, html, text
+        })
+      });
+      if (!resp.ok) {
+        const t = await resp.text().catch(()=> ''); throw new Error(`${resp.status}: ${t.slice(0,120)}`);
+      }
+      await setDoc(doc(dbPvd, 'adm_lembretes', `${data}_${filho.id}`), {
+        filho_id: filho.id, filho_nome: filho.nome, data,
+        itens_count: filho.itens.length,
+        enviadoEm: serverTimestamp()
+      });
+      ok++;
+    } catch(e) {
+      console.warn('Erro lembrete', filho.nome, e?.message);
+      err++;
+    }
+    await new Promise(r => setTimeout(r, 350));
+  }
+
+  toast(err === 0 ? `📧 ${ok} lembrete${ok===1?'':'s'} enviado${ok===1?'':'s'}` : `${ok} enviados · ${err} falharam`, err === 0 ? 'ok' : 'err');
+  btn.disabled = false;
+  btn.textContent = 'Enviar lembretes';
+}
+
+function _buildLembreteHTML(filho, dataBr) {
+  const nomePrim = (filho.nome||'').split(' ')[0];
+  const itensHTML = filho.itens.map(it => `
+    <li style="margin-bottom:10px;color:#3e2f1c;font-size:15px;line-height:1.45"><strong>${it.desc}</strong></li>
+  `).join('');
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#1a1410;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#1a1410">
+    <tr><td align="center" style="padding:30px 16px">
+      <table cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;background:#fdf8ee;border-radius:14px;overflow:hidden">
+        <tr><td align="center" style="padding:30px 24px 16px;background:#2a1f17">
+          <div style="font-size:42px;margin-bottom:10px">🕯️</div>
+          <div style="font-size:13px;color:#d4a843;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Terreiro do Candieiro</div>
+        </td></tr>
+        <tr><td style="padding:30px 28px 24px;color:#3e2f1c">
+          <p style="font-size:17px;margin:0 0 16px;line-height:1.4">Salve <strong>${nomePrim}</strong>,</p>
+          <p style="font-size:15px;margin:0 0 18px;line-height:1.55;color:#5a4738">Esse é um lembrete do que você tem amanhã <strong>(${dataBr})</strong> na casa:</p>
+          <ul style="padding-left:22px;margin:0 0 24px">${itensHTML}</ul>
+          <div style="padding:14px 18px;background:rgba(212,168,67,.15);border-left:3px solid #d4a843;border-radius:6px;margin-bottom:22px;font-size:13.5px;color:#5a4738;line-height:1.5">Se não conseguir, fala com a casa antes pra dar tempo de arranjar substituto. Saúde 🌿</div>
+          <p style="margin:0 0 6px"><a href="https://terreirodocandieiro.com.br/area-filho.html" style="display:inline-block;padding:12px 22px;background:#d4a843;color:#1a1209;text-decoration:none;border-radius:8px;font-weight:700;font-size:14.5px">Ver área pessoal</a></p>
+        </td></tr>
+        <tr><td align="center" style="padding:18px 28px 24px;background:#fdf8ee;border-top:1px solid #e5d5b8;font-size:11px;color:#8a7560">
+          Terreiro do Candieiro · R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function _buildLembreteText(filho, dataBr) {
+  const nomePrim = (filho.nome||'').split(' ')[0];
+  return `Salve ${nomePrim},
+
+Lembrete do que você tem amanhã (${dataBr}) na casa:
+
+${filho.itens.map(it => `• ${it.desc}`).join('\n')}
+
+Se não conseguir, fala com a casa pra dar tempo de arranjar substituto.
+
+Ver sua área pessoal: https://terreirodocandieiro.com.br/area-filho.html
+
+Terreiro do Candieiro`;
 }
 
 // ── AGENDA DO PAI ─────────────────────────────────────────────────────────
