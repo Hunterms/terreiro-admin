@@ -1491,7 +1491,10 @@ function openFilhoForm(id=null) {
           })()}
         </select>
       </div>
-      <div class="fi-group"><label>Email (auth — opcional, pra logar)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Email (auth — opcional, pra logar e receber lembretes)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
+        <div class="fi-group"><label>Data de nascimento <span style="color:var(--text3);font-weight:400">(aniversário)</span></label><input type="date" class="fi" id="ff-nasc" value="${f?.data_nascimento||''}"/></div>
+      </div>
       <div class="fi-group">
         <label>PIN de 4 dígitos (fallback — só pra quem não tem telefone cadastrado)</label>
         <div style="display:flex;gap:8px;align-items:center">
@@ -1558,6 +1561,7 @@ function openFilhoForm(id=null) {
         : [],
       padrinho_id: $('#ff-padrinho').value || null,
       auth_email: $('#ff-email').value.trim() || null,
+      data_nascimento: $('#ff-nasc').value || null,
       pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
       mora_perto: $('#ff-perto').checked,
       isento_limpeza: $('#ff-isento-limpeza').checked,
