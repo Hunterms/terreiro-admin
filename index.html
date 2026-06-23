@@ -367,6 +367,10 @@ select.fi option{background:#1a1a1a;color:var(--text)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         Lembretes
       </button>
+      <button data-route="perguntas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Perguntas
+      </button>
     </nav>
 
     <nav class="sidebar-nav" id="nav-filho" style="display:none">
@@ -469,6 +473,8 @@ const S = {
   solicitacoes: [],
   regas: [],
   despensa: [],
+  perguntas: [],
+  respostas: [],
   servicos: [],
   produtos: [],
   pedidos: [],
@@ -948,6 +954,16 @@ function attachListeners() {
     if(['despensa','dashboard'].includes(S.route)) renderRoute();
   }));
 
+  // Perguntas e respostas (sistema de quiz/alinhamento de conhecimento)
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_perguntas'), snap => {
+    S.perguntas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route === 'perguntas') renderRoute();
+  }));
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_respostas'), snap => {
+    S.respostas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route === 'perguntas') renderRoute();
+  }));
+
   // Serviços oferecidos pelo Pai (consultas, baralho, búzios, etc.)
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_servicos'), snap => {
     S.servicos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
@@ -1035,6 +1051,7 @@ function renderRoute() {
     case 'inteligencia':  return renderInteligencia(c);
     case 'avisos':        return renderAvisos(c);
     case 'lembretes':     return renderLembretes(c);
+    case 'perguntas':     return renderPerguntas(c);
     case 'meu-dashboard': return renderMeuDashboard(c);
     case 'minhas-escalas':return renderMinhasEscalas(c);
     case 'disponibilidade':return renderDisponibilidade(c);
@@ -4467,6 +4484,252 @@ Ver sua área pessoal: https://terreirodocandieiro.com.br/area-filho.html
 Terreiro do Candieiro`;
 }
 
+// ── PERGUNTAS (quiz de alinhamento de conhecimento) ──────────────────────
+// Admin cria perguntas com opções e gabarito (correta_idx é interno —
+// nunca exposto ao filho). Filho responde uma vez por pergunta. Aqui o
+// admin vê distribuição das respostas e desempenho por filho / tópico.
+
+let pergTab = 'lista'; // lista | porFilho
+
+function setPergTab(t) { pergTab = t; renderRoute(); }
+
+function renderPerguntas(c) {
+  const perguntas = [...(S.perguntas||[])].sort((a,b) => (b.criadoEm?.seconds||0)-(a.criadoEm?.seconds||0));
+  const ativas = perguntas.filter(p => p.ativa !== false && !p.arquivada);
+  const respostas = S.respostas || [];
+
+  // Conta respostas por pergunta
+  const respostasPorPerg = {};
+  respostas.forEach(r => {
+    if (!respostasPorPerg[r.pergunta_id]) respostasPorPerg[r.pergunta_id] = [];
+    respostasPorPerg[r.pergunta_id].push(r);
+  });
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Perguntas</div>
+        <div class="page-sub">${ativas.length} ativa${ativas.length===1?'':'s'} · ${respostas.length} resposta${respostas.length===1?'':'s'} no total</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.openPerguntaForm()">+ Nova pergunta</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${pergTab==='lista'?'active':''}" onclick="window._app.setPergTab('lista')">Lista</button>
+      <button class="${pergTab==='porFilho'?'active':''}" onclick="window._app.setPergTab('porFilho')">Por filho</button>
+    </div>
+
+    ${pergTab === 'porFilho' ? renderPerguntasPorFilho() : renderPerguntasLista(perguntas, respostasPorPerg)}
+  `;
+}
+
+function renderPerguntasLista(perguntas, respostasPorPerg) {
+  if (perguntas.length === 0) {
+    return `<div class="card"><div class="empty"><div class="empty-t">Nenhuma pergunta ainda</div><div class="empty-s">Crie a primeira pra começar a mapear o conhecimento da casa.</div></div></div>`;
+  }
+  return perguntas.map(p => {
+    const respostas = respostasPorPerg[p.id] || [];
+    const total = respostas.length;
+    // Distribuição
+    const dist = (p.opcoes||[]).map((opt, idx) => {
+      const count = respostas.filter(r => r.opcao_idx === idx).length;
+      const pct = total ? Math.round((count/total)*100) : 0;
+      const ehCorreta = idx === p.correta_idx;
+      return { texto: opt.texto || `Opção ${idx+1}`, count, pct, ehCorreta };
+    });
+    const corretas = respostas.filter(r => r.correta).length;
+    const taxaAcerto = total ? Math.round((corretas/total)*100) : null;
+
+    return `
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+          <div style="flex:1;min-width:240px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+              ${p.topico ? `<span class="chip" style="background:rgba(155,89,182,.18);color:#b07cce;font-size:10px">${p.topico}</span>` : ''}
+              ${p.ativa === false ? '<span class="chip" style="background:var(--glass2);color:var(--text3);font-size:10px">inativa</span>' : ''}
+              ${p.arquivada ? '<span class="chip" style="background:var(--glass2);color:var(--text3);font-size:10px">arquivada</span>' : ''}
+            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--text);line-height:1.35">${p.titulo||'(sem título)'}</div>
+            ${p.descricao ? `<div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5">${p.descricao}</div>` : ''}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Respostas</div>
+            <div style="font-size:22px;font-weight:800;color:var(--gold)">${total}</div>
+            ${taxaAcerto !== null ? `<div style="font-size:11.5px;color:${taxaAcerto>=70?'var(--green)':(taxaAcerto>=40?'var(--amber)':'var(--red)')};font-weight:600;margin-top:2px">${taxaAcerto}% certas</div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;margin-top:10px">
+          ${dist.map(d => `
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="flex:1;min-width:0;font-size:12.5px;color:${d.ehCorreta?'var(--green)':'var(--text2)'};${d.ehCorreta?'font-weight:600':''}">${d.ehCorreta?'✓ ':''}${d.texto}</div>
+              <div style="width:140px;height:18px;background:var(--glass2);border-radius:4px;overflow:hidden;position:relative">
+                <div style="height:100%;background:${d.ehCorreta?'rgba(46,204,113,.5)':'rgba(212,168,67,.4)'};width:${d.pct}%;transition:width .3s"></div>
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--text)">${d.count} · ${d.pct}%</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="window._app.openPerguntaForm('${p.id}')">Editar</button>
+          ${p.arquivada
+            ? `<button class="btn btn-sm" onclick="window._app.arquivarPergunta('${p.id}', false)">Restaurar</button>`
+            : `<button class="btn btn-sm btn-ghost" onclick="window._app.arquivarPergunta('${p.id}', true)">Arquivar</button>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPerguntasPorFilho() {
+  const respostas = S.respostas || [];
+  const filhos = (S.filhos||[]).filter(f => !f.status || f.status === 'ativo');
+  // Conta por filho
+  const porFilho = filhos.map(f => {
+    const minhas = respostas.filter(r => r.filho_id === f.id);
+    const certas = minhas.filter(r => r.correta).length;
+    const total = minhas.length;
+    const pct = total ? Math.round((certas/total)*100) : null;
+    // Por tópico
+    const porTopico = {};
+    minhas.forEach(r => {
+      const perg = (S.perguntas||[]).find(p => p.id === r.pergunta_id);
+      const topico = perg?.topico || '(sem tópico)';
+      if (!porTopico[topico]) porTopico[topico] = { certas: 0, total: 0 };
+      porTopico[topico].total++;
+      if (r.correta) porTopico[topico].certas++;
+    });
+    return { filho: f, total, certas, pct, porTopico };
+  }).filter(x => x.total > 0).sort((a,b) => b.total - a.total);
+
+  if (porFilho.length === 0) {
+    return `<div class="card"><div class="empty"><div class="empty-t">Ninguém respondeu nada ainda</div></div></div>`;
+  }
+  return porFilho.map(x => {
+    const topicos = Object.entries(x.porTopico).sort((a,b) => b[1].total - a[1].total);
+    return `
+      <div class="list-item">
+        <div class="li-avatar" style="background:rgba(155,89,182,.18);color:#b07cce">${(x.filho.nome||'?').slice(0,2).toUpperCase()}</div>
+        <div class="li-main">
+          <div class="li-name">${x.filho.nome}</div>
+          <div class="li-meta" style="margin-top:4px">
+            <span><strong style="color:var(--gold)">${x.total}</strong> respondida${x.total===1?'':'s'}</span>
+            ${x.pct !== null ? `<span style="color:${x.pct>=70?'var(--green)':(x.pct>=40?'var(--amber)':'var(--red)')};font-weight:600">${x.pct}% certas</span>` : ''}
+          </div>
+          ${topicos.length > 0 ? `
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+              ${topicos.map(([nome, t]) => {
+                const tPct = Math.round((t.certas/t.total)*100);
+                return `<span class="chip" style="background:var(--glass2);font-size:10.5px">${nome}: ${t.certas}/${t.total} (${tPct}%)</span>`;
+              }).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openPerguntaForm(id=null) {
+  const p = id ? S.perguntas.find(x => x.id === id) : null;
+  const isEdit = !!p;
+  const opcoes = p?.opcoes && p.opcoes.length > 0 ? p.opcoes : [{texto:''},{texto:''}];
+  const topicosExistentes = [...new Set((S.perguntas||[]).map(x => x.topico).filter(Boolean))].sort();
+
+  openModal(`
+    <div class="modal-h"><h3>${isEdit?'Editar pergunta':'Nova pergunta'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Pergunta *</label><textarea class="fi" id="pg-titulo" placeholder="Ex: Qual é a saudação correta pra Iansã quando chega na gira?">${p?.titulo||''}</textarea></div>
+      <div class="fi-group"><label>Contexto / descrição (opcional)</label><textarea class="fi" id="pg-desc" placeholder="Explica o porquê da pergunta, contexto, qualquer coisa que ajude">${p?.descricao||''}</textarea></div>
+      <div class="row-2">
+        <div class="fi-group"><label>Tópico (opcional)</label>
+          <input class="fi" id="pg-topico" list="pg-topicos-list" value="${p?.topico||''}" placeholder="ex: umbanda básica, jurema, ritual"/>
+          <datalist id="pg-topicos-list">${topicosExistentes.map(t => `<option value="${t}">`).join('')}</datalist>
+        </div>
+        <div class="fi-group"><label class="checkbox-row" style="padding-top:24px"><input type="checkbox" id="pg-ativa" ${p?.ativa!==false?'checked':''}/> Ativa (visível pros filhos)</label></div>
+      </div>
+
+      <div class="fi-group">
+        <label>Opções de resposta (radio — 1 só) *</label>
+        <div id="pg-opcoes" style="display:flex;flex-direction:column;gap:8px">
+          ${opcoes.map((o, i) => _pergOpcaoRow(o.texto||'', i, p?.correta_idx === i)).join('')}
+        </div>
+        <button type="button" class="btn btn-sm" id="pg-add-opcao" style="margin-top:8px">+ Adicionar opção</button>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.45">Marque o radio da resposta correta. O gabarito é interno — nunca aparece pro filho.</div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${isEdit ? '<button class="btn btn-danger" id="pg-del">Excluir</button>' : ''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="pg-save">${isEdit?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  $('#pg-add-opcao').onclick = () => {
+    const cont = $('#pg-opcoes');
+    const i = cont.children.length;
+    cont.insertAdjacentHTML('beforeend', _pergOpcaoRow('', i, false));
+  };
+
+  $('#pg-save').onclick = async () => {
+    const titulo = $('#pg-titulo').value.trim();
+    if (!titulo) { toast('Informe a pergunta','err'); return; }
+    const opcoesEls = document.querySelectorAll('.pg-opcao-row');
+    const opcoes = [];
+    let correta_idx = -1;
+    opcoesEls.forEach((el, i) => {
+      const txt = el.querySelector('.pg-opcao-texto').value.trim();
+      if (txt) {
+        opcoes.push({ texto: txt });
+        if (el.querySelector('.pg-opcao-correta').checked) correta_idx = opcoes.length - 1;
+      }
+    });
+    if (opcoes.length < 2) { toast('Pelo menos 2 opções','err'); return; }
+    if (correta_idx < 0) { toast('Marque qual é a resposta correta','err'); return; }
+    const data = {
+      titulo,
+      descricao: $('#pg-desc').value.trim(),
+      topico: $('#pg-topico').value.trim() || null,
+      opcoes,
+      correta_idx,
+      ativa: $('#pg-ativa').checked,
+      arquivada: p?.arquivada || false,
+      atualizadoEm: serverTimestamp()
+    };
+    try {
+      if (isEdit) await updateDoc(doc(dbPvd,'adm_perguntas',id), data);
+      else { data.criadoEm = serverTimestamp(); await addDoc(collection(dbPvd,'adm_perguntas'), data); }
+      toast(isEdit?'Pergunta atualizada':'Pergunta criada','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+
+  if (isEdit) $('#pg-del').onclick = () => confirmar(`Excluir a pergunta <strong>"${p.titulo}"</strong>? As respostas dela continuam guardadas em adm_respostas.`, async () => {
+    try { await deleteDoc(doc(dbPvd,'adm_perguntas',id)); toast('Pergunta excluída','ok'); closeModal(); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+function _pergOpcaoRow(texto, idx, correta) {
+  return `
+    <div class="pg-opcao-row" style="display:flex;gap:8px;align-items:center">
+      <label style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding:0 4px;cursor:pointer">
+        <input type="radio" name="pg-correta" class="pg-opcao-correta" ${correta?'checked':''} style="accent-color:var(--green);width:18px;height:18px"/>
+      </label>
+      <input class="fi pg-opcao-texto" type="text" placeholder="Texto da opção ${idx+1}" value="${(texto||'').replace(/"/g,'&quot;')}" style="flex:1"/>
+      <button type="button" class="btn btn-sm btn-ghost" onclick="this.closest('.pg-opcao-row').remove()" title="Remover">✕</button>
+    </div>
+  `;
+}
+
+async function arquivarPergunta(id, arquivar) {
+  try {
+    await updateDoc(doc(dbPvd,'adm_perguntas',id), { arquivada: !!arquivar, atualizadoEm: serverTimestamp() });
+    toast(arquivar?'Arquivada':'Restaurada','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+
 // ── AGENDA DO PAI ─────────────────────────────────────────────────────────
 let agendaFiltro = 'semana'; // 'hoje' | 'semana' | 'mes' | 'todos'
 
@@ -7595,6 +7858,9 @@ window._app = {
   rejeitarSolicitacao,
   openAvisoForm,
   arquivarAviso,
+  openPerguntaForm,
+  arquivarPergunta,
+  setPergTab,
   calNav,
   salvarDisp,
   openEvento: (id) => openEventoForm(id),

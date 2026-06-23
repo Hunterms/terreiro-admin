@@ -246,6 +246,29 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <h2>Área da comunidade</h2>
           <p>Avisos, próximas atividades e escala de rega.</p>
         </div>
+
+        <!-- Card pedindo data de nascimento — só pra quem não tem -->
+        <div id="nasc-capture-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(231,51,41,.12),rgba(231,51,41,.02));border:1px solid rgba(231,51,41,.35);border-radius:12px;margin-bottom:14px">
+          <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+            <span style="font-size:22px;line-height:1">🎂</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">Quando você nasceu?</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45">A casa gosta de comemorar aniversário da galera. Cadastra sua data pra entrar na lista de aniversariantes do mês.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input class="fi" id="nc-data" type="date" max="2025-12-31" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
+            <button class="btn btn-primary" id="nc-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
+          </div>
+          <div id="nc-err" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+        </div>
+
+        <!-- Aniversariantes do mês -->
+        <div id="aniversariantes-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.10),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.3);border-radius:12px;margin-bottom:14px">
+          <div style="font-size:14.5px;font-weight:700;color:var(--gold);margin-bottom:10px">🎂 Aniversariantes do mês</div>
+          <div id="aniversariantes-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
         <div id="avisos-container"></div>
         <div id="eventos-filho-container"></div>
         <div id="giras-container"></div>
@@ -330,6 +353,20 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </summary>
             <div class="dash-body">
               <div id="tarefas-container"></div>
+            </div>
+          </details>
+
+          <!-- Perguntas da casa (quiz/alinhamento de conhecimento) -->
+          <details class="dash-secao" id="dash-sec-perguntas" style="display:none">
+            <summary>
+              <div class="dash-head-text">
+                <h2>❓ Perguntas pra você <span class="dash-badge" id="dash-cnt-perguntas"></span></h2>
+                <p class="dash-sub">A casa quer entender como vai o conhecimento da galera. Sem certo nem errado pra você — é só registro.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="perguntas-container"></div>
             </div>
           </details>
 
@@ -482,6 +519,8 @@ let APP = {
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
   listaAfazeres: [], // kanban: cards com lista_aberta=true e responsaveis vazio (visível pra todos)
+  perguntas: [], // adm_perguntas ativas + não arquivadas
+  minhasRespostas: [], // adm_respostas do filho atual
   lojinhaEscalas: [], // adm_escalas onde tipo='lojinha' (semanal). Só carrega se gerencia_lojinha
   eventos: [],
   avisos: [],
@@ -604,6 +643,8 @@ async function selecionarFilho(id) {
   $('#filho-area').style.display = '';
   renderIdentityHero(filho);
   renderEmailCapture(filho);
+  renderNascCapture(filho);
+  renderAniversariantes();
   const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = 'none';
 
@@ -633,6 +674,15 @@ async function selecionarFilho(id) {
     APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
   } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
 
+  // Perguntas: carrega ativas + respostas desse filho pra calcular pendentes
+  try {
+    const pSnap = await getDocs(collection(dbPvd,'adm_perguntas'));
+    APP.perguntas = pSnap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .filter(p => p.ativa !== false && !p.arquivada);
+    const rSnap = await getDocs(query(collection(dbPvd,'adm_respostas'), where('filho_id','==',id)));
+    APP.minhasRespostas = rSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e) { console.warn('Erro perguntas', e); APP.perguntas = []; APP.minhasRespostas = []; }
+
   // Lojinha gerentes: carregam TODAS escalas de gira (mesmo padrão da aba "escala"
   // do admin). Cada doc é { tipo:'gira', evento_id, alocacoes:[{funcao_id,filho_id,...}] }.
   // Elas só vão editar as alocações cuja funcao_id == Lojinha; o resto fica intacto.
@@ -652,6 +702,7 @@ async function selecionarFilho(id) {
   renderEsc();
   renderTarefas();
   renderListaAfazeres();
+  renderPerguntasFilho();
   renderAfilhados();
   renderLojinha();
   renderReembolso();
@@ -751,6 +802,95 @@ function resetSearchSelect(){
   $('#filho-results')?.classList.remove('open');
   _search.idx = -1;
   _search.results = [];
+}
+
+function renderNascCapture(f) {
+  const card = $('#nasc-capture-card');
+  if (!card) return;
+  if (f.data_nascimento) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const inp = $('#nc-data');
+  const btn = $('#nc-save');
+  const err = $('#nc-err');
+  // Max = hoje (não faz sentido data futura)
+  const hoje = new Date(); const hojeISO = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  if (inp) { inp.value = ''; inp.max = hojeISO; }
+  if (err) err.style.display = 'none';
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'Salvar';
+    btn.onclick = async () => {
+      const data = (inp.value || '').trim();
+      err.style.display = 'none';
+      if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+        err.textContent = 'Selecione uma data válida.';
+        err.style.display = 'block';
+        return;
+      }
+      if (data > hojeISO) {
+        err.textContent = 'Data não pode ser no futuro.';
+        err.style.display = 'block';
+        return;
+      }
+      const ano = Number(data.slice(0,4));
+      if (ano < 1900) {
+        err.textContent = 'Confere o ano.';
+        err.style.display = 'block';
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Salvando…';
+      try {
+        await updateDoc(doc(dbPvd, 'fin_filhos', f.id), {
+          data_nascimento: data,
+          atualizadoEm: serverTimestamp()
+        });
+        f.data_nascimento = data;
+        const idx = APP.filhos.findIndex(x => x.id === f.id);
+        if (idx >= 0) APP.filhos[idx].data_nascimento = data;
+        toast('Data de nascimento salva 🎂','ok');
+        card.style.display = 'none';
+        renderAniversariantes(); // pode entrar na lista do mês
+      } catch(e) {
+        console.error(e);
+        err.textContent = 'Erro ao salvar. Tenta de novo.';
+        err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Salvar';
+      }
+    };
+  }
+  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') btn.click(); };
+}
+
+function renderAniversariantes() {
+  const card = $('#aniversariantes-card');
+  const list = $('#aniversariantes-list');
+  if (!card || !list) return;
+  const mesAtual = new Date().getMonth() + 1; // 1-12
+  const aniversariantes = (APP.filhos||[])
+    .filter(f => f.data_nascimento && (!f.status || f.status === 'ativo'))
+    .map(f => {
+      const partes = f.data_nascimento.split('-');
+      return { ...f, _mes: Number(partes[1]), _dia: Number(partes[2]) };
+    })
+    .filter(f => f._mes === mesAtual)
+    .sort((a,b) => a._dia - b._dia);
+
+  if (aniversariantes.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  const hojeDia = new Date().getDate();
+  list.innerHTML = aniversariantes.map(f => {
+    const ehHoje = f._dia === hojeDia;
+    const diaLabel = ehHoje ? 'HOJE 🎉' : `dia ${String(f._dia).padStart(2,'0')}`;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 8px;${ehHoje?'background:rgba(212,168,67,.12);border-radius:6px':''}">
+        <div style="font-size:13.5px;color:var(--text);font-weight:${ehHoje?'700':'600'}">${f.nome}</div>
+        <div style="font-size:11px;color:${ehHoje?'var(--gold)':'var(--text3)'};font-weight:${ehHoje?'700':'600'};white-space:nowrap">${diaLabel}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderEmailCapture(f) {
@@ -1438,6 +1578,116 @@ window.mudarStatusTarefa = async function(id, novoStatus) {
     console.error(e);
     toast('Erro ao mudar status','error');
   }
+};
+
+// ── PERGUNTAS DA CASA ────────────────────────────────────────────────────
+// Mostra perguntas ativas que o filho ainda não respondeu. Quando responde,
+// salva resposta com flag correta (calculada do correta_idx — não revelada
+// no UI). Não pode responder de novo. Sem feedback de certo/errado.
+function renderPerguntasFilho() {
+  const f = APP.filhoAtual;
+  const sec = $('#dash-sec-perguntas');
+  const cont = $('#perguntas-container');
+  const badge = $('#dash-cnt-perguntas');
+  if (!f || !sec || !cont) return;
+  const respondidasIds = new Set((APP.minhasRespostas||[]).map(r => r.pergunta_id));
+  const pendentes = (APP.perguntas||[]).filter(p => !respondidasIds.has(p.id));
+  if (pendentes.length === 0) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = '';
+  if (badge) { badge.textContent = `${pendentes.length} pendente${pendentes.length===1?'':'s'}`; badge.classList.remove('muted'); }
+  cont.innerHTML = pendentes.map(p => `
+    <div class="tarefa-card" style="cursor:pointer;border-color:rgba(155,89,182,.3)" onclick="abrirRespostaPergunta('${p.id}')">
+      <div class="tarefa-prio media"></div>
+      <div class="tarefa-body">
+        ${p.topico ? `<div style="font-size:10.5px;color:#b07cce;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${p.topico}</div>` : ''}
+        <div class="tarefa-title" style="font-size:14px">${p.titulo||'(sem título)'}</div>
+        ${p.descricao ? `<div class="tarefa-desc">${(p.descricao||'').slice(0,140)}${p.descricao.length>140?'…':''}</div>` : ''}
+        <div style="font-size:11.5px;color:#b07cce;margin-top:8px;font-weight:600">Responder →</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.abrirRespostaPergunta = function(perguntaId) {
+  const f = APP.filhoAtual;
+  const p = (APP.perguntas||[]).find(x => x.id === perguntaId);
+  if (!f || !p) return;
+  const opcoes = p.opcoes || [];
+  if (opcoes.length === 0) { toast('Pergunta sem opções — fala com o admin','err'); return; }
+  abrirModal(`
+    <div class="modal-h"><h3>Responder pergunta</h3><button class="modal-x" onclick="fecharModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-b">
+      ${p.topico ? `<div style="font-size:11px;color:#b07cce;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">${p.topico}</div>` : ''}
+      <div style="font-size:16px;color:var(--text);line-height:1.45;font-weight:600;margin-bottom:10px">${p.titulo}</div>
+      ${p.descricao ? `<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:16px">${p.descricao}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        ${opcoes.map((opt, i) => `
+          <label class="resp-opt" style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--glass);border:1.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:all .15s">
+            <input type="radio" name="resp-opcao" value="${i}" style="accent-color:var(--gold);width:18px;height:18px;flex-shrink:0"/>
+            <div style="font-size:14px;color:var(--text);line-height:1.4">${opt.texto||'(opção sem texto)'}</div>
+          </label>
+        `).join('')}
+      </div>
+      <div style="font-size:11.5px;color:var(--text3);line-height:1.45;font-style:italic">Sua resposta fica registrada. Não tem certo ou errado pra você — é só pra casa entender como vai o conhecimento da galera e planejar aulas/conversas.</div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" id="rp-save">Enviar resposta</button>
+    </div>
+    <style>
+      .resp-opt:has(input:checked){border-color:var(--gold);background:rgba(212,168,67,.08)}
+      .resp-opt:hover{border-color:var(--text3)}
+    </style>
+  `);
+  $('#rp-save').onclick = async () => {
+    const sel = document.querySelector('input[name="resp-opcao"]:checked');
+    if (!sel) { toast('Escolhe uma opção','err'); return; }
+    const opcao_idx = Number(sel.value);
+    const btn = $('#rp-save');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    try {
+      const correta = opcao_idx === p.correta_idx;
+      const docId = `${p.id}__${f.id}`;
+      await setDoc(doc(dbPvd,'adm_respostas', docId), {
+        pergunta_id: p.id,
+        filho_id: f.id,
+        filho_nome: f.nome,
+        opcao_idx,
+        correta,
+        respondidoEm: serverTimestamp()
+      });
+      APP.minhasRespostas.push({ pergunta_id: p.id, filho_id: f.id, filho_nome: f.nome, opcao_idx, correta });
+      toast('Resposta registrada 🙏','ok');
+      fecharModal();
+      renderPerguntasFilho();
+    } catch(e) {
+      console.error(e);
+      toast('Erro ao enviar resposta','err');
+      btn.disabled = false; btn.textContent = 'Enviar resposta';
+    }
+  };
+};
+
+// Helpers de modal genérico (usados em vários cards). Compatível com vendas.html e despensa.html.
+function abrirModal(html) {
+  let bd = document.getElementById('modal-bd-geral');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = 'modal-bd-geral';
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s';
+    bd.innerHTML = '<div id="modal-content-geral" style="background:#161616;border:1px solid var(--border);border-radius:14px;width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;animation:slideUp .2s"></div>';
+    bd.onclick = e => { if (e.target === bd) fecharModal(); };
+    document.body.appendChild(bd);
+  }
+  document.getElementById('modal-content-geral').innerHTML = html;
+  bd.style.display = 'flex';
+}
+window.fecharModal = function() {
+  const bd = document.getElementById('modal-bd-geral');
+  if (bd) bd.style.display = 'none';
 };
 
 // ── LOJINHA: copia o sistema da aba "Escala" do admin ─────────────────────
@@ -2131,17 +2381,24 @@ function trocarFilho() {
   if(selectorCard) selectorCard.style.display = '';
   resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
-  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha','dash-sec-afazeres'].forEach(id => {
+  ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha','dash-sec-afazeres','dash-sec-perguntas'].forEach(id => {
     const d = $(`#${id}`); if(d) d.open = false;
   });
   APP.tarefas = [];
   APP.listaAfazeres = [];
   APP.lojinhaEscalas = [];
+  APP.perguntas = [];
+  APP.minhasRespostas = [];
   // Esconde seções condicionais (próximo filho pode não ter as flags) + action items
   const af = $('#dash-sec-afilhados'); if(af) af.style.display = 'none';
   const lj = $('#dash-sec-lojinha'); if(lj) lj.style.display = 'none';
   const dp = $('#dash-sec-despensa'); if(dp) dp.style.display = 'none';
   const az = $('#dash-sec-afazeres'); if(az) az.style.display = 'none';
+  const pq = $('#dash-sec-perguntas'); if(pq) pq.style.display = 'none';
+  // Cards de captura também
+  const ec = $('#email-capture-card'); if(ec) ec.style.display = 'none';
+  const nc = $('#nasc-capture-card'); if(nc) nc.style.display = 'none';
+  const an = $('#aniversariantes-card'); if(an) an.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
 
