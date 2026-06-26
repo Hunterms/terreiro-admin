@@ -646,12 +646,12 @@ function gcalEventBody(atend) {
   else if(isento) statusEmoji = '🆓';
   else if(pago) statusEmoji = '✅';
   else statusEmoji = '🟡';
-  // Pra búzios: título mostra "Atendimento" (sem revelar o oráculo) mas inclui
-  // o nome — assim o calendar do Pai mostra quem vem, sem expor a natureza do
-  // trabalho pra quem espiar a tela. Tipo do oráculo só aparece na descrição.
-  const tituloServico = ehBuzios ? 'Atendimento' : (atend.servico_nome || 'Consulta');
-  const sufixoNome = atend.consulente_nome ? ` — ${atend.consulente_nome}` : '';
-  const summary = `${statusEmoji} ${tituloServico}${sufixoNome}`;
+  // Título do calendar = tipo + modalidade (info crucial pro Pai). Nome do
+  // consulente NÃO entra no título — fica só na descrição, "só por marcação"
+  // (quando clica no evento). Privacidade na superfície, info quando precisa.
+  const tituloServico = ehBuzios ? 'Búzios' : (atend.servico_nome || 'Baralho cigano');
+  const mod = atend.modalidade === 'online' ? 'online' : 'presencial';
+  const summary = `${statusEmoji} ${tituloServico} · ${mod}`;
 
   // Descrição
   const pagLabel = {
