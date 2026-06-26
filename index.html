@@ -646,12 +646,12 @@ function gcalEventBody(atend) {
   else if(isento) statusEmoji = '🆓';
   else if(pago) statusEmoji = '✅';
   else statusEmoji = '🟡';
-  // Título do calendar = tipo + modalidade (info crucial pro Pai). Nome do
-  // consulente NÃO entra no título — fica só na descrição, "só por marcação"
-  // (quando clica no evento). Privacidade na superfície, info quando precisa.
+  // Título do calendar = tipo + modalidade + nome (as 3 infos cruciais pro
+  // Pai bater olho na agenda do dia e saber exatamente o que é cada slot).
   const tituloServico = ehBuzios ? 'Búzios' : (atend.servico_nome || 'Baralho cigano');
   const mod = atend.modalidade === 'online' ? 'online' : 'presencial';
-  const summary = `${statusEmoji} ${tituloServico} · ${mod}`;
+  const nome = atend.consulente_nome || '?';
+  const summary = `${statusEmoji} ${tituloServico} · ${mod} — ${nome}`;
 
   // Descrição
   const pagLabel = {
