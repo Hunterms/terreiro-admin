@@ -2675,7 +2675,7 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
 function _emailAtendSubject(a) {
   const servico = a.servico_nome || 'consulta';
   const dataPart = a.data ? new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long'}) : '';
-  return `Sua ${servico} está confirmada${dataPart?` — ${dataPart}`:''}`;
+  return `${servico} confirmada${dataPart?` (${dataPart})`:''}`;
 }
 
 function _buildEmailAtendHTML(a) {
@@ -2704,7 +2704,7 @@ function _buildEmailAtendHTML(a) {
         </td></tr>
         <tr><td style="padding:28px 28px 22px;color:#3e2f1c">
           <p style="font-size:17px;margin:0 0 16px;line-height:1.4">Salve <strong>${nomePrim}</strong>,</p>
-          <p style="font-size:15px;margin:0 0 22px;line-height:1.55;color:#5a4738">Seu agendamento está <strong style="color:#2a7a3a">confirmado</strong>. Aqui ficam os detalhes pra você ter à mão:</p>
+          <p style="font-size:15px;margin:0 0 22px;line-height:1.55;color:#5a4738">Tá tudo certo com o seu agendamento. Os dados ficam aqui pra você se localizar:</p>
 
           <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:rgba(212,168,67,.12);border-radius:10px;margin-bottom:22px">
             <tr><td style="padding:18px 20px">
@@ -2726,7 +2726,7 @@ function _buildEmailAtendHTML(a) {
             </div>
           ` : `
             <div style="padding:14px 18px;background:rgba(52,152,219,.1);border-left:3px solid #3498db;border-radius:6px;margin-bottom:18px;font-size:13.5px;color:#3e2f1c;line-height:1.5">
-              💻 <strong>Online</strong> · você vai receber o link pra chamada uns minutos antes do horário, aqui mesmo no email ou pelo WhatsApp.
+              💻 <strong>Online</strong> · o link da chamada chega uns minutos antes, por email ou WhatsApp.
             </div>
           `}
 
@@ -2738,18 +2738,18 @@ function _buildEmailAtendHTML(a) {
               <div style="padding:14px 18px;background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.4);border-radius:8px;margin-bottom:12px">
                 <div style="font-size:11.5px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px">📱 PIX</div>
                 <div style="font-size:13.5px;color:#3e2f1c;line-height:1.55"><strong style="font-family:monospace;font-size:14px">${pixKey}</strong>${pixTit?` <span style="color:#8a7560">(${pixTit})</span>`:''}</div>
-                <div style="font-size:12px;color:#8a7560;margin-top:6px;line-height:1.45">Manda o comprovante pelo WhatsApp pra confirmar.</div>
+                <div style="font-size:12px;color:#8a7560;margin-top:6px;line-height:1.45">Manda o comprovante no WhatsApp pra gente confirmar.</div>
               </div>`;
             const cartaoBox = cardLink ? `
               <div style="padding:14px 18px;background:rgba(52,152,219,.1);border:1px solid rgba(52,152,219,.4);border-radius:8px;margin-bottom:12px">
                 <div style="font-size:11.5px;color:#1e6090;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:8px">💳 Cartão de crédito ou débito</div>
                 <p style="margin:0 0 10px"><a href="${cardLink}" style="display:inline-block;padding:11px 20px;background:#3498db;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px">Pagar pelo InfinityPay</a></p>
-                <div style="font-size:12px;color:#5a4738;line-height:1.45">Confirma automaticamente — não precisa mandar comprovante.</div>
+                <div style="font-size:12px;color:#5a4738;line-height:1.45">Confirma na hora, sem precisar de comprovante.</div>
               </div>` : '';
             return indCartao ? (cartaoBox + pixBox) : (pixBox + cartaoBox);
           })() : ''}
 
-          <p style="font-size:13.5px;color:#5a4738;line-height:1.55;margin:0 0 18px">Se precisar remarcar, cancelar ou tirar qualquer dúvida, fala comigo:</p>
+          <p style="font-size:13.5px;color:#5a4738;line-height:1.55;margin:0 0 18px">Qualquer coisa antes do dia, me chama:</p>
           <p style="margin:0 0 12px"><a href="${linkAgenda}" style="display:inline-block;padding:12px 22px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14.5px">💬 WhatsApp</a></p>
         </td></tr>
         <tr><td align="center" style="padding:18px 28px 24px;background:#fdf8ee;border-top:1px solid #e5d5b8;font-size:11px;color:#8a7560;line-height:1.5">
@@ -2776,16 +2776,16 @@ function _buildEmailAtendText(a) {
 
   return `Salve ${nomePrim},
 
-Seu agendamento está confirmado.
+Agendamento confirmado por aqui.
 
 Serviço: ${servico}
 Quando: ${dataBr} às ${a.hora||''}
 Modalidade: ${modalidade}
 Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a confirmar)'}
 
-${a.modalidade === 'presencial' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: link pelo WhatsApp uns minutos antes.\n`}
-${!pago ? `PIX: ${pixKey}\nManda o comprovante pelo WhatsApp pra confirmar.\n${cardLink?`\nCartão (crédito/débito): ${cardLink}\n`:''}` : ''}
-Qualquer coisa, fala comigo: https://wa.me/5519992494267
+${a.modalidade === 'presencial' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: o link da chamada chega por email ou WhatsApp uns minutos antes.\n`}
+${!pago ? `PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
+Qualquer coisa antes do dia, chama: https://wa.me/5519992494267
 
 Terreiro do Candieiro
 terreirodocandieiro.com.br`;
@@ -2855,7 +2855,7 @@ function _emailConfirmacaoSubject(p, produto) {
   const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
   const isInscricao = produto?.turmas && produto.turmas.length > 0;
   const acao = isParcelado ? 'Matrícula confirmada' : (isInscricao ? 'Inscrição confirmada' : 'Pedido confirmado');
-  return `${acao} — ${p.produto_nome || 'Terreiro do Candieiro'}`;
+  return `${acao}: ${p.produto_nome || 'Terreiro do Candieiro'}`;
 }
 
 function _proximasParcelas(p, produto) {
@@ -2882,18 +2882,18 @@ function _buildEmailConfirmacaoHTML(p, produto) {
   const isParcelado = produto?.parcelamento?.ativo && (p.parcelas_total||1) > 1;
   const isInscricao = produto?.turmas && produto.turmas.length > 0;
   const acaoLabel = isParcelado ? 'matrícula' : (isInscricao ? 'inscrição' : 'compra');
-  const acaoTitulo = isParcelado ? 'Sua matrícula está confirmada' : (isInscricao ? 'Sua inscrição está confirmada' : 'Seu pedido está confirmado');
+  const acaoTitulo = isParcelado ? 'Matrícula confirmada' : (isInscricao ? 'Inscrição confirmada' : 'Pedido confirmado');
   const turma = p.turma_id ? (produto?.turmas||[]).find(t => t.id === p.turma_id) : null;
   const valor = (Number(p.valor) || 0).toFixed(2).replace('.', ',');
   const proxParcelas = _proximasParcelas(p, produto);
   const pixKey = produto?.pix || 'contato@terreirodocandieiro.com.br';
   const mensagemInicial = isParcelado
-    ? `Recebemos sua primeira parcela. Bem-vindo(a) a esse caminho — a casa estará aqui pra te acolher.`
-    : (isInscricao ? `Sua vaga está garantida. Estamos preparando tudo pra te receber.` : `Recebemos o seu pagamento. Obrigado por estar com a gente.`);
+    ? `A 1ª parcela chegou. Bom te ter com a gente nesse processo.`
+    : (isInscricao ? `Sua vaga tá garantida. A gente te espera no dia.` : `Pagamento recebido. Obrigado por confiar na casa.`);
 
   const proxPassos = isParcelado
-    ? `Sua turma começa em <strong>${turma?.detalhes || 'breve'}</strong>. As próximas parcelas você paga via PIX (chave abaixo) e manda o comprovante pelo WhatsApp. Qualquer dúvida, a casa está aberta.`
-    : (isInscricao ? `Te esperamos no dia: <strong>${turma?.detalhes || 'a combinar'}</strong>. Se for sua primeira vez, chega 15 min antes pra se ambientar.` : `Em caso de dúvida ou pra confirmar detalhes, fala com a gente pelo WhatsApp.`);
+    ? `Sua turma começa em <strong>${turma?.detalhes || 'breve'}</strong>. As próximas parcelas saem por PIX (chave logo abaixo). Quando pagar, manda o comprovante no WhatsApp pra gente confirmar.`
+    : (isInscricao ? `A gente te espera no dia: <strong>${turma?.detalhes || 'a combinar'}</strong>. Se for sua primeira vez na casa, chega uns 15 min antes pra você se localizar com calma.` : `Qualquer coisa, manda mensagem no WhatsApp.`);
 
   const fundoEscuro = '#1a1410';
   const fundoCard = '#fdf8ee';
@@ -2927,7 +2927,7 @@ function _buildEmailConfirmacaoHTML(p, produto) {
       <!-- Hero confirmação -->
       <tr><td style="padding:44px 32px 12px;text-align:center">
         <div style="font-size:56px;line-height:1;margin-bottom:14px">🕯️</div>
-        <h1 style="color:${tinta};font-size:26px;font-weight:700;margin:0 0 10px;line-height:1.25;letter-spacing:-.01em">${acaoTitulo}, ${(p.nome||'').split(' ')[0]}!</h1>
+        <h1 style="color:${tinta};font-size:26px;font-weight:700;margin:0 0 10px;line-height:1.25;letter-spacing:-.01em">${acaoTitulo}, ${(p.nome||'').split(' ')[0]}</h1>
         <p style="color:${muted};font-size:15px;line-height:1.65;margin:0 auto;max-width:440px">${mensagemInicial}</p>
       </td></tr>
 
@@ -2974,7 +2974,7 @@ function _buildEmailConfirmacaoHTML(p, produto) {
           `).join('')}
         </table>
         <div style="background:#fff8e8;border-left:3px solid ${dourado};border-radius:6px;padding:14px 16px;margin-top:14px;color:${tinta2};font-size:13px;line-height:1.6">
-          <strong style="color:${tinta}">PIX pra pagar:</strong><br>
+          <strong style="color:${tinta}">PIX:</strong><br>
           <span style="font-family:'SF Mono','Monaco','Menlo','Consolas',monospace;font-size:13.5px;color:${douradoEscuro};word-break:break-all">${pixKey}</span>
         </div>
       </td></tr>
@@ -2998,10 +2998,10 @@ function _buildEmailConfirmacaoHTML(p, produto) {
       <tr><td style="padding:32px;text-align:center">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
           <tr><td>
-            <a href="https://wa.me/5519992494267" target="_blank" style="display:inline-block;background:#25d366;color:#fff;font-weight:700;font-size:14.5px;padding:14px 30px;border-radius:10px;text-decoration:none;letter-spacing:.02em;box-shadow:0 4px 14px rgba(37,211,102,0.3)">💬 Falar com a casa</a>
+            <a href="https://wa.me/5519992494267" target="_blank" style="display:inline-block;background:#25d366;color:#fff;font-weight:700;font-size:14.5px;padding:14px 30px;border-radius:10px;text-decoration:none;letter-spacing:.02em;box-shadow:0 4px 14px rgba(37,211,102,0.3)">💬 Falar com a gente</a>
           </td></tr>
         </table>
-        <div style="color:${muted2};font-size:12px;margin-top:16px">Qualquer dúvida, estamos aqui.</div>
+        <div style="color:${muted2};font-size:12px;margin-top:16px">Qualquer coisa, é só chamar.</div>
       </td></tr>
 
       <!-- Footer -->
@@ -3028,19 +3028,18 @@ function _buildEmailConfirmacaoText(p, produto) {
   const turma = p.turma_id ? (produto?.turmas||[]).find(t => t.id === p.turma_id) : null;
   const valor = (Number(p.valor) || 0).toFixed(2).replace('.', ',');
   const linhas = [
-    `Olá ${(p.nome||'').split(' ')[0]},`,
+    `Salve ${(p.nome||'').split(' ')[0]},`,
     '',
-    isParcelado ? 'Sua matrícula está confirmada.' : 'Seu pedido está confirmado.',
+    isParcelado ? 'Matrícula confirmada por aqui.' : 'Pedido confirmado por aqui.',
     '',
     `Produto: ${p.produto_nome}`,
-    turma ? `Turma: ${turma.nome}${turma.detalhes ? ' — ' + turma.detalhes : ''}` : '',
+    turma ? `Turma: ${turma.nome}${turma.detalhes ? ' · ' + turma.detalhes : ''}` : '',
     `Valor pago: R$ ${valor}${isParcelado ? ' (1ª parcela)' : ''}`,
     isParcelado ? `Total de parcelas: ${p.parcelas_total}, vencimento dia ${produto.parcelamento.vencimento_dia}` : '',
     p.desconto_afirmativo ? 'Desconto afirmativo aplicado.' : '',
     '',
-    'Qualquer dúvida, fala com a gente pelo WhatsApp: https://wa.me/5519992494267',
+    'Qualquer coisa, chama no WhatsApp: https://wa.me/5519992494267',
     '',
-    '—',
     'Terreiro do Candieiro',
     'R. Angelo Vicentim, 236 · Barão Geraldo · Campinas-SP',
     'terreirodocandieiro.com.br'
@@ -4576,7 +4575,7 @@ async function enviarLembretes(data) {
     btn.textContent = `Enviando... ${ok+err+1}/${filhos.length}`;
     try {
       const dataBr = new Date(data+'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
-      const subject = `Lembrete pra ${dataBr.split(',')[0]} — ${filho.itens.length} coisa${filho.itens.length===1?'':'s'} na casa`;
+      const subject = `Amanhã (${dataBr.split(',')[0]}): ${filho.itens.length} coisa${filho.itens.length===1?'':'s'} pra você na casa`;
       const html = _buildLembreteHTML(filho, dataBr);
       const text = _buildLembreteText(filho, dataBr);
       const resp = await fetch(cfg.worker_url, {
@@ -4626,9 +4625,9 @@ function _buildLembreteHTML(filho, dataBr) {
         </td></tr>
         <tr><td style="padding:30px 28px 24px;color:#3e2f1c">
           <p style="font-size:17px;margin:0 0 16px;line-height:1.4">Salve <strong>${nomePrim}</strong>,</p>
-          <p style="font-size:15px;margin:0 0 18px;line-height:1.55;color:#5a4738">Esse é um lembrete do que você tem amanhã <strong>(${dataBr})</strong> na casa:</p>
+          <p style="font-size:15px;margin:0 0 18px;line-height:1.55;color:#5a4738">Amanhã <strong>(${dataBr})</strong> você tem na casa:</p>
           <ul style="padding-left:22px;margin:0 0 24px">${itensHTML}</ul>
-          <div style="padding:14px 18px;background:rgba(212,168,67,.15);border-left:3px solid #d4a843;border-radius:6px;margin-bottom:22px;font-size:13.5px;color:#5a4738;line-height:1.5">Se não conseguir, fala com a casa antes pra dar tempo de arranjar substituto. Saúde 🌿</div>
+          <div style="padding:14px 18px;background:rgba(212,168,67,.15);border-left:3px solid #d4a843;border-radius:6px;margin-bottom:22px;font-size:13.5px;color:#5a4738;line-height:1.5">Se rolar imprevisto, avisa antes pra gente encaixar alguém no seu lugar.</div>
           <p style="margin:0 0 6px"><a href="https://terreirodocandieiro.com.br/area-filho.html" style="display:inline-block;padding:12px 22px;background:#d4a843;color:#1a1209;text-decoration:none;border-radius:8px;font-weight:700;font-size:14.5px">Ver área pessoal</a></p>
         </td></tr>
         <tr><td align="center" style="padding:18px 28px 24px;background:#fdf8ee;border-top:1px solid #e5d5b8;font-size:11px;color:#8a7560">
@@ -4644,13 +4643,13 @@ function _buildLembreteText(filho, dataBr) {
   const nomePrim = (filho.nome||'').split(' ')[0];
   return `Salve ${nomePrim},
 
-Lembrete do que você tem amanhã (${dataBr}) na casa:
+Amanhã (${dataBr}) você tem na casa:
 
 ${filho.itens.map(it => `• ${it.desc}`).join('\n')}
 
-Se não conseguir, fala com a casa pra dar tempo de arranjar substituto.
+Se rolar imprevisto, avisa antes pra gente encaixar alguém no seu lugar.
 
-Ver sua área pessoal: https://terreirodocandieiro.com.br/area-filho.html
+Sua área pessoal: https://terreirodocandieiro.com.br/area-filho.html
 
 Terreiro do Candieiro`;
 }
