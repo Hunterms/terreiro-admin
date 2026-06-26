@@ -2690,8 +2690,8 @@ function _buildEmailAtendHTML(a) {
   const pago = (a.status_pagamento||'').startsWith('pago');
   const cfgA = S.cfgAgendamento || {};
   const endereco = cfgA.endereco || 'R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP';
-  const pixKey = cfgA.pix || '19992494267';
-  const pixTit = cfgA.pix_titular || 'Pai Nando';
+  const pixKey = (cfgA.pix || '').trim();
+  const pixTit = (cfgA.pix_titular || '').trim();
   const wa = '5519992494267';
   const linkAgenda = `https://wa.me/${wa}?text=${encodeURIComponent('Salve! Sobre meu agendamento de '+dataBr+'…')}`;
 
@@ -2737,12 +2737,12 @@ function _buildEmailAtendHTML(a) {
             const servicoDoc = (S.servicos||[]).find(x => x.id === a.servico_id);
             const cardLink = servicoDoc?.infinity_link;
             const indCartao = ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m));
-            const pixBox = `
+            const pixBox = pixKey ? `
               <div style="padding:14px 18px;background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.4);border-radius:8px;margin-bottom:12px">
                 <div style="font-size:11.5px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px">📱 PIX</div>
                 <div style="font-size:13.5px;color:#3e2f1c;line-height:1.55"><strong style="font-family:monospace;font-size:14px">${pixKey}</strong>${pixTit?` <span style="color:#8a7560">(${pixTit})</span>`:''}</div>
                 <div style="font-size:12px;color:#8a7560;margin-top:6px;line-height:1.45">Manda o comprovante no WhatsApp pra gente confirmar.</div>
-              </div>`;
+              </div>` : '';
             const cartaoBox = cardLink ? `
               <div style="padding:14px 18px;background:rgba(52,152,219,.1);border:1px solid rgba(52,152,219,.4);border-radius:8px;margin-bottom:12px">
                 <div style="font-size:11.5px;color:#1e6090;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:8px">💳 Cartão de crédito ou débito</div>
@@ -2773,7 +2773,7 @@ function _buildEmailAtendText(a) {
   const valor = Number(a.valor)||0;
   const pago = (a.status_pagamento||'').startsWith('pago');
   const cfgA = S.cfgAgendamento || {};
-  const pixKey = cfgA.pix || '19992494267';
+  const pixKey = (cfgA.pix || '').trim();
   const servicoDoc = (S.servicos||[]).find(x => x.id === a.servico_id);
   const cardLink = servicoDoc?.infinity_link;
 
@@ -2787,7 +2787,7 @@ Modalidade: ${modalidade}
 Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a confirmar)'}
 
 ${a.modalidade === 'presencial' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: o link da chamada chega por email ou WhatsApp uns minutos antes.\n`}
-${!pago ? `PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
+${!pago ? `${pixKey?`PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n`:''}${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
 Qualquer coisa antes do dia, chama: https://wa.me/5519992494267
 
 Terreiro do Candieiro
@@ -2889,7 +2889,8 @@ function _buildEmailConfirmacaoHTML(p, produto) {
   const turma = p.turma_id ? (produto?.turmas||[]).find(t => t.id === p.turma_id) : null;
   const valor = (Number(p.valor) || 0).toFixed(2).replace('.', ',');
   const proxParcelas = _proximasParcelas(p, produto);
-  const pixKey = produto?.pix || 'contato@terreirodocandieiro.com.br';
+  // PIX: override do produto (se preenchido) > central do terreiro (cfgAgendamento.pix)
+  const pixKey = (produto?.pix && produto.pix.trim()) || (S.cfgAgendamento?.pix || '').trim();
   const mensagemInicial = isParcelado
     ? `A 1ª parcela chegou. Bom te ter com a gente nesse processo.`
     : (isInscricao ? `Sua vaga tá garantida. A gente te espera no dia.` : `Pagamento recebido. Obrigado por confiar na casa.`);
@@ -2976,10 +2977,10 @@ function _buildEmailConfirmacaoHTML(p, produto) {
             </td></tr>
           `).join('')}
         </table>
-        <div style="background:#fff8e8;border-left:3px solid ${dourado};border-radius:6px;padding:14px 16px;margin-top:14px;color:${tinta2};font-size:13px;line-height:1.6">
+        ${pixKey ? `<div style="background:#fff8e8;border-left:3px solid ${dourado};border-radius:6px;padding:14px 16px;margin-top:14px;color:${tinta2};font-size:13px;line-height:1.6">
           <strong style="color:${tinta}">PIX:</strong><br>
           <span style="font-family:'SF Mono','Monaco','Menlo','Consolas',monospace;font-size:13.5px;color:${douradoEscuro};word-break:break-all">${pixKey}</span>
-        </div>
+        </div>` : ''}
       </td></tr>
       ` : ''}
 
@@ -5972,9 +5973,9 @@ function linkWaConfirmacao(s) {
     `💰 R$ ${valor}${metPag?` · ${metPag.replace(/^[^A-Za-zÀ-ÿ]+/,'')}`:''}`
   ];
   if(s.metodo_pagamento === 'pix') {
-    const pixKey = S.cfgAgendamento?.pix || '19992494267';
-    const pixTit = S.cfgAgendamento?.pix_titular || 'Nando';
-    linhas.push('', `PIX: ${pixKey}${pixTit?` (${pixTit})`:''} — pode me mandar o comprovante por aqui pra eu confirmar.`);
+    const pixKey = (S.cfgAgendamento?.pix || '').trim();
+    const pixTit = (S.cfgAgendamento?.pix_titular || '').trim();
+    if (pixKey) linhas.push('', `PIX: ${pixKey}${pixTit?` (${pixTit})`:''} — pode me mandar o comprovante por aqui pra eu confirmar.`);
   } else if(s.comprovante_anexado) {
     linhas.push('', 'Você disse que tem o comprovante — pode me mandar por aqui?');
   }
@@ -6630,8 +6631,9 @@ function openProdutoForm(id=null) {
       </div>
       <div class="fi-group"><label>Local (opcional)</label><input class="fi" id="pd-local" value="${p?.local||''}" placeholder="Terreiro do Candieiro · R. Angelo Vicentim 236"/></div>
       <div class="fi-group">
-        <label>Chave PIX (opcional, aparece no form pro comprador pagar)</label>
-        <input class="fi" id="pd-pix" value="${p?.pix||''}" placeholder="ex: 19992494267 ou contato@..."/>
+        <label>Chave PIX <span style="color:var(--text3);font-weight:400">— vazio = usa a do terreiro</span></label>
+        <input class="fi" id="pd-pix" value="${p?.pix||''}" placeholder="${(S.cfgAgendamento?.pix||'').trim() ? `Default: ${(S.cfgAgendamento.pix||'').trim()}${(S.cfgAgendamento.pix_titular||'').trim() ? ` (${(S.cfgAgendamento.pix_titular||'').trim()})` : ''}` : 'Configure em Config. agendamento → Chave PIX do terreiro'}"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.45">Sobrescreve só pra esse produto (ex: festa com PIX da Quebra Coco). Pra mudar a chave de tudo de uma vez, vai em Config. agendamento.</div>
       </div>
       <div class="fi-group">
         <label>Link InfinityPay — cheio (cartão de crédito/débito)</label>
