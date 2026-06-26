@@ -646,8 +646,11 @@ function gcalEventBody(atend) {
   else if(isento) statusEmoji = '🆓';
   else if(pago) statusEmoji = '✅';
   else statusEmoji = '🟡';
-  const tituloServico = ehBuzios ? 'Atendimento privado' : (atend.servico_nome || 'Consulta');
-  const sufixoNome = ehBuzios ? '' : ` — ${atend.consulente_nome||'?'}`;
+  // Pra búzios: título mostra "Atendimento" (sem revelar o oráculo) mas inclui
+  // o nome — assim o calendar do Pai mostra quem vem, sem expor a natureza do
+  // trabalho pra quem espiar a tela. Tipo do oráculo só aparece na descrição.
+  const tituloServico = ehBuzios ? 'Atendimento' : (atend.servico_nome || 'Consulta');
+  const sufixoNome = atend.consulente_nome ? ` — ${atend.consulente_nome}` : '';
   const summary = `${statusEmoji} ${tituloServico}${sufixoNome}`;
 
   // Descrição
@@ -660,9 +663,9 @@ function gcalEventBody(atend) {
   }[atend.status_pagamento] || atend.status_pagamento || 'Pendente';
 
   const linhas = [];
-  if(ehBuzios) linhas.push('🔒 Atendimento privado (búzios)');
+  if(ehBuzios) linhas.push('🔒 Búzios (atendimento privado)');
   else linhas.push(`🪷 ${atend.servico_nome || 'Consulta'}`);
-  if(!ehBuzios && atend.consulente_nome) linhas.push(`👤 ${atend.consulente_nome}${atend.consulente_tel?' · '+atend.consulente_tel:''}`);
+  if(atend.consulente_nome) linhas.push(`👤 ${atend.consulente_nome}${atend.consulente_tel?' · '+atend.consulente_tel:''}`);
   linhas.push(`💰 R$ ${atend.valor||0} · ${pagLabel}`);
   if(atend.modalidade) linhas.push(`📍 ${atend.modalidade === 'online' ? 'Online (videochamada)' : 'Presencial'}`);
   if(atend.observacao) linhas.push(`\n📝 ${atend.observacao}`);
