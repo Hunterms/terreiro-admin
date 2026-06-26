@@ -4981,7 +4981,7 @@ function renderAgenda(c) {
               <div style="font-size:9px;text-transform:uppercase">${new Date((a.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
             </div>
             <div class="li-main">
-              <div class="li-name">${a.consulente_nome||'—'} ${isBuzios?'<span class="chip chip-purple" style="font-size:10px">búzios · privado</span>':'<span class="chip chip-gold" style="font-size:10px">baralho cigano</span>'}</div>
+              <div class="li-name">${a.consulente_nome||'—'} <span class="chip ${_atendChipClass(a)}" style="font-size:10px">${_atendLabel(a)}${isBuzios?' · privado':''}</span></div>
               <div class="li-meta">
                 <span>${a.hora||'—'}${a.duracao_min?` · ${a.duracao_min}min`:''}</span>
                 <span>R$ ${a.valor||0}</span>
@@ -4999,6 +4999,21 @@ function renderAgenda(c) {
 }
 
 function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
+
+// Label de atendimento: prefere servico_nome (mais específico — bori, banho,
+// limpeza, etc.) e cai pra tipo_oraculo só se serviço não tiver sido informado.
+function _atendLabel(a) {
+  if (a?.servico_nome) return a.servico_nome;
+  if (a?.servico_id) {
+    const sv = (S.servicos||[]).find(x => x.id === a.servico_id);
+    if (sv?.nome) return sv.nome;
+  }
+  return a?.tipo_oraculo === 'buzios' ? 'Búzios' : 'Baralho cigano';
+}
+// Cor do chip: roxo pra búzios (privado), dourado pro resto.
+function _atendChipClass(a) {
+  return a?.tipo_oraculo === 'buzios' ? 'chip-purple' : 'chip-gold';
+}
 
 async function buscarGcalEventos() {
   const sec = $('#gcal-events-section');
@@ -5315,7 +5330,7 @@ function openConsulenteForm(id=null, fromAtendimento=false) {
         ${historico.slice(0,10).map(a => `
           <div style="padding:10px 12px;background:var(--glass);border-radius:8px;margin-bottom:6px;font-size:13px">
             <div style="display:flex;justify-content:space-between;gap:10px">
-              <span><strong>${fmt.data(a.data)}</strong> · ${a.hora||'—'} · ${a.tipo_oraculo==='buzios'?'búzios':'baralho'}</span>
+              <span><strong>${fmt.data(a.data)}</strong> · ${a.hora||'—'} · ${_atendLabel(a).toLowerCase()}</span>
               <span class="chip ${a.status_atendimento==='realizado'?'chip-green':'chip'}">${a.status_atendimento}</span>
             </div>
             ${a.observacao?`<div style="color:var(--text2);margin-top:4px;font-size:12.5px">${a.observacao}</div>`:''}
@@ -7065,7 +7080,7 @@ function _intelConstruirPessoas() {
       pago: (at.status_pagamento||'').startsWith('pago') || at.status_pagamento === 'isento',
       tema: at.tema || null,
       ref: at.id,
-      label: at.tipo_oraculo === 'buzios' ? 'Búzios' : 'Baralho cigano'
+      label: _atendLabel(at)
     });
   });
 
