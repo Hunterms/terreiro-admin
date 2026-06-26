@@ -2187,7 +2187,7 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
         <label>🎫 Produto pra ingresso <span style="font-size:11px;color:var(--text3);font-weight:400">(opcional)</span></label>
         <select class="fi" id="ev-ingresso">
           <option value="">— Sem ingresso —</option>
-          ${(S.produtos||[]).filter(p => p.ativo !== false).sort((a,b) => (a.nome||'').localeCompare(b.nome||'')).map(p => `
+          ${(S.produtos||[]).filter(p => p.ativo !== false && !p.arquivado).sort((a,b) => (a.nome||'').localeCompare(b.nome||'')).map(p => `
             <option value="${p.slug||''}" ${e?.ingresso_slug===p.slug?'selected':''}>${p.nome}${p.valor?` · R$ ${p.valor}`:''}</option>
           `).join('')}
         </select>
@@ -6447,17 +6447,29 @@ function precoEfetivoProduto(p) {
 }
 
 // ── PRODUTOS (CRUD) ──────────────────────────────────────────────────────
+let produtoTab = 'ativos'; // 'ativos' | 'arquivados'
+
+function setProdutoTab(t) { produtoTab = t; renderRoute(); }
+
 function renderProdutos(c) {
-  const lista = [...S.produtos].sort((a,b) => (a.ordem||999)-(b.ordem||999));
+  const todos = [...S.produtos].sort((a,b) => (a.ordem||999)-(b.ordem||999));
+  const ativos = todos.filter(p => !p.arquivado);
+  const arquivados = todos.filter(p => p.arquivado);
+  const lista = produtoTab === 'arquivados' ? arquivados : ativos;
   c.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-title">Produtos de venda</div>
-        <div class="page-sub">${lista.length} produto${lista.length===1?'':'s'} cadastrado${lista.length===1?'':'s'} · usado em vendas.html (festas, cursos, etc.)</div>
+        <div class="page-sub">${ativos.length} ativo${ativos.length===1?'':'s'} · ${arquivados.length} arquivado${arquivados.length===1?'':'s'} · usado em vendas.html (festas, cursos, etc.)</div>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" onclick="window._app.openProdutoForm()">+ Novo produto</button>
       </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${produtoTab==='ativos'?'active':''}" onclick="window._app.setProdutoTab('ativos')">Ativos (${ativos.length})</button>
+      <button class="${produtoTab==='arquivados'?'active':''}" onclick="window._app.setProdutoTab('arquivados')">📦 Arquivados (${arquivados.length})</button>
     </div>
 
     <div class="card" style="margin-bottom:14px;padding:14px;background:rgba(52,152,219,0.06);border-color:rgba(52,152,219,0.25)">
@@ -6528,12 +6540,25 @@ function renderProdutos(c) {
               <a class="btn btn-sm" href="${urlPub}" target="_blank" rel="noopener" title="Abre o link público">↗</a>
               <button class="btn btn-sm btn-primary" onclick="window._app.abrirPagamentosProduto('${p.id}')">💰 Pagamentos</button>
               <button class="btn btn-sm" onclick="window._app.openProdutoForm('${p.id}')">Editar</button>
+              ${p.arquivado
+                ? `<button class="btn btn-sm" onclick="window._app.arquivarProduto('${p.id}', false)" title="Restaurar pro fluxo ativo">↩ Restaurar</button>`
+                : `<button class="btn btn-sm btn-ghost" onclick="window._app.arquivarProduto('${p.id}', true)" title="Some da lista principal (festa passada, etc.)">📦 Arquivar</button>`}
             </div>
           </div>
         `;}).join('')}
       </div>
     `}
   `;
+}
+
+async function arquivarProduto(id, arquivar) {
+  try {
+    await updateDoc(doc(dbPvd,'vendas_produtos',id), {
+      arquivado: !!arquivar,
+      atualizadoEm: serverTimestamp()
+    });
+    toast(arquivar ? '📦 Produto arquivado' : '↩ Produto restaurado','ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
 }
 
 function copiarLinkProduto(slug) {
@@ -8062,6 +8087,8 @@ window._app = {
   openProdutoForm,
   addTurmaRow,
   copiarLinkProduto,
+  arquivarProduto,
+  setProdutoTab,
   abrirPagamentosProduto,
   setFiltroPagProd,
   confirmarPedido,
