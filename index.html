@@ -2624,6 +2624,159 @@ async function enviarEmailConfirmacao(pedidoId) {
   }
 }
 
+// Envia email de confirmação de atendimento (consulta/trabalho).
+// Aceita email diretamente pra rodar logo após aprovação (antes do listener atualizar S).
+async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
+  try {
+    await new Promise(r => setTimeout(r, 250));
+    // dados podem vir do listener OU passados direto pelo aprovarSolicitacao
+    let a = dadosOverride;
+    if (!a) a = S.atendimentos.find(x => x.id === atendimentoId);
+    if (!a) return;
+    const email = (a.email || dadosOverride?.email || '').trim()
+               || (a.consulente_email || '').trim()
+               || (() => {
+                    if (!a.consulente_id) return '';
+                    const c = S.consulentes.find(x => x.id === a.consulente_id);
+                    return (c?.email || '').trim();
+                  })();
+    if (!email) { console.warn('Atendimento sem email — pulando', atendimentoId); return; }
+    if (a.email_confirmacao_enviado_em) return; // idempotente
+    const cfg = await _carregarEmailCfg();
+    if (!cfg?.enabled || !cfg.worker_url || !cfg.worker_secret) {
+      console.warn('Config de email incompleta — pulando');
+      return;
+    }
+    const subject = _emailAtendSubject(a);
+    const html = _buildEmailAtendHTML(a);
+    const text = _buildEmailAtendText(a);
+    const resp = await fetch(cfg.worker_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+      body: JSON.stringify({
+        to: email, to_name: a.consulente_nome || '',
+        from: cfg.from || undefined, reply_to: cfg.reply_to || undefined,
+        subject, html, text
+      })
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error(`Worker ${resp.status}: ${t.slice(0,200)}`);
+    }
+    await updateDoc(doc(dbPvd, 'adm_atendimentos', atendimentoId), {
+      email_confirmacao_enviado_em: serverTimestamp()
+    });
+    toast('📧 Email de confirmação enviado','ok');
+  } catch(e) {
+    console.warn('Falha email atendimento:', e?.message || e);
+  }
+}
+
+function _emailAtendSubject(a) {
+  const servico = a.servico_nome || 'consulta';
+  const dataPart = a.data ? new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long'}) : '';
+  return `Sua ${servico} está confirmada${dataPart?` — ${dataPart}`:''}`;
+}
+
+function _buildEmailAtendHTML(a) {
+  const nomePrim = (a.consulente_nome||'').split(' ')[0];
+  const servico = a.servico_nome || 'Consulta';
+  const dataBr = a.data ? new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
+  const modalidade = a.modalidade === 'online' ? '💻 Online' : '🏠 Presencial';
+  const valor = Number(a.valor)||0;
+  const pago = (a.status_pagamento||'').startsWith('pago');
+  const cfgA = S.cfgAgendamento || {};
+  const endereco = cfgA.endereco || 'R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP';
+  const pixKey = cfgA.pix || '19992494267';
+  const pixTit = cfgA.pix_titular || 'Pai Nando';
+  const wa = '5519992494267';
+  const linkAgenda = `https://wa.me/${wa}?text=${encodeURIComponent('Salve! Sobre meu agendamento de '+dataBr+'…')}`;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#1a1410;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+  <table cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#1a1410">
+    <tr><td align="center" style="padding:30px 16px">
+      <table cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;background:#fdf8ee;border-radius:14px;overflow:hidden">
+        <tr><td align="center" style="padding:30px 24px 16px;background:#2a1f17">
+          <div style="font-size:42px;margin-bottom:10px">🕯️</div>
+          <div style="font-size:13px;color:#d4a843;letter-spacing:.16em;text-transform:uppercase;font-weight:600">Terreiro do Candieiro</div>
+        </td></tr>
+        <tr><td style="padding:28px 28px 22px;color:#3e2f1c">
+          <p style="font-size:17px;margin:0 0 16px;line-height:1.4">Salve <strong>${nomePrim}</strong>,</p>
+          <p style="font-size:15px;margin:0 0 22px;line-height:1.55;color:#5a4738">Seu agendamento está <strong style="color:#2a7a3a">confirmado</strong>. Aqui ficam os detalhes pra você ter à mão:</p>
+
+          <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:rgba(212,168,67,.12);border-radius:10px;margin-bottom:22px">
+            <tr><td style="padding:18px 20px">
+              <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Serviço</div>
+              <div style="font-size:17px;color:#3e2f1c;font-weight:700;margin-bottom:12px">${servico}</div>
+              <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Data e horário</div>
+              <div style="font-size:15px;color:#3e2f1c;font-weight:600;margin-bottom:12px;text-transform:capitalize">${dataBr} · ${a.hora||''}</div>
+              <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Modalidade</div>
+              <div style="font-size:15px;color:#3e2f1c;font-weight:600;margin-bottom:12px">${modalidade}</div>
+              <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Valor</div>
+              <div style="font-size:17px;color:#d4a843;font-weight:800">R$ ${valor.toFixed(2).replace('.',',')} ${pago?'<span style="color:#2a7a3a;font-size:13px;font-weight:600">· pago ✓</span>':'<span style="color:#a8825a;font-size:13px;font-weight:600">· a confirmar</span>'}</div>
+            </td></tr>
+          </table>
+
+          ${a.modalidade === 'presencial' ? `
+            <div style="padding:14px 18px;background:rgba(46,204,113,.1);border-left:3px solid #2a7a3a;border-radius:6px;margin-bottom:18px">
+              <div style="font-size:12px;color:#2a7a3a;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📍 Endereço</div>
+              <div style="font-size:14px;color:#3e2f1c;line-height:1.5">${endereco}</div>
+            </div>
+          ` : `
+            <div style="padding:14px 18px;background:rgba(52,152,219,.1);border-left:3px solid #3498db;border-radius:6px;margin-bottom:18px;font-size:13.5px;color:#3e2f1c;line-height:1.5">
+              💻 <strong>Online</strong> · você vai receber o link pra chamada uns minutos antes do horário, aqui mesmo no email ou pelo WhatsApp.
+            </div>
+          `}
+
+          ${!pago ? `
+            <div style="padding:14px 18px;background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.4);border-radius:8px;margin-bottom:18px">
+              <div style="font-size:13px;color:#5a4738;line-height:1.55"><strong style="color:#3e2f1c">PIX:</strong> ${pixKey}${pixTit?` <span style="color:#8a7560">(${pixTit})</span>`:''}</div>
+              <div style="font-size:12px;color:#8a7560;margin-top:6px;line-height:1.45">Manda o comprovante pelo WhatsApp pra confirmar.</div>
+            </div>
+          ` : ''}
+
+          <p style="font-size:13.5px;color:#5a4738;line-height:1.55;margin:0 0 18px">Se precisar remarcar, cancelar ou tirar qualquer dúvida, fala comigo:</p>
+          <p style="margin:0 0 12px"><a href="${linkAgenda}" style="display:inline-block;padding:12px 22px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14.5px">💬 WhatsApp</a></p>
+        </td></tr>
+        <tr><td align="center" style="padding:18px 28px 24px;background:#fdf8ee;border-top:1px solid #e5d5b8;font-size:11px;color:#8a7560;line-height:1.5">
+          Terreiro do Candieiro · R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP<br/>
+          <a href="https://terreirodocandieiro.com.br" style="color:#d4a843;text-decoration:none">terreirodocandieiro.com.br</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function _buildEmailAtendText(a) {
+  const nomePrim = (a.consulente_nome||'').split(' ')[0];
+  const servico = a.servico_nome || 'Consulta';
+  const dataBr = a.data ? new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
+  const modalidade = a.modalidade === 'online' ? 'Online' : 'Presencial';
+  const valor = Number(a.valor)||0;
+  const pago = (a.status_pagamento||'').startsWith('pago');
+  const cfgA = S.cfgAgendamento || {};
+  const pixKey = cfgA.pix || '19992494267';
+
+  return `Salve ${nomePrim},
+
+Seu agendamento está confirmado.
+
+Serviço: ${servico}
+Quando: ${dataBr} às ${a.hora||''}
+Modalidade: ${modalidade}
+Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a confirmar)'}
+
+${a.modalidade === 'presencial' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: link pelo WhatsApp uns minutos antes.\n`}
+${!pago ? `PIX: ${pixKey}\nManda o comprovante pelo WhatsApp pra confirmar.\n` : ''}
+Qualquer coisa, fala comigo: https://wa.me/5519992494267
+
+Terreiro do Candieiro
+terreirodocandieiro.com.br`;
+}
+
 // Backfill: reenvia confirmação pra todos os pedidos confirmados sem email_confirmacao_enviado_em
 async function reenviarEmailsPendentes() {
   const candidatos = (S.pedidos||[]).filter(p =>
@@ -5967,6 +6120,8 @@ async function aprovarSolicitacao(id) {
         atualizadoEm: serverTimestamp()
       };
       const atendRef = await addDoc(collection(dbPvd,'adm_atendimentos'), atendPayload);
+      // 3.5. Dispara email de confirmação pro consulente (não bloqueia o fluxo)
+      enviarEmailAtendimento(atendRef.id, { ...atendPayload, email: s.email, id: atendRef.id });
       // 4. Transfere slot público: sol_ → atend_
       await syncSlotPub('atend_'+atendRef.id, s.data, s.hora, s.duracao_min||60, 'atendimento');
       await delSlotPub('sol_'+id);
