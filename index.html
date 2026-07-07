@@ -797,9 +797,11 @@ async function detectRole(user) {
       return { role:'filho', filhoDoc:{ id:d.id, ...d.data() }};
     }
   } catch(e) {}
-  // 3. Lista hardcoded de admins iniciais (pre-claims)
-  const adminsIniciais = ['hunter','pai','candieiro','admin'];
-  if(adminsIniciais.some(s => (user.email||'').toLowerCase().includes(s))) {
+  // 3. Lista hardcoded de admins (pre-claims). Match por substring OU email exato.
+  const email = (user.email||'').toLowerCase();
+  const adminsSubstring = ['hunter','pai','candieiro','admin'];
+  const adminsExatos = ['nandomacedo42@gmail.com'];
+  if (adminsExatos.includes(email) || adminsSubstring.some(s => email.includes(s))) {
     return { role:'admin', filhoDoc:null };
   }
   return { role:null, filhoDoc:null };
