@@ -91,22 +91,35 @@ do código.
 Id determinístico é o que garante um pedido por filho por mês. Criável só por
 admin e Worker — as rules **negam create público** nesta collection.
 
+**Enquanto aberto, o pedido não guarda dinheiro.** Ele é só um marcador de que o
+ciclo existe pra aquele filho. Valor e vencimento são **derivados de
+`fin_filhos` na hora**, todas as vezes:
+
 ```
 filho_id:        string        // FK fin_filhos
-filho_nome:      string        // cópia pra view rápida
+filho_nome:      string        // cópia só pra view rápida (não decide nada)
 ciclo:           string        // "2026-07"
-valor_base:      number        // cópia de fin_filhos.valor na geração do lote
-vencimento:      string        // ISO YYYY-MM-DD, derivado do prazo do filho
-multa:           number        // 0 ou 10, escrito pelo Worker ao gerar o link
 avisou_atraso:   boolean       // toggle do admin: filho comunicou o atraso
-status:          'aberto' | 'pago' | 'isento' | 'cancelado'
+status:          'aberto' | 'pago' | 'cancelado'
 geradoEm:        timestamp
+
+// escritos SÓ ao pagar — aí sim congelam
+valor_cobrado:      number     // o que de fato foi cobrado
+multa_aplicada:     number     // 0 ou 10
+vencimento_aplicado: string    // ISO, o vencimento que valia naquele momento
 + campos de pagamento do Worker (ver SCHEMA.md 5.11)
 ```
+
+Por que assim: ver seção 7. Copiar valor no lote é o que faria "mudei o valor do
+filho no dia 15" exigir regerar o lote.
 
 `status: 'aberto'` durante o mês é normal, **não é carrinho abandonado** — é a
 régua de cobrança do mês. Diferente de `aguardando_pagamento` em
 `vendas_pedidos`, que ali significa "foi pro checkout e não voltou".
+
+Isento não tem pedido: `fin_filhos.valor === 0` → o lote não gera. Se o filho
+virar isento no meio do mês, o pedido aberto para de pedir dinheiro sozinho,
+porque o valor é derivado.
 
 ### `fin_pagamentos/{ciclo}` — continua
 
@@ -135,12 +148,56 @@ valor_base = fin_filhos.valor        (0 = isento, não gera pedido)
 
 Mesma situação de `precoEfetivo` × `precoCentavos`: a regra existe em dois
 lugares (Worker pra cobrar, tela pra mostrar) e por isso **tem teste**
-(`worker/test-mensalidade.mjs`). Se as duas discordarem, o filho vê um preço e
+(`worker/test-mensalidade.mjs`, a escrever na fase 1). Se as duas discordarem, o filho vê um preço e
 paga outro.
 
 ---
 
-## 7. Fluxo
+## 7. Mudar o valor ou o prazo de um filho no meio do mês
+
+Requisito explícito: mudar o dia final ou o valor de um filho e o sistema
+continuar funcionando, sem regerar nada.
+
+**Regra: enquanto aberto, segue o cadastro. Ao pagar, congela.**
+
+| Momento | De onde sai o valor |
+|---|---|
+| ciclo aberto | derivado de `fin_filhos.valor` + `prazo`, sempre na hora |
+| ao pagar | congela em `valor_cobrado` / `multa_aplicada` / `vencimento_aplicado` |
+| ciclos passados | o congelado, intocado |
+
+Consequências, todas desejadas:
+
+- Mudou de R$ 200 pra R$ 150 no dia 15 → julho aberto passa a cobrar 150 na hora
+  seguinte. **Sem regerar lote.**
+- Mudou o `prazo` de 10 pra 20 no dia 12 → a multa que tinha aparecido
+  desaparece, porque o vencimento passou a ser dia 20. Você mudou o combinado.
+- Virou isento no meio do mês → o pedido aberto para de pedir dinheiro.
+- Julho já pago em R$ 200 e você muda pra R$ 150 → **julho não se altera**. A
+  mudança vale de agosto em diante. Histórico é histórico.
+
+### O link já gerado
+
+Um link é uma oferta com valor dentro dele. Se o cadastro muda depois de o link
+existir, o link fica desatualizado. A regra de confirmação resolve sem ninguém
+precisar limpar nada:
+
+```
+aceita se  valor_pago >= valor_que_a_gente_ofereceu
+```
+
+Não `>= valor_atual`. Se a gente mostrou R$ 200 e o valor virou R$ 210 depois,
+quem pagou 200 pagou o que foi oferecido — e é aceito. Se virou R$ 150 e a
+pessoa pagou os 200 do link velho, também é aceito, e fica registrado o que ela
+de fato pagou. Cobrar diferente do que foi mostrado é que seria errado.
+
+Isso vale porque em `men` o valor oferecido é **fixado pelo Worker** no
+`checkout_centavos`, e essa collection não é escrita pelo público (seção 4). Nos
+tipos que o público cria, a comparação continua contra o recálculo.
+
+---
+
+## 8. Fluxo
 
 ```
 dia 1     lote do admin        cria pedido por filho pagante do ciclo
@@ -164,7 +221,7 @@ a mandar o link, e o `prazo` diz quando.
 
 ---
 
-## 8. Fases
+## 9. Fases
 
 1. **Worker + dados** — tipo `men` na tabela `TIPOS`, valor fixado, regra da
    multa com teste, rules negando create público em `fin_mensalidade_pedidos`.
@@ -181,7 +238,7 @@ a mandar o link, e o `prazo` diz quando.
 
 ---
 
-## 9. Risco aberto: o financeiro não tem controle de versão
+## 10. Risco aberto: o financeiro não tem controle de versão
 
 `financeiro.terreirodocandieiro.com.br` está na **Netlify**, e o
 `candieiro-simples` local **não é repo git** — sem remote, sem histórico, e não
