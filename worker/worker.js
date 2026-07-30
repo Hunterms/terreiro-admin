@@ -1,14 +1,18 @@
 /**
  * Cloudflare Worker — Terreiro do Candieiro
  *
- * Duas funções, um deploy só:
+ * Um deploy, quatro assuntos: email, checkout, mensalidade e papéis.
  *
- *   POST /          → email (Resend). Compat: o admin já chama a raiz.
- *   POST /email     → mesma coisa, nome explícito.
- *   POST /checkout  → cria checkout InfinitePay. Público, sem segredo.
- *                     O VALOR É RECALCULADO AQUI, do Firestore. Nunca vem do cliente.
- *   POST /webhook   → InfinitePay avisa que pagou. Confere no payment_check,
- *                     compara o valor, e só então marca pago no Firestore.
+ *   POST /            → email (Resend). Compat: o admin já chama a raiz.
+ *   POST /email       → mesma coisa, nome explícito.
+ *   POST /checkout    → cria checkout InfinitePay. Público, sem segredo.
+ *                       O VALOR É RECALCULADO AQUI, do Firestore. Nunca vem do cliente.
+ *   POST /status      → a tela de retorno pergunta se pagou. Confirma no payment_check.
+ *   POST /webhook     → InfinitePay avisa que pagou. Confere no payment_check,
+ *                       compara o valor, e só então marca pago no Firestore.
+ *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
+ *   POST /lote        → gera as cobranças do mês. Também roda por cron dia 1.
+ *   POST /papel       → grava custom claim (admin/financeiro/loja) numa conta.
  *
  * ── POR QUE O VALOR É RECALCULADO ─────────────────────────────────────────
  * O cliente é dono do navegador. Se o preço saísse do frontend, dava pra abrir
@@ -17,7 +21,7 @@
  * o id do pedido — nada de dinheiro.
  *
  * A conferência acontece duas vezes:
- *   1. na criação do link  — preço vem do F  irestore, e fica gravado no pedido
+ *   1. na criação do link  — preço vem do Firestore, e fica gravado no pedido
  *      (campo `checkout_centavos`, que o público não consegue escrever)
  *   2. no webhook          — payment_check confirma na InfinitePay, e o valor
  *      pago é comparado com o gravado. Menor = não marca pago.
@@ -108,6 +112,29 @@ const CORS = {
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+/**
+ * Confere o shared secret das rotas privadas. Devolve null se passou, ou a
+ * resposta de erro.
+ *
+ * Distingue os três casos de propósito — antes os três davam o mesmo
+ * "Forbidden" e não havia como saber de qual lado estava o problema:
+ *   variável não configurada no Worker · header ausente · valor diferente
+ *
+ * Nenhuma das mensagens revela o segredo, e a de "não configurada" é sobre o
+ * Worker, não sobre quem chamou.
+ */
+function checarSegredo(request, env) {
+  if (!env.ADMIN_SECRET) {
+    return json({ error: 'ADMIN_SECRET não está configurada neste Worker (Settings → Variables)' }, 500);
+  }
+  const enviado = request.headers.get('X-Auth-Secret');
+  if (!enviado) return json({ error: 'falta o header X-Auth-Secret' }, 401);
+  if (enviado !== env.ADMIN_SECRET) {
+    return json({ error: 'X-Auth-Secret não confere com o ADMIN_SECRET do Worker' }, 403);
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -163,8 +190,8 @@ function cicloAtual() {
 // Igual ao que era antes. Protegido por shared secret.
 
 async function rotaEmail(body, request, env) {
-  const auth = request.headers.get('X-Auth-Secret');
-  if (!env.ADMIN_SECRET || auth !== env.ADMIN_SECRET) return json({ error: 'Forbidden' }, 403);
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
 
   const { to, to_name, subject, html, text, from, reply_to } = body;
   if (!to || !subject || (!html && !text)) {
@@ -374,8 +401,8 @@ async function rotaCheckout(body, env, origem) {
 const PAPEIS_VALIDOS = ['admin', 'financeiro', 'loja'];
 
 async function rotaPapel(body, request, env) {
-  const auth = request.headers.get('X-Auth-Secret');
-  if (!env.ADMIN_SECRET || auth !== env.ADMIN_SECRET) return json({ error: 'Forbidden' }, 403);
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
 
   const email = String(body?.email || '').trim().toLowerCase();
   if (!email || !email.includes('@')) return json({ error: 'email inválido' }, 400);
@@ -435,8 +462,8 @@ async function rotaPapel(body, request, env) {
 // Dois gatilhos, uma função: este endpoint (botão do admin) e o cron do dia 1.
 
 async function rotaLote(body, request, env) {
-  const auth = request.headers.get('X-Auth-Secret');
-  if (!env.ADMIN_SECRET || auth !== env.ADMIN_SECRET) return json({ error: 'Forbidden' }, 403);
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
 
   const ciclo = body?.ciclo || cicloAtual();
   if (!/^\d{4}-\d{2}$/.test(ciclo)) return json({ error: 'ciclo inválido (use YYYY-MM)' }, 400);
