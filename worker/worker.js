@@ -81,10 +81,19 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 //
 // evento_inscricoes já nasce 'aguardando', que ali sempre significou não pago —
 // não tem o que mudar.
+//
+// `valorFixado` diz de onde vem o valor esperado na confirmação:
+//   false → recalcula da fonte. Obrigatório onde o PÚBLICO cria o pedido, porque
+//           aí nada gravado no doc é confiável.
+//   true  → usa o que foi fixado em checkout_centavos ao gerar o link. Só vale
+//           onde o público não escreve (mensalidade nasce do lote do admin).
+//           Necessário porque a multa depende da data: link de R$200 gerado dia
+//           5 e pago dia 12 daria "divergente" se recalculasse.
 const TIPOS = {
-  sol: { colecao: 'adm_solicitacoes',  fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: null,         statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto' },
-  ped: { colecao: 'vendas_pedidos',    fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', statusAguardando: 'aguardando_pagamento', campoValor: 'valor'          },
-  ins: { colecao: 'evento_inscricoes', fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor'          },
+  sol: { colecao: 'adm_solicitacoes',       fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: null,         statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto', valorFixado: false },
+  ped: { colecao: 'vendas_pedidos',         fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', statusAguardando: 'aguardando_pagamento', campoValor: 'valor',          valorFixado: false },
+  ins: { colecao: 'evento_inscricoes',      fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor',          valorFixado: false },
+  men: { colecao: 'fin_mensalidade_pedidos', fonte: 'fin_filhos',     refCampo: 'filho_id',   projetoFonte: PROJETO_PVD,  statusPago: 'pago',       statusAguardando: null,                   campoValor: null,             valorFixado: true  },
 };
 
 const ALLOW_ORIGINS = '*'; // pra apertar, troca pela URL exata do admin
@@ -158,10 +167,58 @@ async function rotaEmail(body, request, env) {
 // Espelha precoEfetivo() do vendas.html. Se mudar lá, muda aqui.
 // Exportado puro pra dar pra testar sem Worker: `node worker/test-preco.mjs`.
 
+export const MULTA_ATRASO = 10;
+
+/**
+ * Último dia do mês de um ciclo "YYYY-MM". Existe porque o financeiro usa 31
+ * como atalho pra 'ultimo', e em mês de 30 dias isso faria o vencimento nunca
+ * chegar — pra exibir tanto faz, pra cobrar multa não.
+ */
+export function ultimoDiaDoCiclo(ciclo) {
+  const [a, m] = String(ciclo).split('-').map(Number);
+  return new Date(Date.UTC(a, m, 0)).getUTCDate();
+}
+
+/**
+ * Vencimento da mensalidade daquele ciclo, em ISO. Espelha o getPrazoNum() do
+ * financeiro: '10'|'15'|'20' → o dia, 'ultimo' → último dia do mês.
+ * 'combinado' e vazio não têm data, então retornam null — e sem data não há
+ * multa automática.
+ */
+export function vencimentoMensalidade(prazo, ciclo) {
+  const dia =
+    !prazo || prazo === '10' ? 10 :
+    prazo === '15' ? 15 :
+    prazo === '20' ? 20 :
+    prazo === 'ultimo' ? ultimoDiaDoCiclo(ciclo) :
+    null; // 'combinado' ou valor desconhecido
+  if (dia === null) return null;
+  return `${ciclo}-${String(dia).padStart(2, '0')}`;
+}
+
+/**
+ * Mensalidade devida, em reais. Regra combinada:
+ *   base + R$10 se passou do vencimento DELE e ele não avisou do atraso.
+ *
+ * A base vem de fin_filhos.valor, sempre na hora — nunca de cópia no pedido.
+ * É o que faz mudar o valor ou o prazo de um filho no meio do mês funcionar
+ * sem regerar nada (ver MENSALIDADE.md seção 7).
+ */
+export function mensalidadeReais(pedido, filho, hoje) {
+  const base = Number(filho.valor);
+  if (!base || base <= 0) return 0; // isento: 0 ou campo ausente
+
+  const venc = vencimentoMensalidade(filho.prazo, pedido.ciclo);
+  const atrasado = !!venc && hoje > venc;
+  const multa = atrasado && !pedido.avisou_atraso ? MULTA_ATRASO : 0;
+  return base + multa;
+}
+
 export function precoCentavos(tipo, pedido, fonte, hoje) {
   const reais = (() => {
     if (tipo === 'sol') return Number(fonte.valor) || 0;
     if (tipo === 'ins') return Number(fonte.valor) || 0;
+    if (tipo === 'men') return mensalidadeReais(pedido, fonte, hoje);
 
     // ped: desconto afirmativo ganha da promo; promo só vale dentro do prazo.
     const afirmativo = fonte.desconto_afirmativo;
@@ -260,10 +317,17 @@ async function rotaCheckout(body, env, origem) {
     checkout_order_nsu: order_nsu,
     checkout_url: data.url,
     checkout_criadoEm: new Date().toISOString(),
-    [t.campoValor]: centavos / 100,
+    ...(t.campoValor && { [t.campoValor]: centavos / 100 }),
     // Sai da fila do admin até o pagamento entrar. Só acontece aqui, depois de
     // o link existir de verdade — ver comentário do TIPOS.
     ...(t.statusAguardando && { status: t.statusAguardando }),
+    // Mensalidade grava a decomposição da oferta: é o que vai virar
+    // multa_aplicada / vencimento_aplicado quando pagar, sem recalcular depois.
+    ...(tipo === 'men' && {
+      checkout_valor_base: Number(fonte.valor) || 0,
+      checkout_multa: Math.max(0, centavos / 100 - (Number(fonte.valor) || 0)),
+      checkout_vencimento: vencimentoMensalidade(fonte.prazo, pedido.ciclo),
+    }),
   });
 
   return json({ url: data.url, valor_centavos: centavos });
@@ -428,13 +492,25 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
     return { erro: 'pagamento não confirmado', http: 400 }; // 400 = InfinitePay tenta de novo
   }
 
-  // 2ª prova: o valor cobrado bate com o preço real do item.
-  // Recalculado aqui, não lido do pedido — ver comentário do valorEsperado().
-  const { centavos: esperado, erro } = await valorEsperado(tipo, pedido, env, token);
+  // 2ª prova: o valor cobrado bate com o que a gente cobrou.
+  //
+  // De onde sai o "esperado" depende do tipo (ver TIPOS.valorFixado):
+  //   recalculado → onde o público cria o pedido e nada gravado é confiável
+  //   fixado      → o que foi oferecido no link. A comparação é contra a OFERTA,
+  //                 não contra o valor de agora: se o cadastro do filho mudou
+  //                 depois do link, quem pagou o que a tela mostrava pagou certo.
+  let esperado, erro;
+  if (t.valorFixado) {
+    esperado = Number(pedido.checkout_centavos) || 0;
+    if (!esperado) erro = 'pedido sem checkout_centavos (link nunca foi gerado?)';
+  } else {
+    ({ centavos: esperado, erro } = await valorEsperado(tipo, pedido, env, token));
+  }
+
   const cobrado = Number(check.amount) || 0;
   if (erro || !esperado) {
-    console.error('não consegui recalcular o valor', order_nsu, erro);
-    await registrar('recusado', `não consegui recalcular o valor: ${erro || 'sem valor'}`);
+    console.error('sem valor esperado', order_nsu, erro);
+    await registrar('recusado', `sem valor esperado: ${erro || 'zero'}`);
     return { erro: erro || 'pedido sem valor esperado', http: 400 };
   }
   if (cobrado < esperado) {
@@ -461,10 +537,52 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
     pagamento_parcelas: Number(d.installments || check.installments) || 1,
     pagamento_recibo_url: d.receipt_url || null,
     comprovante_anexado: true, // pagou pelo checkout: não precisa mandar print
+    // Mensalidade congela o que foi cobrado — daqui pra frente mudar o cadastro
+    // do filho não reescreve o passado.
+    ...(tipo === 'men' && {
+      valor_cobrado: cobrado / 100,
+      multa_aplicada: Number(pedido.checkout_multa) || 0,
+      vencimento_aplicado: pedido.checkout_vencimento || null,
+    }),
   });
+
+  // O financeiro renderiza o booleano fin_pagamentos/{ciclo}.{filho}. Flipar
+  // aqui é o que faz a mensalidade se marcar sozinha lá, sem mexer naquele app.
+  if (tipo === 'men' && pedido.filho_id && pedido.ciclo) {
+    await marcarPagamentoNoFinanceiro(pedido.ciclo, pedido.filho_id, token, registrar);
+  }
 
   await registrar('pago', `${t.colecao}/${doc_id} marcado pago, ${cobrado} centavos`);
   return { ok: true, centavos: cobrado, metodo };
+}
+
+/**
+ * fin_pagamentos/{ciclo} é um mapa { filhoId: true }. Um doc por mês, e é o que
+ * o financeiro lê. Escreve só o campo do filho, sem tocar nos outros.
+ *
+ * Falha aqui NÃO derruba a confirmação: o pagamento já está registrado no
+ * pedido, e o toggle manual do financeiro continua existindo pra isso.
+ */
+async function marcarPagamentoNoFinanceiro(ciclo, filhoId, token, registrar = () => {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(ciclo)) || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filhoId))) {
+    await registrar('aviso', `ciclo ou filho_id fora do formato: ${ciclo} / ${filhoId}`);
+    return;
+  }
+  try {
+    // Backtick no fieldPath porque id do Firestore pode começar com dígito ou
+    // ter '-', e aí o caminho sem quote é inválido.
+    const mask = `updateMask.fieldPaths=${encodeURIComponent('`' + filhoId + '`')}`;
+    const url = `${fsUrl(PROJETO_PVD, 'fin_pagamentos', ciclo)}?${mask}`;
+    const resp = await fetch(url, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { [filhoId]: { booleanValue: true } } }),
+    });
+    if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+  } catch (e) {
+    console.error('flip do fin_pagamentos falhou', ciclo, filhoId, e);
+    await registrar('aviso', `pago, mas não marquei fin_pagamentos/${ciclo}: ${e.message}`);
+  }
 }
 
 // ── FIRESTORE REST ─────────────────────────────────────────────────────────
