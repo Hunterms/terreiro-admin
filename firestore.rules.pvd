@@ -192,6 +192,24 @@ service cloud.firestore {
       allow update, delete: if request.auth != null;
     }
 
+    // ── MENSALIDADE: NADA público ─────────────────────────────────────────
+    // Coberta pela regra de auth no topo — esta regra existe pra ser explícita
+    // e pra travar o que a de cima já trava.
+    //
+    // O público NÃO pode criar nem escrever aqui, e isso não é detalhe: o valor
+    // esperado da mensalidade é FIXADO no doc quando o link é gerado
+    // (checkout_centavos), e a confirmação compara contra ele em vez de
+    // recalcular — porque a multa depende da data. Se o público pudesse criar o
+    // doc, plantaria um checkout_centavos de R$1, pagaria R$1 e o Worker
+    // aceitaria. Ver MENSALIDADE.md seção 4.
+    //
+    // O filho paga pela area-filho.html, que chama o Worker; o Worker escreve
+    // com service account e ignora estas rules. Ninguém precisa de acesso
+    // público a esta collection.
+    match /fin_mensalidade_pedidos/{id} {
+      allow read, write: if request.auth != null;
+    }
+
     // Rega diária: leitura + write público (QR-based / trust-based)
     // delete público pra liberar dia reservado (UX de "trocar com outra pessoa"
     // na area-filho.html). Auth client-side via 4 dígitos do tel do dono.
