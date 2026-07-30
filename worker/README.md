@@ -1,6 +1,3 @@
-| `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
-| `POST /mensalidade` | `area-filho.html` | 4 dígitos do telefone do filho |
-| `POST /papel` | você, na mão | `X-Auth-Secret` |
 # Worker do Candieiro — email + checkout automático
 
 Um Worker, quatro assuntos: email, checkout, mensalidade e papéis.
