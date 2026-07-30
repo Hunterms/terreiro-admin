@@ -13,6 +13,7 @@
  *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
  *   POST /lote        → gera as cobranças do mês. Também roda por cron dia 1.
  *   POST /papel       → grava custom claim (admin/financeiro/loja) numa conta.
+ *   POST /lembretes   → email pra quem vence amanhã. Também roda por cron diário.
  *
  * ── POR QUE O VALOR É RECALCULADO ─────────────────────────────────────────
  * O cliente é dono do navegador. Se o preço saísse do frontend, dava pra abrir
@@ -157,6 +158,7 @@ export default {
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
+      if (rota === '/lembretes') return await rotaLembretes(body, request, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
@@ -169,11 +171,23 @@ export default {
   //
   // Mesma função do botão do admin: gera o lote do ciclo atual. Se alguém já
   // tiver rodado na mão, não duplica — o id do doc é determinístico.
+  // Dois crons, e o handler decide pelo `event.cron`:
+  //
+  //   0 9 1 * *   dia 1, 6h de Brasília  → gera o lote do mês
+  //   0 12 * * *  todo dia, 9h           → lembra quem vence amanhã
+  //
+  // O lembrete é diário de propósito, não "dia 9": o vencimento é o prazo de
+  // CADA filho (45 no dia 10, 8 no 15, 1 no 20, 1 no último). Um cron fixo no
+  // dia 9 lembraria os 45 e esqueceria os 10 restantes.
   async scheduled(event, env, ctx) {
-    const ciclo = cicloAtual();
-    console.log('cron: gerando lote de mensalidade do ciclo', ciclo);
-    const r = await gerarLoteMensalidade(ciclo, env);
-    console.log('cron: resultado', JSON.stringify(r));
+    if (event.cron === '0 9 1 * *') {
+      const ciclo = cicloAtual();
+      console.log('cron: gerando lote do ciclo', ciclo);
+      console.log('cron: lote', JSON.stringify(await gerarLoteMensalidade(ciclo, env)));
+      return;
+    }
+    console.log('cron: lembretes de vencimento');
+    console.log('cron: lembretes', JSON.stringify(await enviarLembretesVencimento(env)));
   },
 };
 
@@ -520,6 +534,184 @@ async function gerarLoteMensalidade(ciclo, env) {
   };
   console.log('lote de mensalidade', JSON.stringify(resumo));
   return resumo;
+}
+
+// ── LEMBRETE DE VENCIMENTO ─────────────────────────────────────────────────
+// Manda email pra quem vence AMANHÃ e ainda não pagou, com o link já pronto.
+// Roda por cron diário, ou na mão: POST /lembretes (com o shared secret).
+//
+// Um dia antes do vencimento DE CADA UM, não numa data fixa: 45 filhos vencem
+// dia 10, mas 8 vencem dia 15, 1 dia 20 e 1 no último dia do mês. Cron fixo no
+// dia 9 lembraria os 45 e esqueceria os outros 10.
+//
+// Só manda pra quem tem email (medido em 30/07: 27 dos 48 pagantes). Quem não
+// tem, o resumo devolve em `sem_email` pra você cobrar por WhatsApp.
+//
+// Não repete: grava `lembrete_enviadoEm` no pedido e pula quem já recebeu no
+// ciclo. Rodar duas vezes no mesmo dia não incomoda ninguém duas vezes.
+
+async function rotaLembretes(body, request, env) {
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
+  return json(await enviarLembretesVencimento(env, body?.ciclo));
+}
+
+async function enviarLembretesVencimento(env, cicloForcado) {
+  const ciclo = cicloForcado || cicloAtual();
+  const hoje = hojeSP();
+  const token = await tokenGoogle(env);
+
+  const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
+  const resumo = { ciclo, hoje, enviados: 0, sem_email: [], ja_avisados: 0, pagos: 0, nao_vence_amanha: 0, falhas: 0 };
+
+  for (const f of filhos) {
+    if (f.status && f.status !== 'ativo') continue;
+    if (!(Number(f.valor) > 0)) continue; // isento
+
+    const venc = vencimentoMensalidade(f.prazo, ciclo);
+    if (!venc) continue; // 'combinado' não tem data
+
+    // vence amanhã? compara data como string ISO, que ordena certo
+    const amanha = new Date(hoje + 'T12:00:00Z');
+    amanha.setUTCDate(amanha.getUTCDate() + 1);
+    if (venc !== amanha.toISOString().slice(0, 10)) { resumo.nao_vence_amanha++; continue; }
+
+    const docId = `${f.id}__${ciclo}`;
+    let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+
+    if (pedido?.pago_automatico || pedido?.status === 'pago') { resumo.pagos++; continue; }
+    if (pedido?.lembrete_enviadoEm) { resumo.ja_avisados++; continue; }
+
+    const email = String(f.auth_email || f.email || '').trim();
+    if (!email.includes('@')) { resumo.sem_email.push(f.nome || f.id); continue; }
+
+    // Garante o pedido do ciclo (o Worker pode criar; o público não)
+    if (!pedido) {
+      await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+        filho_id: f.id, filho_nome: f.nome || '', ciclo,
+        status: 'aberto', avisou_atraso: false,
+        geradoEm: new Date().toISOString(), geradoPor: 'lembrete',
+      });
+      pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+      if (!pedido) { resumo.falhas++; continue; }
+    }
+
+    const valor = mensalidadeReais(pedido, f, hoje);
+    if (!(valor > 0)) continue;
+
+    const link = await gerarLinkMensalidade(f, pedido, docId, valor, env, token);
+    if (!link) { resumo.falhas++; continue; }
+
+    const enviado = await enviarEmail(env, {
+      to: email,
+      to_name: f.nome || '',
+      subject: `Sua contribuição de ${nomeDoMes(ciclo)} vence amanhã`,
+      html: emailLembrete(f, ciclo, valor, venc, link),
+    });
+
+    if (!enviado) { resumo.falhas++; continue; }
+
+    await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+      lembrete_enviadoEm: new Date().toISOString(),
+      lembrete_valor: valor,
+    });
+    resumo.enviados++;
+  }
+
+  console.log('lembretes', JSON.stringify(resumo));
+  return resumo;
+}
+
+/** Gera (ou reaproveita) o link de checkout da mensalidade e fixa o valor. */
+async function gerarLinkMensalidade(filho, pedido, docId, valor, env, token) {
+  const centavos = Math.round(valor * 100);
+  const order_nsu = `men_${docId}`;
+
+  const resp = await fetch(IP_LINKS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      handle: env.INFINITEPAY_HANDLE,
+      order_nsu,
+      redirect_url: `${env.SITE_URL}/pago.html?tipo=men&id=${docId}`,
+      items: [{ quantity: 1, price: centavos, description: `Contribuição ${nomeDoMes(pedido.ciclo)}` }],
+      ...(filho.nome && { customer: { name: String(filho.nome).slice(0, 120) } }),
+    }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.url) {
+    console.error('link da mensalidade falhou', docId, resp.status, JSON.stringify(data));
+    return null;
+  }
+
+  // Fixa o valor: é contra ele que a confirmação compara (TIPOS.valorFixado)
+  await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+    checkout_centavos: centavos,
+    checkout_order_nsu: order_nsu,
+    checkout_url: data.url,
+    checkout_criadoEm: new Date().toISOString(),
+    checkout_valor_base: Number(filho.valor) || 0,
+    checkout_multa: Math.max(0, valor - (Number(filho.valor) || 0)),
+    checkout_vencimento: vencimentoMensalidade(filho.prazo, pedido.ciclo),
+  });
+
+  return data.url;
+}
+
+function nomeDoMes(ciclo) {
+  return new Date(ciclo + '-02T00:00:00Z').toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
+}
+
+function emailLembrete(filho, ciclo, valor, venc, link) {
+  const primeiro = String(filho.nome || '').split(' ')[0];
+  const brl = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
+  const dia = venc.slice(8, 10);
+  const base = Number(filho.valor) || 0;
+  const multa = Math.max(0, valor - base);
+
+  return `<div style="font-family:-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;color:#2b2b2b;line-height:1.6">
+  <div style="text-align:center;padding:24px 0 8px">
+    <img src="https://terreirodocandieiro.com.br/logocandieiro.png" alt="Terreiro do Candieiro" width="72" style="display:block;margin:0 auto"/>
+  </div>
+  <p>Olá, ${primeiro}.</p>
+  <p>Sua contribuição de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>amanhã, dia ${dia}</strong>.</p>
+  <div style="background:#faf7f0;border:1px solid #e8dfc8;border-radius:10px;padding:16px;margin:18px 0">
+    <div style="font-size:13px;color:#7a6a52">Valor</div>
+    <div style="font-size:26px;font-weight:700;color:#a8802a">${brl(valor)}</div>
+    ${multa > 0 ? `<div style="font-size:12.5px;color:#b0483a;margin-top:6px">Inclui ${brl(multa)} de acréscimo por atraso. Se você combinou o atraso com a administração, fala com a gente que a gente ajusta.</div>` : ''}
+  </div>
+  <p style="text-align:center;margin:24px 0">
+    <a href="${link}" style="display:inline-block;background:#3498db;color:#fff;text-decoration:none;padding:14px 28px;border-radius:9px;font-weight:700">Pagar agora</a>
+  </p>
+  <p style="font-size:13.5px;color:#6b6b6b">Cartão ou PIX. Cai na hora, e você não precisa mandar comprovante — o pagamento entra no sistema do terreiro sozinho.</p>
+  <p style="font-size:13.5px;color:#6b6b6b">Se preferir pagar de outro jeito, ou se algo não estiver certo, responde este email ou chama no WhatsApp.</p>
+  <p style="font-size:12.5px;color:#9a9a9a;border-top:1px solid #eee;padding-top:14px;margin-top:22px">
+    Terreiro do Candieiro · Barão Geraldo, Campinas-SP<br>
+    Você recebe isto porque tem contribuição mensal combinada com a casa.
+  </p>
+</div>`;
+}
+
+/** Manda email pelo Resend. Devolve true/false, sem derrubar quem chamou. */
+async function enviarEmail(env, { to, to_name, subject, html }) {
+  if (!env.RESEND_API_KEY) { console.error('RESEND_API_KEY não configurada'); return false; }
+  try {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: env.DEFAULT_FROM,
+        to: [to_name ? `${to_name} <${to}>` : to],
+        subject,
+        html,
+      }),
+    });
+    if (!resp.ok) { console.error('Resend', resp.status, await resp.text()); return false; }
+    return true;
+  } catch (e) {
+    console.error('Resend falhou', e);
+    return false;
+  }
 }
 
 // ── MENSALIDADE DO FILHO ───────────────────────────────────────────────────

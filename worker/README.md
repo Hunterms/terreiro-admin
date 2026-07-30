@@ -290,3 +290,47 @@ financeiro e PDV de uma vez.
 6. Só então cria conta nova (ex: `loja`) — nunca antes do passo 4
 
 A rede de email nas rules pode sair quando o passo 3 confirmar as duas contas.
+
+---
+
+## Lembrete de vencimento
+
+Email pra quem vence **amanhã** e ainda não pagou, com o link já pronto.
+
+```bash
+curl -X POST https://terreiro-email.hunter-soares-c.workers.dev/lembretes \
+  -H "Content-Type: application/json" -H "X-Auth-Secret: SEU_SECRET" -d '{}'
+```
+
+Resposta: `{ enviados, sem_email:[nomes], ja_avisados, pagos, falhas }`.
+
+### Por que diário, e não "dia 9"
+
+O vencimento é o `prazo` de cada filho. Medido em 30/07: **45 vencem dia 10, 8
+no dia 15, 1 no dia 20, 1 no último dia do mês**. Um cron fixo no dia 9
+lembraria os 45 e esqueceria os outros 10.
+
+Então o cron roda todo dia e manda pra quem vence no dia seguinte — o que, pra
+maioria, cai no dia 9 mesmo.
+
+### Cron
+
+Painel do Worker → **Settings → Triggers → Cron Triggers**, dois:
+
+```
+0 9 1 * *     dia 1, 6h de Brasília   → gera o lote do mês
+0 12 * * *    todo dia, 9h de Brasília → lembra quem vence amanhã
+```
+
+### Não repete
+
+Grava `lembrete_enviadoEm` no pedido do ciclo e pula quem já recebeu. Rodar duas
+vezes no mesmo dia não incomoda ninguém duas vezes.
+
+### Alcance: 27 de 48
+
+Medido em 30/07: dos 48 pagantes ativos, **27 têm email** e **48 têm telefone**.
+Quem não tem email volta na resposta em `sem_email`, pra cobrar por WhatsApp.
+
+Se quiser alcançar os 48, o caminho é o bot de WhatsApp que já existe
+configurado no financeiro (Railway) — não foi ligado aqui.
