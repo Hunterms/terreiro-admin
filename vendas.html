@@ -128,6 +128,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import { criarCheckout, caixaCheckout, caixaCheckoutCarregando } from "./checkout.js";
 
 const cfg = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -531,7 +532,7 @@ function renderProduto(prod) {
     try {
       const efetivoAgora = precoEfetivo(prod, descAfirmativo);
       const comoSoube = !prod.evento_filho ? ($('#b-origem')?.value || null) : null;
-      await addDoc(collection(db,'vendas_pedidos'), {
+      const pedidoRef = await addDoc(collection(db,'vendas_pedidos'), {
         nome, tel, email: email||null,
         filho_id: filhoId,
         observacao: obs,
@@ -556,7 +557,7 @@ function renderProduto(prod) {
         aluno_recorrente: !!APP.alunoMode,
         criadoEm: serverTimestamp()
       });
-      mostrarSucesso(prod, nome, efetivoAgora);
+      mostrarSucesso(prod, nome, efetivoAgora, pedidoRef.id);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
@@ -706,7 +707,7 @@ function _pickFilho(id) {
   $('#b-filho-results').classList.remove('open');
 }
 
-function mostrarSucesso(prod, nome, efetivo) {
+function mostrarSucesso(prod, nome, efetivo, pedidoId) {
   const c = $('#content');
   const dataBr = prod.data_evento ? fmtData(prod.data_evento) : '';
   const valorPago = (efetivo && efetivo.valor) || (prod.valor||0);
@@ -714,10 +715,13 @@ function mostrarSucesso(prod, nome, efetivo) {
   const msg = `Olá! Acabei de reservar:\n\n🪷 ${prod.nome}\n💰 R$ ${valorPago}${labelPromo}${dataBr?`\n📅 ${dataBr}`:''}\n👤 ${nome}\n\nSegue o comprovante do pagamento.`;
   const waLink = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
 
-  // Escolhe o link de crédito certo conforme o desconto aplicado
-  const cardLink = (efetivo?.ehAfirmativo && prod.desconto_afirmativo?.infinity_link)
+  // Checkout automático liga? Então os links fixos por variação de preço saem
+  // de cena — o Worker gera um link com o valor exato deste pedido.
+  const temCheckout = !!(CFG_AGENDAMENTO.checkout_ativo && CFG_AGENDAMENTO.checkout_worker_url);
+  // Legado: link de crédito fixo, escolhido conforme o desconto aplicado
+  const cardLink = temCheckout ? null : ((efetivo?.ehAfirmativo && prod.desconto_afirmativo?.infinity_link)
                 || (efetivo?.ehPromo && prod.infinity_link_promo)
-                || prod.infinity_link;
+                || prod.infinity_link);
   const pixKey = prod.pix || CFG_AGENDAMENTO.pix;
   const pixTit = CFG_AGENDAMENTO.pix_titular;
   const temPix = !!pixKey;
@@ -725,7 +729,7 @@ function mostrarSucesso(prod, nome, efetivo) {
 
   const pixBox = temPix ? `
     <div style="padding:18px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin-bottom:14px">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center">💸 Opção 1 · PIX (copia e cola)</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center">💸 Opção ${temCheckout?2:1} · PIX (copia e cola)</div>
       <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:4px;user-select:all">${pixKey}</div>
       ${pixTit ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${pixTit}</div>` : '<div style="margin-bottom:12px"></div>'}
       <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:11px 18px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font);font-weight:600">📋 Copiar chave PIX</button>
@@ -740,7 +744,7 @@ function mostrarSucesso(prod, nome, efetivo) {
     </div>
   ` : '';
 
-  const semOpcao = !temPix && !temCard;
+  const semOpcao = !temPix && !temCard && !temCheckout;
 
   c.innerHTML = `
     <div class="card success-box">
@@ -751,11 +755,12 @@ function mostrarSucesso(prod, nome, efetivo) {
         Sua vaga tá reservada. Agora <strong style="color:var(--text)">escolhe como pagar</strong>:
       </div>
       <div style="margin:20px 0;text-align:left">
+        ${temCheckout ? caixaCheckoutCarregando(1) : ''}
         ${pixBox}
         ${cardBox}
         ${semOpcao ? '<div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;text-align:center;font-size:13px;color:var(--text2)">Combinamos o pagamento pelo WhatsApp ↓</div>' : ''}
       </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;text-align:center">Depois de pagar, manda o comprovante pelo WhatsApp:</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;text-align:center" id="txt-comprovante">Depois de pagar, manda o comprovante pelo WhatsApp:</div>
       <a class="success-whats" href="${waLink}" target="_blank" rel="noopener">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43s.17-.25.25-.41c.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18s-.22-.16-.47-.28z"/></svg>
         Enviar comprovante pelo WhatsApp
@@ -774,6 +779,21 @@ function mostrarSucesso(prod, nome, efetivo) {
       setTimeout(() => { btnCopy.textContent = orig; btnCopy.style.color = ''; btnCopy.style.borderColor = ''; }, 1800);
     }).catch(() => alert('Chave PIX: ' + pixKey));
   };
+
+  // Link de checkout: quem calcula o valor é o Worker, não esta página.
+  if(temCheckout) {
+    criarCheckout(CFG_AGENDAMENTO, 'ped', pedidoId).then(res => {
+      const box = $('#cx-checkout-load');
+      if(!box) return;
+      if(res) {
+        box.outerHTML = caixaCheckout(res.url, res.valor, 1);
+        const txt = $('#txt-comprovante');
+        if(txt) txt.innerHTML = 'Pagou no cartão ou PIX automático? Não precisa mandar nada.<br>Se pagou no PIX copia e cola, manda o comprovante:';
+      } else {
+        box.remove();
+      }
+    });
+  }
 
   window.scrollTo({top:0,behavior:'smooth'});
 }

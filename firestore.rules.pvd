@@ -22,6 +22,22 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // ── Campos de pagamento: só o Worker escreve ──────────────────────────
+    // O Worker usa a service account, que ignora estas rules. Então basta
+    // barrar o público de já criar o doc com esses campos preenchidos.
+    // Sem isso, alguém criava o pedido com checkout_centavos: 1, montava um
+    // link de R$1 na mão (o /links da InfinitePay é aberto), pagava, e o
+    // webhook aceitava. O Worker também recalcula o valor por cima disso —
+    // são duas travas de propósito, porque é o caminho do dinheiro.
+    function semCamposDePagamento() {
+      return !request.resource.data.keys().hasAny([
+        'checkout_centavos', 'checkout_order_nsu', 'checkout_url', 'checkout_criadoEm',
+        'pago_automatico', 'pagoEm', 'pagamento_transaction_nsu', 'pagamento_slug',
+        'pagamento_centavos', 'pagamento_parcelas', 'pagamento_recibo_url',
+        'pagamento_suspeito', 'pagamento_suspeitoEm'
+      ]);
+    }
+
     // ── PÚBLICO: config + serviços (necessário pro agendar.html) ──────────
     match /adm_config/agendamento {
       allow read: if true;
@@ -63,7 +79,8 @@ service cloud.firestore {
                     && request.resource.data.hora is string
                     && request.resource.data.valor_proposto is number
                     && request.resource.data.valor_proposto >= 0
-                    && request.resource.data.valor_proposto < 100000;
+                    && request.resource.data.valor_proposto < 100000
+                    && semCamposDePagamento();
       allow update, delete: if request.auth != null;
     }
 
@@ -80,7 +97,8 @@ service cloud.firestore {
                     && request.resource.data.valor >= 0
                     && request.resource.data.valor < 100000
                     && request.resource.data.status == 'aguardando'
-                    && request.resource.data.origem == 'evento_publico';
+                    && request.resource.data.origem == 'evento_publico'
+                    && semCamposDePagamento();
       allow update, delete: if request.auth != null;
     }
 
@@ -145,7 +163,8 @@ service cloud.firestore {
                     && request.resource.data.produto_id is string
                     && request.resource.data.valor is number
                     && request.resource.data.valor >= 0
-                    && request.resource.data.valor < 1000000;
+                    && request.resource.data.valor < 1000000
+                    && semCamposDePagamento();
       allow update, delete: if request.auth != null;
     }
 

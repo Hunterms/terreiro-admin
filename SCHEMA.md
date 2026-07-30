@@ -385,6 +385,75 @@ Funil leve de quem veio em gira aberta.
 
 ---
 
+### 5.11. Pagamento automático (checkout InfinitePay)
+
+Campos escritos **só pelo Worker** (`worker/worker.js`), via service account —
+que ignora as security rules. O público é barrado de criar doc com eles pela
+função `semCamposDePagamento()` nas rules.
+
+Valem para as três collections que recebem dinheiro do público:
+`adm_solicitacoes`, `vendas_pedidos`, `evento_inscricoes`.
+
+```
+// gravados ao gerar o link de pagamento
+checkout_centavos:          number        // valor devido, calculado do Firestore
+checkout_order_nsu:         string        // "<tipo>_<docId>", ex: ped_aB3xY
+checkout_url:               string
+checkout_criadoEm:          string        // ISO
+
+// gravados quando o pagamento é confirmado
+pago_automatico:            boolean
+pagoEm:                     string        // ISO
+metodo_pagamento:           'pix' | 'cartao'
+pagamento_transaction_nsu:  string        // dedupe de webhook reenviado
+pagamento_slug:             string
+pagamento_centavos:         number        // valor que a InfinitePay confirmou
+pagamento_parcelas:         number
+pagamento_recibo_url:       string
+comprovante_anexado:        true          // pagou pelo checkout: não pede print
+
+// gravado quando o valor pago é MENOR que o devido (não marca pago)
+pagamento_suspeito:         string        // "cobrado X < esperado Y"
+pagamento_suspeitoEm:       string        // ISO
+```
+
+**O `status` muda diferente em cada collection**, porque o vocabulário é
+diferente em cada uma:
+
+| Collection | Status ao pagar |
+|---|---|
+| `vendas_pedidos` | `pendente` → `confirmado` |
+| `evento_inscricoes` | `aguardando` → `pago` |
+| `adm_solicitacoes` | **não muda** — fica `pendente` |
+
+A solicitação de consulta não muda de propósito: pagar não aprova. A aprovação é
+que cria o `adm_atendimentos` e ocupa o horário, e isso é decisão do Pai. O
+pagamento entra como `comprovante_anexado` + `metodo_pagamento`, que é o que a
+tela de aprovação lê pra já vir com "já pago" marcado e derivar `pago_cartao`.
+
+**Onde mora o preço** (o Worker lê daqui, nunca do request):
+
+| Tipo | Collection do pedido | FK | Fonte do preço |
+|---|---|---|---|
+| `sol` | `adm_solicitacoes` | `servico_id` | `adm_servicos.valor` |
+| `ped` | `vendas_pedidos` | `produto_id` | `vendas_produtos` — afirmativo > promo no prazo > `valor` |
+| `ins` | `evento_inscricoes` | `evento_id` | `eventos.valor` (project `terreiro-candieiro`) |
+
+O campo de dinheiro do próprio pedido (`valor` / `valor_proposto`) é criado pelo
+cliente, então não é confiável: o Worker sobrescreve com o valor que calculou.
+
+**Config** — em `adm_config/agendamento` (leitura pública, já usada pelas 3 páginas):
+
+```
+checkout_ativo:       boolean
+checkout_worker_url:  string       // mesmo Worker do email
+```
+
+Desligado, volta pro PIX manual + `infinity_link` fixo por serviço/produto
+(campos legados, mantidos justamente pra isso).
+
+---
+
 ## 6. Mapa completo de collections por project
 
 ### Project `terreiro-pvd` (PDV + financeiro)

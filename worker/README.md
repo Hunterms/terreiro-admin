@@ -1,100 +1,187 @@
-# Email Worker — Setup grátis com domínio próprio
+# Worker do Candieiro — email + checkout automático
 
-Envia email do `contato@terreirodocandieiro.com.br` sem expor chaves no frontend e sem precisar de plano pago.
+Um Worker só, duas funções:
 
-**Stack:** Cloudflare Workers (free) → Resend (free 3000/mês) → email entregue pelo seu domínio.
+| Rota | Quem chama | Protegida por |
+|---|---|---|
+| `POST /` e `/email` | admin (`index.html`) | `X-Auth-Secret` |
+| `POST /checkout` | páginas públicas | nada — só aceita id de pedido, nunca valor |
+| `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
 
----
-
-## 1. Resend — provedor de email (5 min)
-
-1. Cria conta em **[resend.com](https://resend.com/)** (free, sem cartão)
-2. **Domains → Add Domain** → `terreirodocandieiro.com.br`
-3. Resend mostra 3-4 registros DNS (SPF, DKIM) — copia
-4. Vai no painel do **registro.br** (ou onde tem o domínio) → adiciona os registros TXT/CNAME exatamente como vieram
-5. Volta no Resend → clica **Verify** (geralmente leva 10-30 min após DNS propagar)
-6. **API Keys → Create API Key**:
-   - Nome: `terreiro-admin-prod`
-   - Permission: **Sending access** (só envio, não administração)
-   - Domain: o seu
-   - Copia o `re_xxxxxxxxxxxxxxxxx` — vai precisar daqui a pouco
+Arquivo: **`worker.js`** (era `email-worker.js`, que virou este).
 
 ---
 
-## 2. Cloudflare Worker — proxy seguro (5 min)
+## Por que o valor não vem do navegador
 
-1. Cria conta em **[cloudflare.com](https://cloudflare.com/)** (free)
-2. Dashboard → **Workers & Pages → Create application → Create Worker**
-3. Dá um nome (ex: `terreiro-email`) → **Deploy**
-4. Depois do deploy → **Edit code**:
-   - Apaga o Hello World que vem
-   - Cola TODO o conteúdo de `email-worker.js`
-   - **Deploy**
-5. Vai em **Settings → Variables and Secrets** e adiciona 3 variáveis:
+O preço nunca chega pelo request. O cliente manda só `{ tipo, doc_id }`; o Worker
+lê o serviço/produto/evento no Firestore e cobra o que está lá. Se o preço viesse
+do frontend, dava pra abrir o devtools, trocar 150 por 1 e pagar 1.
 
-   | Nome | Tipo | Valor |
-   |---|---|---|
-   | `RESEND_API_KEY` | **Encrypt** | `re_xxxxxxxxxxxxxxx` (do passo 1.6) |
-   | `ADMIN_SECRET` | **Encrypt** | uma senha aleatória qualquer (ex: `candieiro-mil-asas-2026`) |
-   | `DEFAULT_FROM` | Plaintext | `Terreiro do Candieiro <contato@terreirodocandieiro.com.br>` |
+A conferência acontece duas vezes:
 
-   *⚠️ Clica "Encrypt" nas duas primeiras — protege contra leitura acidental.*
+1. **Ao criar o link** — o valor sai do Firestore e fica gravado no pedido, no
+   campo `checkout_centavos`. O público não consegue escrever nesse campo: quem
+   escreve é a service account, que ignora as security rules.
+2. **No webhook** — `payment_check` confirma na InfinitePay que aquilo foi pago
+   de verdade, e o valor pago é comparado com o gravado. Pagou menos, não marca
+   pago: grava `pagamento_suspeito` e o admin mostra um chip vermelho.
 
-6. Copia a URL do Worker: `https://terreiro-email.SEU-SUBDOMINIO.workers.dev`
+O passo 2 não é paranoia. O endpoint `/links` da InfinitePay não pede
+autenticação: qualquer pessoa com o handle `pai-nando` consegue gerar um link de
+R$ 1. E o webhook também não vem assinado. Sem o passo 2, um link desses marcaria
+o pedido como pago.
 
 ---
 
-## 3. Firestore — config do admin (2 min)
+## Deploy
 
-No Firebase Console → **Firestore → adm_config** (cria se não existe) → cria doc com ID `email`:
+### 1. Sobe o código
+
+Cloudflare → Workers & Pages → o worker que já existe (`terreiro-email`) →
+**Edit code** → apaga o que está lá → cola **`worker.js`** inteiro → **Deploy**.
+
+A rota do email continua na raiz, então o admin não quebra durante a troca.
+
+### 2. Service account do Firebase
+
+É ela que deixa o Worker marcar "pago" — e é justamente o que o público não pode
+fazer.
+
+1. Firebase Console → projeto **terreiro-pvd** → ⚙️ Configurações do projeto →
+   **Contas de serviço**
+2. **Gerar nova chave privada** → baixa o JSON
+3. Do JSON, você usa dois campos:
+   - `client_email` → vai em `GCP_SA_EMAIL`
+   - `private_key` → vai em `GCP_SA_KEY` (copia o valor **inteiro**, com os `\n`
+     literais que vêm no JSON; o Worker resolve)
+
+Guarda esse JSON num lugar seguro. Quem tem ele escreve em todo o Firestore.
+
+### 3. Variáveis
+
+Cloudflare → o Worker → **Settings → Variables and Secrets**:
+
+| Nome | Tipo | Valor |
+|---|---|---|
+| `RESEND_API_KEY` | Encrypt | `re_xxx` (já existe) |
+| `ADMIN_SECRET` | Encrypt | a palavra que já está lá |
+| `DEFAULT_FROM` | Texto | `Terreiro do Candieiro <contato@terreirodocandieiro.com.br>` |
+| `INFINITEPAY_HANDLE` | Texto | `pai-nando` — **sem o `$`** |
+| `SITE_URL` | Texto | `https://hunterms.github.io/terreiro-admin` |
+| `GCP_SA_EMAIL` | Texto | `xxx@terreiro-pvd.iam.gserviceaccount.com` |
+| `GCP_SA_KEY` | **Encrypt** | `-----BEGIN PRIVATE KEY-----\n...` |
+| `CAND_API_KEY` | Texto | `AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM` |
+
+`CAND_API_KEY` é a chave web do projeto `terreiro-candieiro`, usada só pra **ler**
+o preço dos eventos (leitura que já é pública). É a mesma que está no HTML.
+
+`SITE_URL` é pra onde o cliente volta depois de pagar (`pago.html`). Sem barra no fim.
+
+O endereço do webhook o Worker descobre sozinho — não tem o que configurar.
+
+### 4. Liga no admin
+
+Admin → **Atendimentos do Pai → Config do agendamento** → bloco
+"💳 Checkout automático":
+
+1. Cola a URL do Worker
+2. Clica **🔍 Testar conexão** — ele manda um pedido inexistente de propósito.
+   Resposta esperada: *"Worker respondendo, Firestore e handle OK"*. Se faltar
+   alguma variável, ele diz qual.
+3. Marca **Checkout automático ligado**
+4. **Salvar configuração**
+
+Isso grava `checkout_ativo` e `checkout_worker_url` em `adm_config/agendamento`,
+que as três páginas públicas já leem.
+
+### 5. Teste com dinheiro de verdade
+
+Não tem sandbox na InfinitePay. Então:
+
+1. Cria um produto de teste em **Vendas externas → Produtos** com valor R$ 1,00
+2. Abre o link público, faz o pedido, paga no PIX pelo checkout
+3. Em **Pedidos**, ele deve virar **Confirmado** com o chip
+   **⚡ pago automático · R$ 1** e link pro recibo, em segundos
+4. Arquiva o produto de teste
+
+Se ficar pendente, olha o log: Cloudflare → o Worker → **Logs** → Begin log
+stream, e repete. `payment_check` negando ou valor divergente aparecem lá.
+
+---
+
+## O que muda em cada fluxo
+
+| Página | Antes | Depois |
+|---|---|---|
+| `agendar.html` | PIX pra copiar + link fixo do serviço | botão "Pagar agora" com o valor do serviço |
+| `vendas.html` | PIX + 3 links fixos (cheio/promo/afirmativo) | um link só, com o preço efetivo do pedido |
+| `evento.html` | pagava fora e clicava "já paguei" | "Inscrever e pagar" leva direto pro checkout |
+
+O PIX copia e cola **continua em todas**, como segunda opção. Se o Worker cair, a
+página some com o botão e segue no PIX manual — pagamento não pode virar beco sem
+saída.
+
+Os campos `infinity_link` de serviço e produto continuam existindo e voltam a
+funcionar sozinhos se você desligar o checkout.
+
+### O que o webhook escreve
+
+Comum às três collections:
 
 ```
-enabled:        true                                                          (boolean)
-worker_url:     https://terreiro-email.SEU-SUBDOMINIO.workers.dev              (string)
-worker_secret:  candieiro-mil-asas-2026                                        (string — MESMO valor do ADMIN_SECRET acima)
-from:           Terreiro do Candieiro <contato@terreirodocandieiro.com.br>     (string)
-reply_to:       contato@terreirodocandieiro.com.br                             (string)
+pago_automatico: true
+metodo_pagamento: 'pix' | 'cartao'
+pagoEm, pagamento_transaction_nsu, pagamento_slug,
+pagamento_centavos, pagamento_parcelas, pagamento_recibo_url
+comprovante_anexado: true
 ```
 
-Pronto. Confirme um pedido qualquer e o email sai do `contato@terreirodocandieiro.com.br` 🎉
+O `status` muda conforme a collection, porque o vocabulário é diferente em cada:
+
+- `vendas_pedidos` → `confirmado`
+- `evento_inscricoes` → `pago`
+- `adm_solicitacoes` → **não muda**, fica `pendente`
+
+A solicitação de consulta é de propósito: pagar não aprova. Quem aprova é o Pai,
+porque a aprovação é que cria o atendimento e ocupa o horário na agenda. O que o
+pagamento faz é abrir a tela de aprovação já com "já pago" marcado e o método
+certo, então aprovar leva `pago_cartao` pro atendimento sem ninguém digitar nada.
 
 ---
 
-## Teste rápido
+## Self-check
 
-No terminal:
+O cálculo do preço tem teste:
 
 ```bash
-curl -X POST https://terreiro-email.SEU-SUBDOMINIO.workers.dev \
-  -H "Content-Type: application/json" \
-  -H "X-Auth-Secret: candieiro-mil-asas-2026" \
-  -d '{
-    "to": "seuemail@gmail.com",
-    "to_name": "Teste",
-    "subject": "Hello do Worker",
-    "html": "<h1>Funcionou!</h1><p>De: contato@terreirodocandieiro.com.br</p>"
-  }'
+node worker/test-preco.mjs
 ```
 
-Resposta esperada: JSON com `{ "id": "xxx" }` e email aparece na caixa em segundos.
+Roda isso **sempre que mexer no `precoEfetivo` do `vendas.html`** — a regra está
+escrita em dois lugares (uma no navegador pra mostrar, uma no Worker pra cobrar),
+e se as duas discordarem o cliente vê um preço e paga outro.
 
 ---
 
 ## Limites do free tier
 
-- **Cloudflare Workers free:** 100.000 requests/dia (você vai usar tipo 30/mês)
-- **Resend free:** 100 emails/dia, 3.000/mês, 1 domínio
-
-Pra escalar (se passar de 3000/mês) → Resend Pro é $20/mês com 50k. Mas pra um terreiro, free dá pra sempre.
-
----
+- **Cloudflare Workers**: 100.000 requests/dia
+- **Resend**: 100 emails/dia, 3.000/mês
+- **InfinitePay**: sem mensalidade; a taxa sai por transação, conforme o plano
 
 ## Segurança
 
-- **API key do Resend** fica só no Worker (env var encrypted, server-side)
-- **Shared secret (`ADMIN_SECRET`)** é a única coisa que o admin frontend conhece — bloqueia abuso direto
-- **CORS:** por padrão `ALLOW_ORIGINS = '*'` no worker (qualquer origem pode chamar). Em produção, troca pela URL exata do admin pra apertar mais. Mesmo com `'*'` o `X-Auth-Secret` previne uso indevido.
+- Chave do Resend e da service account ficam só no Worker, encrypted
+- `/checkout` é público de propósito (a página do cliente precisa chamar), mas só
+  aceita id de pedido: não tem como pedir um valor
+- `/webhook` não confia no próprio corpo — confirma no `payment_check` e compara valor
+- Reenvio do mesmo webhook é ignorado (dedupe por `transaction_nsu`)
+- CORS está em `*`. Pra apertar, troca `ALLOW_ORIGINS` no topo do `worker.js` pela
+  URL exata do admin. O `X-Auth-Secret` já protege a rota de email de qualquer jeito
 
-Se o shared secret vazar (por engano), é só:
-1. Cloudflare → muda o `ADMIN_SECRET` pra outro valor
-2. Firestore → atualiza `adm_config/email.worker_secret` com o novo valor
+Se o `ADMIN_SECRET` vazar: muda no Cloudflare e atualiza
+`adm_config/email.worker_secret` no Firestore com o mesmo valor novo.
+
+Se o JSON da service account vazar: Firebase Console → Contas de serviço →
+apaga a chave antiga, gera outra, atualiza `GCP_SA_EMAIL` / `GCP_SA_KEY`.

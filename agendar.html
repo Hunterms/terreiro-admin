@@ -183,6 +183,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import { criarCheckout, caixaCheckout, caixaCheckoutCarregando } from "./checkout.js";
 
 const cfg = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -727,7 +728,7 @@ function abrirModalDados() {
         });
       } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
-      mostrarSucesso(nome);
+      mostrarSucesso(nome, solRef.id);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tente o WhatsApp.';
@@ -738,16 +739,18 @@ function abrirModalDados() {
   };
 }
 
-function mostrarSucesso(nome) {
+function mostrarSucesso(nome, solId) {
   const msg = `Olá! Acabei de agendar:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}\n\nSegue o comprovante do pagamento.`;
   const link = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
   const valor = (APP.servico.valor||0).toFixed(0);
   const temPix = !!APP.cfg.pix;
-  const temCard = !!APP.servico.infinity_link;
+  // Checkout automático liga? Então o link fixo antigo (infinity_link) sai de cena.
+  const temCheckout = !!(APP.cfg.checkout_ativo && APP.cfg.checkout_worker_url);
+  const temCard = !temCheckout && !!APP.servico.infinity_link;
 
   const pixBox = temPix ? `
     <div style="padding:18px;background:linear-gradient(135deg,rgba(212,168,67,0.12),rgba(212,168,67,0.04));border:1px solid rgba(212,168,67,0.35);border-radius:12px;margin-bottom:14px">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center">💸 Opção 1 · PIX (copia e cola)</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;text-align:center">💸 Opção ${temCheckout?2:1} · PIX (copia e cola)</div>
       <div style="font-size:16px;font-family:monospace;color:var(--gold);font-weight:700;word-break:break-all;text-align:center;margin-bottom:4px;user-select:all">${APP.cfg.pix}</div>
       ${APP.cfg.pix_titular ? `<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:12px">Titular: ${APP.cfg.pix_titular}</div>` : '<div style="margin-bottom:12px"></div>'}
       <button type="button" id="b-pix-copy-success" style="display:block;margin:0 auto;padding:11px 18px;font-size:13px;background:var(--glass2);border:1px solid var(--border2);border-radius:8px;color:var(--text);cursor:pointer;font-family:var(--font);font-weight:600">📋 Copiar chave PIX</button>
@@ -762,7 +765,7 @@ function mostrarSucesso(nome) {
     </div>
   ` : '';
 
-  const semOpcao = !temPix && !temCard;
+  const semOpcao = !temPix && !temCard && !temCheckout;
 
   $('#modal-c').innerHTML = `
     <div class="success-box">
@@ -773,11 +776,12 @@ function mostrarSucesso(nome) {
         Seu horário tá reservado. Agora <strong style="color:var(--text)">escolhe como pagar R$ ${valor}</strong>:
       </div>
       <div style="margin:20px 0;text-align:left">
+        ${temCheckout ? caixaCheckoutCarregando(1) : ''}
         ${pixBox}
         ${cardBox}
         ${semOpcao ? '<div style="padding:14px;background:var(--glass2);border:1px solid var(--border2);border-radius:10px;text-align:center;font-size:13px;color:var(--text2)">Combinamos o pagamento pelo WhatsApp ↓</div>' : ''}
       </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;text-align:center">Depois de pagar, manda o comprovante pelo WhatsApp:</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5;text-align:center" id="txt-comprovante">Depois de pagar, manda o comprovante pelo WhatsApp:</div>
       <a class="success-whats" href="${link}" target="_blank">
         <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px"><path d="M17.6 6.32A8 8 0 005.74 17l-1.07 4.04 4.13-1.08A8 8 0 1017.6 6.32zM12 19.67c-1.36 0-2.69-.37-3.84-1.06l-.28-.16-2.86.75.76-2.79-.18-.29A6.66 6.66 0 0118.66 12 6.67 6.67 0 0112 19.67z"/></svg>
         Enviar comprovante pelo WhatsApp
@@ -796,6 +800,23 @@ function mostrarSucesso(nome) {
       setTimeout(() => { btnCopy.textContent = orig; btnCopy.style.color = ''; btnCopy.style.borderColor = ''; }, 1800);
     }).catch(() => alert('Chave PIX: ' + APP.cfg.pix));
   };
+
+  // Pede o link de checkout pro Worker (que é quem calcula o valor).
+  // Enquanto não chega, fica a caixa "preparando"; se falhar, ela sai e o
+  // cliente paga no PIX manual como antes.
+  if(temCheckout) {
+    criarCheckout(APP.cfg, 'sol', solId).then(res => {
+      const box = $('#cx-checkout-load');
+      if(!box) return;
+      if(res) {
+        box.outerHTML = caixaCheckout(res.url, res.valor, 1);
+        const txt = $('#txt-comprovante');
+        if(txt) txt.innerHTML = 'Pagou no cartão ou PIX automático? Não precisa mandar nada.<br>Se pagou no PIX copia e cola, manda o comprovante:';
+      } else {
+        box.remove();
+      }
+    });
+  }
 }
 
 function voltar() {
