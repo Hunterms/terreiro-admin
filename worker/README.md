@@ -6,7 +6,10 @@ Um Worker só, duas funções:
 |---|---|---|
 | `POST /` e `/email` | admin (`index.html`) | `X-Auth-Secret` |
 | `POST /checkout` | páginas públicas | nada — só aceita id de pedido, nunca valor |
+| `POST /status` | `pago.html` | nada — só responde pago/não, e confirma no `payment_check` |
 | `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
+| `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
+| cron `0 9 1 * *` | Cloudflare | — gera o lote do mês |
 
 Arquivo: **`worker.js`** (era `email-worker.js`, que virou este).
 
@@ -169,15 +172,17 @@ certo, então aprovar leva `pago_cartao` pro atendimento sem ninguém digitar na
 
 ## Self-check
 
-O cálculo do preço tem teste:
+Três, todos sem framework:
 
 ```bash
-node worker/test-preco.mjs
+node worker/test-preco.mjs        # preço de produto: promo, desconto afirmativo
+node worker/test-mensalidade.mjs  # vencimento por prazo, multa, isento
+node worker/test-resumo.mjs       # o que a caixa de checkout mostra
 ```
 
-Roda isso **sempre que mexer no `precoEfetivo` do `vendas.html`** — a regra está
-escrita em dois lugares (uma no navegador pra mostrar, uma no Worker pra cobrar),
-e se as duas discordarem o cliente vê um preço e paga outro.
+Roda **sempre que mexer em preço**. Cada regra está escrita em dois lugares (uma
+no navegador pra mostrar, uma no Worker pra cobrar), e se as duas discordarem o
+cliente vê um preço e paga outro. Os testes existem pra pegar essa divergência.
 
 ---
 
