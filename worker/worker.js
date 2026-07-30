@@ -258,18 +258,23 @@ async function rotaCheckout(body, env, origem) {
 }
 
 // ── STATUS ─────────────────────────────────────────────────────────────────
-// Entra: { tipo, doc_id }. Sai: { pago: bool }.
+// Entra: { tipo, doc_id, transaction_nsu?, slug?, receipt_url? }.
+// Sai: { pago, metodo, recibo_url, divergente }.
 //
 // Existe pra tela de retorno (pago.html) poder dizer a verdade. Ela não
-// consegue ler o pedido no Firestore (as rules exigem auth, e é pra exigir), e
-// os parâmetros que a InfinitePay devolve na URL vêm do cliente — não provam
-// nada. Aqui a resposta sai do campo que só o webhook escreve.
+// consegue ler o pedido no Firestore (as rules exigem auth, e é pra exigir).
 //
-// Público, sem segredo: precisa do id do pedido pra perguntar, e a resposta não
-// leva nome, telefone nem valor de ninguém. Nada é escrito.
+// E faz mais do que ler: se o pedido ainda não está pago e a volta trouxe
+// transaction_nsu + slug, ele CONFIRMA na InfinitePay ali mesmo. Assim a
+// confirmação não depende do webhook chegar — que é justamente o que falhou
+// no primeiro teste. Webhook e volta são dois caminhos pro mesmo lugar, e
+// quem chegar primeiro resolve; o segundo vê que já está pago e não faz nada.
+//
+// Público, sem segredo: precisa do id do pedido pra perguntar, a resposta não
+// leva nome nem telefone de ninguém, e o que decide é o payment_check.
 
 async function rotaStatus(body, env) {
-  const { tipo, doc_id } = body;
+  const { tipo, doc_id, transaction_nsu, slug, receipt_url } = body;
   const t = TIPOS[tipo];
   if (!t) return json({ error: 'tipo inválido' }, 400);
   if (!doc_id || typeof doc_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(doc_id)) {
@@ -280,12 +285,44 @@ async function rotaStatus(body, env) {
   const pedido = await fsGet(PROJETO_PVD, t.colecao, doc_id, { token });
   if (!pedido) return json({ error: 'pedido não encontrado' }, 404);
 
-  return json({
-    pago: pedido.pago_automatico === true,
-    metodo: pedido.pago_automatico ? pedido.metodo_pagamento || null : null,
-    recibo_url: pedido.pagamento_recibo_url || null,
-    divergente: !!pedido.pagamento_suspeito,
+  const responder = (p) => json({
+    pago: p.pago_automatico === true,
+    metodo: p.pago_automatico ? p.metodo_pagamento || null : null,
+    recibo_url: p.pagamento_recibo_url || null,
+    divergente: !!p.pagamento_suspeito,
   });
+
+  if (pedido.pago_automatico === true || pedido.pagamento_suspeito) return responder(pedido);
+  if (!transaction_nsu || !slug) return responder(pedido);
+
+  const registrar = (resultado, detalhe) =>
+    fsCreate(PROJETO_PVD, 'adm_webhook_log', token, {
+      recebidoEm: new Date().toISOString(),
+      resultado,
+      detalhe: detalhe || null,
+      order_nsu: `${tipo}_${doc_id}`,
+      transaction_nsu: transaction_nsu || null,
+      corpo_cru: `via /status (volta do checkout): ${JSON.stringify(body).slice(0, 2000)}`,
+    }).catch((e) => console.error('log falhou', e));
+
+  const r = await confirmarNaInfinitePay(
+    {
+      tipo, t, doc_id, pedido,
+      order_nsu: `${tipo}_${doc_id}`,
+      transaction_nsu,
+      invoice_slug: slug,
+      receipt_url,
+    },
+    env,
+    token,
+    registrar
+  );
+
+  if (r.ok) {
+    return json({ pago: true, metodo: r.metodo === 'pix' ? 'pix' : 'cartao', recibo_url: receipt_url || null, divergente: false });
+  }
+  if (r.http === 422) return json({ pago: false, divergente: true });
+  return json({ pago: false, divergente: false });
 }
 
 // ── WEBHOOK ────────────────────────────────────────────────────────────────
@@ -333,6 +370,33 @@ async function rotaWebhook(body, env) {
     return json({ success: true, ja_processado: true });
   }
 
+  const r = await confirmarNaInfinitePay(
+    { tipo, t, doc_id, pedido, order_nsu, transaction_nsu, invoice_slug, capture_method, receipt_url, installments },
+    env,
+    token,
+    registrar
+  );
+
+  if (r.ok) return json({ success: true });
+  return json({ error: r.erro }, r.http);
+}
+
+// ── CONFIRMAÇÃO ────────────────────────────────────────────────────────────
+// O ato de marcar pago mora aqui, num lugar só, porque tem dois caminhos que
+// levam a ele:
+//
+//   webhook  — a InfinitePay avisa. Pega quem fechou a aba e foi embora.
+//   volta    — a pessoa cai no pago.html, que traz transaction_nsu e slug na
+//              URL. Pega quando o webhook não chega.
+//
+// Os dois passam pelas MESMAS duas provas: payment_check confirma na
+// InfinitePay, e o valor é recalculado da fonte e comparado. Por isso não
+// importa que os dados da volta venham do cliente: ele pode inventar um
+// transaction_nsu, mas não consegue fazer o payment_check dizer "paid" pro
+// nosso handle com o nosso order_nsu.
+async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
+  const { tipo, t, doc_id, pedido, order_nsu, transaction_nsu, invoice_slug } = d;
+
   // 1ª prova: a própria InfinitePay confirma.
   const checkResp = await fetch(IP_CHECK, {
     method: 'POST',
@@ -349,7 +413,7 @@ async function rotaWebhook(body, env) {
   if (!checkResp.ok || check.paid !== true) {
     console.warn('payment_check negou', order_nsu, checkResp.status, JSON.stringify(check));
     await registrar('nao_confirmado', `payment_check HTTP ${checkResp.status}: ${JSON.stringify(check).slice(0, 500)}`);
-    return json({ error: 'pagamento não confirmado' }, 400); // 400 = InfinitePay tenta de novo
+    return { erro: 'pagamento não confirmado', http: 400 }; // 400 = InfinitePay tenta de novo
   }
 
   // 2ª prova: o valor cobrado bate com o preço real do item.
@@ -359,7 +423,7 @@ async function rotaWebhook(body, env) {
   if (erro || !esperado) {
     console.error('não consegui recalcular o valor', order_nsu, erro);
     await registrar('recusado', `não consegui recalcular o valor: ${erro || 'sem valor'}`);
-    return json({ error: erro || 'pedido sem valor esperado' }, 400);
+    return { erro: erro || 'pedido sem valor esperado', http: 400 };
   }
   if (cobrado < esperado) {
     console.error(`valor menor que o esperado: ${cobrado} < ${esperado}`, order_nsu);
@@ -368,24 +432,27 @@ async function rotaWebhook(body, env) {
       pagamento_suspeitoEm: new Date().toISOString(),
     });
     await registrar('valor_divergente', `cobrado ${cobrado} < esperado ${esperado}`);
-    return json({ error: 'valor divergente' }, 422); // 422 não pede retry: não vai melhorar
+    return { erro: 'valor divergente', http: 422 }; // 422 não pede retry: não vai melhorar
   }
+
+  // capture_method só vem no webhook; na volta pega o do payment_check.
+  const metodo = d.capture_method || check.capture_method;
 
   await fsPatch(PROJETO_PVD, t.colecao, doc_id, token, {
     ...(t.statusPago && { status: t.statusPago }),
-    metodo_pagamento: capture_method === 'pix' ? 'pix' : 'cartao',
+    metodo_pagamento: metodo === 'pix' ? 'pix' : 'cartao',
     pago_automatico: true,
     pagoEm: new Date().toISOString(),
     pagamento_transaction_nsu: transaction_nsu || null,
     pagamento_slug: invoice_slug || null,
     pagamento_centavos: cobrado,
-    pagamento_parcelas: Number(installments) || 1,
-    pagamento_recibo_url: receipt_url || null,
+    pagamento_parcelas: Number(d.installments || check.installments) || 1,
+    pagamento_recibo_url: d.receipt_url || null,
     comprovante_anexado: true, // pagou pelo checkout: não precisa mandar print
   });
 
   await registrar('pago', `${t.colecao}/${doc_id} marcado pago, ${cobrado} centavos`);
-  return json({ success: true });
+  return { ok: true, centavos: cobrado, metodo };
 }
 
 // ── FIRESTORE REST ─────────────────────────────────────────────────────────

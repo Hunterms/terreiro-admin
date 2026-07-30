@@ -151,13 +151,26 @@ function telaAguardando() {
       <button class="btn btn-azul" id="b-tentar">💳 Tentar o pagamento de novo</button>
       ${btnWhats('Olá! Paguei pelo site mas o pagamento não apareceu como confirmado. Podem verificar?', 'Falar com o terreiro')}
     </div>
-    <div class="aviso">Se você já pagou e continua sem confirmar, chama no WhatsApp — a gente resolve na mão.</div>
+    <div class="aviso" id="b-aviso">Se você já pagou e continua sem confirmar, chama no WhatsApp — a gente resolve na mão.</div>
   `;
-  $('#b-verificar').onclick = async (e) => {
-    e.target.disabled = true; e.target.textContent = 'Verificando...';
-    const st = await consultar();
+  // Feedback tem que estar NO BOTÃO. Só o cursor virar "wait" não se vê.
+  $('#b-verificar').onclick = async () => {
+    const b = $('#b-verificar');
+    b.disabled = true;
+    b.innerHTML = `<span style="display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite"></span> Verificando...`;
+    // Mínimo de 700ms: resposta instantânea pisca e parece que nada aconteceu.
+    const [st] = await Promise.all([consultar(), new Promise(r => setTimeout(r, 700))]);
     if(st?.pago) return telaPago(st);
-    e.target.disabled = false; e.target.textContent = '↻ Verificar de novo';
+    if(st?.divergente) return telaDivergente();
+    b.disabled = false;
+    b.innerHTML = '↻ Verificar de novo';
+    const aviso = $('#b-aviso');
+    if(aviso) {
+      aviso.textContent = st?.erro
+        ? `Não consegui falar com o sistema de pagamento (${st.erro}). Chama no WhatsApp.`
+        : 'Continua sem confirmação. Se você pagou agora, espera uns segundos e tenta de novo.';
+      aviso.style.color = st?.erro ? 'var(--red)' : 'var(--amber)';
+    }
   };
   $('#b-tentar').onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = 'Abrindo o pagamento...';
@@ -211,16 +224,32 @@ function telaSemDados() {
 
 // ── CONSULTA ─────────────────────────────────────────────────────────────
 
+// Manda os dados que a InfinitePay devolveu na URL. Não é o cliente afirmando
+// que pagou: com transaction_nsu + slug o Worker consulta o payment_check e
+// confirma ele mesmo, sem depender do webhook ter chegado.
 async function consultar() {
-  if(!CFG.checkout_worker_url) return null;
+  if(!CFG.checkout_worker_url) return { erro: 'sem_worker' };
   try {
     const resp = await fetch(CFG.checkout_worker_url.replace(/\/+$/,'') + '/status', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: TIPO, doc_id: ID })
+      body: JSON.stringify({
+        tipo: TIPO,
+        doc_id: ID,
+        transaction_nsu: q.get('transaction_nsu') || null,
+        slug: q.get('slug') || q.get('invoice_slug') || null,
+        receipt_url: q.get('receipt_url') || null
+      })
     });
-    if(!resp.ok) return null;
-    return await resp.json();
-  } catch(e) { return null; }
+    const data = await resp.json().catch(() => ({}));
+    if(!resp.ok) {
+      console.warn('/status respondeu', resp.status, data?.error);
+      return { erro: data?.error || ('http_' + resp.status) };
+    }
+    return data;
+  } catch(e) {
+    console.warn('/status falhou:', e?.message || e);
+    return { erro: 'rede' };
+  }
 }
 
 (async function boot() {
