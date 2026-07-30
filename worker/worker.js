@@ -129,6 +129,7 @@ export default {
       if (rota === '/webhook') return await rotaWebhook(body, env);
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
+      if (rota === '/papel') return await rotaPapel(body, request, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
@@ -355,6 +356,78 @@ async function rotaCheckout(body, env, origem) {
   });
 
   return json({ url: data.url, valor_centavos: centavos });
+}
+
+// ── PAPÉIS (custom claims) ─────────────────────────────────────────────────
+// Entra: { email, papeis: ['admin'] | ['financeiro','loja'] | [] }.
+// Protegido pelo shared secret. Lista os papéis de um email se vier só o email.
+//
+// Custom claim NÃO se põe pelo console do Firebase — exige chamada privilegiada.
+// O Worker já tem a service account, então é o lugar natural. Sem isso, "papel"
+// seria só comentário: as rules não teriam em que se apoiar.
+//
+// ⚠️ O claim só entra no token DEPOIS de o usuário renovar a sessão. Quem já
+// está logado precisa sair e entrar de novo, ou esperar ~1h. Por isso as rules
+// têm rede de segurança por email (ver firestore.rules.pvd) — sem ela, publicar
+// as rules antes de todos renovarem tranca os três apps de uma vez.
+
+const PAPEIS_VALIDOS = ['admin', 'financeiro', 'loja'];
+
+async function rotaPapel(body, request, env) {
+  const auth = request.headers.get('X-Auth-Secret');
+  if (!env.ADMIN_SECRET || auth !== env.ADMIN_SECRET) return json({ error: 'Forbidden' }, 403);
+
+  const email = String(body?.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) return json({ error: 'email inválido' }, 400);
+
+  const token = await tokenGoogle(env, ESCOPO_AUTH);
+  const base = `https://identitytoolkit.googleapis.com/v1/projects/${PROJETO_PVD}/accounts`;
+
+  // Acha o uid pelo email
+  const lookup = await fetch(`${base}:lookup`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: [email] }),
+  });
+  const achado = await lookup.json().catch(() => ({}));
+  if (!lookup.ok) return json({ error: 'lookup falhou', detalhe: achado }, 502);
+
+  const user = achado.users?.[0];
+  if (!user) return json({ error: `nenhuma conta com o email ${email}` }, 404);
+
+  const atuais = (() => {
+    try { return JSON.parse(user.customAttributes || '{}'); } catch { return {}; }
+  })();
+
+  // Sem `papeis` no body: só consulta, não escreve.
+  if (!Array.isArray(body?.papeis)) {
+    return json({ email, uid: user.localId, papeis_atuais: atuais });
+  }
+
+  const invalidos = body.papeis.filter((p) => !PAPEIS_VALIDOS.includes(p));
+  if (invalidos.length) {
+    return json({ error: `papel inválido: ${invalidos.join(', ')}`, validos: PAPEIS_VALIDOS }, 400);
+  }
+
+  const novos = {};
+  for (const p of body.papeis) novos[p] = true;
+
+  const upd = await fetch(`${base}:update`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ localId: user.localId, customAttributes: JSON.stringify(novos) }),
+  });
+  const res = await upd.json().catch(() => ({}));
+  if (!upd.ok) return json({ error: 'não consegui gravar o papel', detalhe: res }, 502);
+
+  return json({
+    ok: true,
+    email,
+    uid: user.localId,
+    antes: atuais,
+    agora: novos,
+    aviso: 'só vale no token depois de sair e entrar de novo em cada app',
+  });
 }
 
 // ── LOTE DE MENSALIDADE ────────────────────────────────────────────────────
@@ -858,11 +931,16 @@ function embrulha(v) {
 // ── OAUTH GOOGLE (service account) ─────────────────────────────────────────
 // JWT assinado RS256 → access token. WebCrypto dá conta; sem dependência.
 
-let tokenCache = { valor: null, expira: 0 };
+const ESCOPO_FIRESTORE = 'https://www.googleapis.com/auth/datastore';
+const ESCOPO_AUTH = 'https://www.googleapis.com/auth/identitytoolkit';
 
-async function tokenGoogle(env) {
+// Cache por escopo: o token do Firestore e o do Identity Toolkit são diferentes.
+const tokenCache = {};
+
+async function tokenGoogle(env, escopo = ESCOPO_FIRESTORE) {
   const agora = Math.floor(Date.now() / 1000);
-  if (tokenCache.valor && tokenCache.expira - 60 > agora) return tokenCache.valor;
+  const cache = tokenCache[escopo];
+  if (cache?.valor && cache.expira - 60 > agora) return cache.valor;
 
   if (!env.GCP_SA_EMAIL || !env.GCP_SA_KEY) {
     throw new Error('GCP_SA_EMAIL / GCP_SA_KEY não configurados no Worker');
@@ -870,7 +948,7 @@ async function tokenGoogle(env) {
 
   const claim = {
     iss: env.GCP_SA_EMAIL,
-    scope: 'https://www.googleapis.com/auth/datastore',
+    scope: escopo,
     aud: 'https://oauth2.googleapis.com/token',
     iat: agora,
     exp: agora + 3600,
@@ -896,8 +974,8 @@ async function tokenGoogle(env) {
     throw new Error(`OAuth Google falhou: ${resp.status} ${JSON.stringify(data)}`);
   }
 
-  tokenCache = { valor: data.access_token, expira: agora + (data.expires_in || 3600) };
-  return tokenCache.valor;
+  tokenCache[escopo] = { valor: data.access_token, expira: agora + (data.expires_in || 3600) };
+  return data.access_token;
 }
 
 async function importaChave(pem) {

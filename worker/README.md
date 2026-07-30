@@ -249,3 +249,42 @@ Dia 1 às 9h UTC = **6h de Brasília**. O cron da Cloudflare é sempre UTC.
 Data e ciclo saem de `America/Sao_Paulo`, não de UTC. Das 21h de Brasília em
 diante o UTC já virou o dia seguinte — sem isso a multa cairia algumas horas
 antes da hora, e a promo de produto venceria um dia mais cedo.
+
+---
+
+## Papéis (custom claims)
+
+Custom claim **não se põe pelo console do Firebase** — exige chamada
+privilegiada. O Worker tem a service account, então tem uma rota pra isso.
+
+```bash
+# consultar os papéis de uma conta (não escreve)
+curl -X POST https://terreiro-email.hunter-soares-c.workers.dev/papel \
+  -H "Content-Type: application/json" -H "X-Auth-Secret: SEU_SECRET" \
+  -d '{"email":"hunter.soares.c@gmail.com"}'
+
+# gravar
+... -d '{"email":"hunter.soares.c@gmail.com","papeis":["admin"]}'
+... -d '{"email":"loja@terreirodocandieiro.com.br","papeis":["loja"]}'
+... -d '{"email":"...","papeis":[]}'      # tira todos
+```
+
+Papéis válidos: `admin`, `financeiro`, `loja`. `admin` inclui os outros dois.
+
+### ⚠️ O claim só vale depois de renovar a sessão
+
+Ele entra no ID token na próxima renovação — quem já está logado precisa **sair e
+entrar de novo** (ou esperar ~1h). Por isso as rules têm rede de segurança por
+email: sem ela, publicar as rules novas antes de todos renovarem trancaria admin,
+financeiro e PDV de uma vez.
+
+### Ordem segura
+
+1. Deploy do Worker (rota `/papel` passa a existir)
+2. Grava `admin` nas duas contas de hoje
+3. Confere com o GET (`{"email":"..."}` sem `papeis`)
+4. Publica `firestore.rules.pvd`
+5. Sai e entra de novo em admin, financeiro e PDV
+6. Só então cria conta nova (ex: `loja`) — nunca antes do passo 4
+
+A rede de email nas rules pode sair quando o passo 3 confirmar as duas contas.
