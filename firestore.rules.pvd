@@ -149,6 +149,22 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Alunos de produto recorrente: só GET, nunca LIST.
+    //
+    // O modo "Já sou aluno" do vendas.html busca vendas_alunos/{produto}__{email}
+    // pra não fazer o aluno antigo refazer o cadastro. Sem esta regra ele caía
+    // em permission-denied e a busca só mostrava erro.
+    //
+    // `get` e `list` são permissões diferentes, e a diferença é o que segura
+    // isto de pé: pra ler um doc é preciso JÁ SABER o email (ele está no id), e
+    // a resposta é só o cadastro daquela pessoa. Sem `list`, ninguém consegue
+    // varrer a collection e sair com a lista de emails e telefones dos alunos.
+    match /vendas_alunos/{id} {
+      allow get: if true;
+      allow list: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
     // Pedidos: criação pública (form), demais só admin
     match /vendas_pedidos/{id} {
       allow read: if request.auth != null;
