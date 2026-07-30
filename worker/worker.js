@@ -127,13 +127,35 @@ export default {
       if (rota === '/checkout') return await rotaCheckout(body, env, url.origin);
       if (rota === '/status') return await rotaStatus(body, env);
       if (rota === '/webhook') return await rotaWebhook(body, env);
+      if (rota === '/lote') return await rotaLote(body, request, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
       return json({ error: e?.message || 'erro interno' }, 500);
     }
   },
+
+  // Cron Trigger. Configurar no painel: o Worker → Settings → Triggers →
+  // Cron Triggers → "0 9 1 * *" (dia 1, 9h UTC = 6h de Brasília).
+  //
+  // Mesma função do botão do admin: gera o lote do ciclo atual. Se alguém já
+  // tiver rodado na mão, não duplica — o id do doc é determinístico.
+  async scheduled(event, env, ctx) {
+    const ciclo = cicloAtual();
+    console.log('cron: gerando lote de mensalidade do ciclo', ciclo);
+    const r = await gerarLoteMensalidade(ciclo, env);
+    console.log('cron: resultado', JSON.stringify(r));
+  },
 };
+
+// Data e ciclo no fuso do terreiro, não em UTC. Importa: às 21h30 de Brasília
+// o UTC já virou o dia seguinte, e a multa cairia algumas horas antes da hora.
+function hojeSP() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+function cicloAtual() {
+  return hojeSP().slice(0, 7); // YYYY-MM
+}
 
 // ── EMAIL ──────────────────────────────────────────────────────────────────
 // Igual ao que era antes. Protegido por shared secret.
@@ -252,8 +274,9 @@ async function valorEsperado(tipo, pedido, env, token) {
   });
   if (!fonte) return { erro: 'item não encontrado' };
 
-  const hoje = new Date().toISOString().slice(0, 10);
-  const centavos = precoCentavos(tipo, pedido, fonte, hoje);
+  // Data no fuso do terreiro. Em UTC, das 21h de Brasília em diante já é o dia
+  // seguinte — a promo venceria e a multa cairia antes da hora.
+  const centavos = precoCentavos(tipo, pedido, fonte, hojeSP());
   if (centavos <= 0) return { erro: 'item sem valor definido' };
 
   return { centavos, fonte };
@@ -331,6 +354,71 @@ async function rotaCheckout(body, env, origem) {
   });
 
   return json({ url: data.url, valor_centavos: centavos });
+}
+
+// ── LOTE DE MENSALIDADE ────────────────────────────────────────────────────
+// Entra: { ciclo? }. Protegido pelo mesmo shared secret do email.
+// Dois gatilhos, uma função: este endpoint (botão do admin) e o cron do dia 1.
+
+async function rotaLote(body, request, env) {
+  const auth = request.headers.get('X-Auth-Secret');
+  if (!env.ADMIN_SECRET || auth !== env.ADMIN_SECRET) return json({ error: 'Forbidden' }, 403);
+
+  const ciclo = body?.ciclo || cicloAtual();
+  if (!/^\d{4}-\d{2}$/.test(ciclo)) return json({ error: 'ciclo inválido (use YYYY-MM)' }, 400);
+
+  return json(await gerarLoteMensalidade(ciclo, env));
+}
+
+/**
+ * Cria um pedido de mensalidade por filho pagante do ciclo.
+ *
+ * **Idempotente por construção**: o id é `{filho_id}__{ciclo}` e a criação usa
+ * POST com documentId, que devolve 409 se já existe. Rodar duas vezes não
+ * duplica nem sobrescreve — e não sobrescrever importa, porque quem já pagou
+ * não pode voltar pra 'aberto'.
+ *
+ * O pedido nasce SEM valor. Valor e vencimento derivam de fin_filhos na hora de
+ * pagar, e é isso que faz mudar o cadastro no meio do mês funcionar sem regerar
+ * o lote (MENSALIDADE.md seção 7).
+ */
+async function gerarLoteMensalidade(ciclo, env) {
+  const token = await tokenGoogle(env);
+  const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
+
+  const pagantes = filhos.filter((f) => {
+    const ativo = !f.status || f.status === 'ativo';
+    const valor = Number(f.valor);
+    return ativo && valor > 0; // valor 0 ou ausente = isento, não gera cobrança
+  });
+
+  let criados = 0, existentes = 0, falhas = 0;
+
+  for (const f of pagantes) {
+    const r = await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', `${f.id}__${ciclo}`, token, {
+      filho_id: f.id,
+      filho_nome: f.nome || '',
+      ciclo,
+      status: 'aberto',
+      avisou_atraso: false,
+      geradoEm: new Date().toISOString(),
+    });
+    if (r === 'criado') criados++;
+    else if (r === 'existe') existentes++;
+    else falhas++;
+  }
+
+  const resumo = {
+    ciclo,
+    filhos_lidos: filhos.length,
+    pagantes: pagantes.length,
+    isentos: filhos.length - pagantes.length,
+    criados,
+    existentes,
+    falhas,
+  };
+  console.log('lote de mensalidade', JSON.stringify(resumo));
+  return resumo;
 }
 
 // ── STATUS ─────────────────────────────────────────────────────────────────
@@ -599,6 +687,50 @@ async function fsGet(projeto, colecao, id, { token, apiKey } = {}) {
   if (!resp.ok) throw new Error(`Firestore GET ${colecao}/${id}: ${resp.status} ${await resp.text()}`);
   const doc = await resp.json();
   return desembrulha({ mapValue: { fields: doc.fields || {} } });
+}
+
+/** Lista uma collection inteira, paginando. Devolve [{id, ...campos}]. */
+async function fsList(projeto, colecao, token) {
+  const base = `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents/${colecao}`;
+  const out = [];
+  let pageToken = '';
+
+  do {
+    const url = `${base}?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!resp.ok) throw new Error(`Firestore LIST ${colecao}: ${resp.status} ${await resp.text()}`);
+    const data = await resp.json();
+    for (const d of data.documents || []) {
+      out.push({
+        id: d.name.split('/').pop(),
+        ...desembrulha({ mapValue: { fields: d.fields || {} } }),
+      });
+    }
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+
+  return out;
+}
+
+/**
+ * Cria doc com id escolhido. Devolve 'criado' | 'existe' | 'erro'.
+ *
+ * O 409 do Firestore é o que dá idempotência ao lote de graça: não precisa ler
+ * antes pra saber se já existe, e não há risco de sobrescrever quem já pagou.
+ */
+async function fsCreateComId(projeto, colecao, id, token, campos) {
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents/${colecao}` +
+    `?documentId=${encodeURIComponent(id)}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: embrulha(campos).mapValue.fields }),
+  });
+  if (resp.ok) return 'criado';
+  if (resp.status === 409) return 'existe';
+  console.error(`Firestore CREATE ${colecao}/${id}: ${resp.status} ${await resp.text()}`);
+  return 'erro';
 }
 
 // Cria doc com id automático. Usado só pelo log de webhook.

@@ -202,3 +202,45 @@ Se o `ADMIN_SECRET` vazar: muda no Cloudflare e atualiza
 
 Se o JSON da service account vazar: Firebase Console → Contas de serviço →
 apaga a chave antiga, gera outra, atualiza `GCP_SA_EMAIL` / `GCP_SA_KEY`.
+
+---
+
+## Lote de mensalidade (dia 1)
+
+Gera um pedido de mensalidade por filho pagante do ciclo. Isento (`valor: 0` ou
+campo ausente) não gera cobrança.
+
+**Idempotente por construção**: o id do doc é `{filho_id}__{ciclo}` e a criação
+usa `POST ?documentId=`, que devolve 409 se já existe. Rodar duas vezes não
+duplica nem sobrescreve — e não sobrescrever importa, porque quem já pagou não
+pode voltar pra `aberto`.
+
+Dois gatilhos, uma função:
+
+```bash
+# manual (o botão do admin chama isto)
+curl -X POST https://terreiro-email.hunter-soares-c.workers.dev/lote \
+  -H "Content-Type: application/json" \
+  -H "X-Auth-Secret: SEU_ADMIN_SECRET" \
+  -d '{"ciclo":"2026-08"}'
+```
+
+Sem `ciclo`, usa o mês atual. Resposta:
+
+```json
+{ "ciclo":"2026-08", "filhos_lidos":55, "pagantes":48,
+  "isentos":7, "criados":48, "existentes":0, "falhas":0 }
+```
+
+### Cron
+
+Precisa ser configurado no painel, não sai do código: o Worker → **Settings →
+Triggers → Cron Triggers → Add** → `0 9 1 * *`.
+
+Dia 1 às 9h UTC = **6h de Brasília**. O cron da Cloudflare é sempre UTC.
+
+### Fuso
+
+Data e ciclo saem de `America/Sao_Paulo`, não de UTC. Das 21h de Brasília em
+diante o UTC já virou o dia seguinte — sem isso a multa cairia algumas horas
+antes da hora, e a promo de produto venceria um dia mais cedo.
