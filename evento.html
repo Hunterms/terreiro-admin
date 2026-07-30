@@ -181,13 +181,13 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       <!-- Opções de pagamento -->
       <div id="pay-options">
         <div class="pay-box pay-box-pix" id="pix-box" style="display:none">
-          <div class="pay-label" id="pix-label">💸 Opção 1 · PIX (copia e cola)</div>
+          <div class="pay-label" id="pix-label">💸 PIX (copia e cola)</div>
           <div class="pay-pix-key" id="pix-key"></div>
           <div class="pay-pix-titular" id="pix-titular"></div>
           <button class="pay-pix-copy" id="pix-copy-btn">📋 Copiar chave PIX</button>
         </div>
         <div class="pay-box pay-box-card" id="card-box" style="display:none">
-          <div class="pay-label">💳 Opção 2 · Cartão de crédito</div>
+          <div class="pay-label">💳 Cartão de crédito</div>
           <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout seguro da InfinityPay — valor já preenchido.</div>
           <a id="card-link" target="_blank" rel="noopener" class="pay-card-link">🔒 Pagar no crédito</a>
         </div>
@@ -426,8 +426,11 @@ function irParaPagamento() {
   // PIX
   const ev = APP.evento;
   const valor = Number(ev.valor) || 0;
+  // Com checkout ligado, o PIX manual não entra na tela — a InfinitePay já
+  // recebe PIX. Fica montado e escondido, e só aparece se o Worker falhar
+  // (ver confirmarInscricao).
   if(APP.cfg.pix) {
-    $('#pix-box').style.display = 'block';
+    $('#pix-box').style.display = temCheckout() ? 'none' : 'block';
     $('#pix-key').textContent = APP.cfg.pix;
     $('#pix-titular').textContent = APP.cfg.pix_titular ? `Titular: ${APP.cfg.pix_titular}` : '';
     $('#pix-copy-btn').onclick = () => {
@@ -441,9 +444,8 @@ function irParaPagamento() {
   // Com checkout automático a ordem inverte: inscreve primeiro, e o próprio
   // botão leva pro pagamento. Sem ele, fica o fluxo antigo ("já paguei").
   if(temCheckout()) {
-    $('#pix-label').textContent = '💸 Outra opção · PIX (copia e cola)';
     $('#btn-confirmar').textContent = `💳 Inscrever e pagar ${fmt(valor)} →`;
-    $('#btn-confirmar-nota').innerHTML = 'Cartão em até 12x, débito ou PIX automático. Cai na hora, sem mandar comprovante.<br>Prefere PIX copia e cola? Paga acima e clica aqui pra registrar.';
+    $('#btn-confirmar-nota').innerHTML = 'Cartão em até 12x, débito ou PIX. Cai na hora, sem mandar comprovante.';
   } else if(ev.infinity_link) {
     $('#card-box').style.display = 'block';
     $('#card-link').href = ev.infinity_link;
@@ -478,18 +480,23 @@ async function confirmarInscricao() {
     });
 
     // Inscrito. Se o checkout está ligado, manda direto pro pagamento — o valor
-    // vem do Worker, que lê o evento no Firestore. Se falhar, cai no fluxo
-    // antigo (tela de sucesso + PIX manual) em vez de travar a pessoa.
+    // vem do Worker, que lê o evento no Firestore.
+    let checkoutFalhou = false;
     if(temCheckout()) {
       btn.textContent = 'Abrindo o pagamento...';
       const res = await criarCheckout(APP.cfg, 'ins', insRef.id);
       if(res) { location.href = res.url; return; }
-      // Inscrição já está registrada; segue pra tela de sucesso, que tem o
-      // WhatsApp pro comprovante do PIX.
-      toast('Checkout fora do ar — sua inscrição está registrada, paga no PIX e manda o comprovante.','err');
+      // Worker fora do ar. A inscrição JÁ existe, então o botão não volta a
+      // funcionar (clicar de novo criaria uma segunda). Em vez disso destrava
+      // o PIX manual e mostra a tela de sucesso junto, sem esconder o PIX.
+      checkoutFalhou = true;
+      if(APP.cfg.pix) $('#pix-box').style.display = 'block';
+      btn.style.display = 'none';
+      $('#btn-confirmar-nota').innerHTML = 'Checkout fora do ar — sua inscrição está registrada. Paga no PIX acima e manda o comprovante.';
+      toast('Checkout fora do ar — paga no PIX acima.','err');
     }
 
-    $('#pay-options').style.display = 'none';
+    if(!checkoutFalhou) $('#pay-options').style.display = 'none';
     $('#banner-status').style.display = 'none';
     const succ = $('#success');
     const msg = `Olá! Acabei de pagar o evento:\n\n📅 ${ev.nome}\n👤 ${f.nome}\n💰 ${fmt(valor)}\n\nSegue o comprovante.`;

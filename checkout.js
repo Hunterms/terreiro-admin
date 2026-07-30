@@ -35,11 +35,18 @@ export async function criarCheckout(cfg, tipo, docId) {
   }
 }
 
-/** Caixa azul de "pagar agora". `pos` é o número da opção mostrada ao cliente. */
-export function caixaCheckout(url, valor, pos = 1) {
+/**
+ * Caixa azul de "pagar agora".
+ *
+ * Com o checkout ligado, é a única forma de pagar mostrada: a InfinitePay
+ * também recebe PIX, então a chave copia e cola só duplicaria o caminho — e
+ * duplicaria justo o caminho que precisa de confirmação na mão. A chave PIX
+ * continua na página como fallback escondido, e só aparece se o Worker falhar.
+ */
+export function caixaCheckout(url, valor) {
   return `
     <div style="padding:18px;background:linear-gradient(135deg,rgba(52,152,219,0.14),rgba(52,152,219,0.04));border:1px solid rgba(52,152,219,0.4);border-radius:12px;margin-bottom:14px;text-align:center">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">💳 Opção ${pos} · Cartão ou PIX automático</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">💳 Cartão ou PIX</div>
       <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Checkout da InfinitePay. Cai na hora e <strong style="color:var(--text)">não precisa mandar comprovante</strong>.</div>
       <a href="${url}" style="display:inline-flex;align-items:center;gap:8px;padding:13px 24px;font-size:15px;background:#3498db;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">🔒 Pagar R$ ${Number(valor).toFixed(0)} agora</a>
       <div style="font-size:11.5px;color:var(--text3);margin-top:10px">Crédito em até 12x · débito · PIX</div>
@@ -48,10 +55,10 @@ export function caixaCheckout(url, valor, pos = 1) {
 }
 
 /** Espaço reservado enquanto o link não chega (evita a tela pular). */
-export function caixaCheckoutCarregando(pos = 1) {
+export function caixaCheckoutCarregando() {
   return `
     <div id="cx-checkout-load" style="padding:18px;background:rgba(52,152,219,0.06);border:1px dashed rgba(52,152,219,0.3);border-radius:12px;margin-bottom:14px;text-align:center">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">💳 Opção ${pos} · Cartão ou PIX automático</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">💳 Cartão ou PIX</div>
       <div style="font-size:13px;color:var(--text3)">Preparando seu checkout...</div>
     </div>
   `;
