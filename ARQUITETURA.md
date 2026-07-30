@@ -309,21 +309,30 @@ Medido: o admin grava 17 campos, o financeiro grava 6, e os dois se sobrepõem e
 `tel`, `valor`, `prazo`, `obs`. Não há perda de dado (`updateDoc` não apaga o
 resto), mas **quem salva por último ganha** e ninguém sabe disso.
 
-**Proposta**: o admin é o dono da pessoa — a tela dele é a completa. No
-financeiro, o cadastro vira leitura + link pro admin, e sobra só a edição da
-**mensalidade** (`valor`, `prazo`, `prazoObs`), que é assunto financeiro
-legítimo e é onde o Pai está quando pensa nisso.
+**Feito em 30/07** (`candieiro-financeiro` 84de254): o admin é o dono da pessoa.
+No financeiro o formulário de cadastro virou link pro admin, o modal de edição
+virou "Mensalidade" e grava só `valor`/`prazo`/`prazoObs`, e o botão de remover
+saiu (o admin já exclui). Nome, telefone e observação aparecem como contexto.
 
-Resultado: um campo, um lugar. `nome` e `tel` deixam de ter dois donos.
+Fica o que é fluxo daquele app e não formulário duplicado: trazer aluno de curso
+pra dentro da casa — a lista de alunos só existe lá.
+
+Resultado: um campo, um lugar. `nome` e `tel` deixaram de ter dois donos.
 
 ### 8.2 `adm_despensa` × `fin_estoque` — decidido
 
 **Decisão (sua, 30/07)**: a despensa fica no admin (`adm_despensa`). O painel de
 Estoque do financeiro é a versão anterior e não é mais a verdade.
 
-Falta executar: o painel lá passa a ler `adm_despensa` (leitura, com link pro
-admin) ou sai. Enquanto continuar editável, os dois números divergem em
-silêncio.
+**Feito em 30/07** (`bfd8574`), e melhor do que "tirar o painel": a divisão virou
+por papel. Quantidade, item, categoria e mínimo são do admin; `consumo`/mês e
+`custo` unitário são do financeiro, gravados **no mesmo doc** da despensa. Isso
+preservou a sugestão de compra, que seria perdida se o painel simplesmente
+saísse.
+
+Sobrou um botão "↧ Trazer do estoque antigo", que migra `consumo`/`custo` do
+`fin_estoque` casando por nome sem acento, só preenchendo o que está vazio.
+Depois de rodar uma vez, ele e o listener legado podem sair.
 
 ### 8.3 `fin_pagamentos` é escrito pelo financeiro e pelo Worker
 
@@ -428,10 +437,19 @@ páginas, com a regra de checkout num lugar só.
 
 ## 11. Ordem recomendada
 
-1. **Claims + rules por dono** (§9) — antes de qualquer conta nova
-2. **Uma despensa** (§8.2) — decisão, não código
-3. **Um cadastro de pessoa** (§8.1) — tira a duplicata de campo
-4. **Páginas públicas com um dono** (§10.4) — mata a sincronia manual
-5. **Fatiar o admin** (§10.1) — quando doer, não antes
+1. ~~Claims + rules por dono~~ (§9) — **feito** 30/07, verificado nos 3 apps
+2. ~~Uma despensa~~ (§8.2) — **feito**, com o planejamento de compra preservado
+3. ~~Um cadastro de pessoa~~ (§8.1) — **feito**
+4. ~~Páginas públicas com um dono~~ (§10.4) — **feito**, via `sync-publicas.sh`
+5. **Fatiar o admin** (§10.1) — quando doer, não antes. Único item aberto.
 
-1 a 4 não tocam em dado nenhum. O 5 é mecânico e não muda comportamento.
+Os quatro primeiros saíram num dia e nenhum tocou em dado.
+
+### Sobrou de dívida pequena, tudo já registrado
+
+- rede de segurança por email nas rules, que sai quando as claims estiverem
+  provadas em uso
+- listener de `fin_estoque` + botão de migração no financeiro, que saem depois
+  de rodar uma vez
+- dois tokens `ghp_` pra revogar (§11)
+- `SCHEMA.md` ainda promete o Fluxo C, que não existe (§C das recomendações)
