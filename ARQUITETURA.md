@@ -316,10 +316,14 @@ legítimo e é onde o Pai está quando pensa nisso.
 
 Resultado: um campo, um lugar. `nome` e `tel` deixam de ter dois donos.
 
-### 8.2 `adm_despensa` × `fin_estoque`
+### 8.2 `adm_despensa` × `fin_estoque` — decidido
 
-Já descrito em 2.1. Escolher a do admin, o financeiro passa a ler ela ou tira o
-painel. Enquanto os dois forem editáveis, divergem em silêncio.
+**Decisão (sua, 30/07)**: a despensa fica no admin (`adm_despensa`). O painel de
+Estoque do financeiro é a versão anterior e não é mais a verdade.
+
+Falta executar: o painel lá passa a ler `adm_despensa` (leitura, com link pro
+admin) ou sai. Enquanto continuar editável, os dois números divergem em
+silêncio.
 
 ### 8.3 `fin_pagamentos` é escrito pelo financeiro e pelo Worker
 
@@ -390,13 +394,34 @@ Se fatiar algum dia, o mínimo que paga: tirar o CSS pra `css/`.
 outros. O `app.js` com 3.107 linhas é o próximo a incomodar, e o corte natural é
 por painel (mensalidades, gastos, cursos, reembolsos).
 
-### 10.4 Páginas públicas — o problema não é interno, é de dono
+### 10.4 Páginas públicas — resolvido em 30/07
 
-Cada uma é um arquivo e está bom assim. O que precisa mudar é **onde elas
-moram**: hoje existem em dois repos, copiadas na mão (ver 3.1).
+**Decisão (sua)**: o **admin é a fonte**. Eu havia proposto o `site-candieiro`,
+que serve o domínio, mas mover as páginas quebraria o que já está no mundo:
 
-`site-candieiro` é o dono natural — é quem serve o domínio. O `terreiro-admin`
-para de ter cópia e passa a linkar.
+- QR code **impresso no terreiro** aponta pro `confirma-rega.html`, e a URL é
+  gerada do `location.origin` do próprio admin
+- `agendar.html`, `vendas.html` e `area-filho.html` estão cravados como link do
+  domínio em vários lugares, e circulam em conversa de WhatsApp
+
+Então o admin é dono e a cópia deixa de ser manual: **`./sync-publicas.sh`**.
+Uma lista de arquivos, um comando, e `--conferir` que só diz o que está fora
+sem escrever.
+
+Não virou GitHub Action de propósito: Action entre repos precisaria de token com
+escrita no outro repo, e token guardado é justamente o que já deu problema neste
+sistema (dois `ghp_` em texto puro em URL de remote).
+
+**Duas classes de página pública**, descobertas ao escrever o script — e a
+distinção estava só na cabeça de quem fez:
+
+| Classe | Onde | Quais |
+|---|---|---|
+| do domínio | `terreirodocandieiro.com.br` | agendar, vendas, evento, area-filho, disponibilidade, reembolso, pago, checkout.js |
+| só do admin | `hunterms.github.io/terreiro-admin` | `confirma-rega.html` (QR do terreiro), `despensa.html` (gerente) |
+
+As de baixo dão **404 no domínio**, e isso é correto, não falta de sync. Está
+comentado no script pra ninguém "consertar" isso.
 
 `checkout.js` já é o exemplo do caminho certo: um arquivo, importado por 4
 páginas, com a regra de checkout num lugar só.
