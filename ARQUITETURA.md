@@ -279,3 +279,134 @@ Registrado porque o impulso natural é o contrário:
 
 A ordem A → B → C → D resolve o que de fato machucou hoje. E, ex-C, nenhuma delas
 mexe em dado nenhum.
+
+---
+
+# Parte II — Organização: fronteira entre apps, e por dentro de cada um
+
+Escrito em 30/07 depois da revisão acima, a pedido: deixar cada app com sua
+governança clara, e mais limpo por dentro.
+
+## 8. Fronteira: um dono por collection
+
+Hoje o prefixo diz onde a collection **nasceu**. A proposta é ele passar a dizer
+quem **manda**: um app escreve, os outros leem.
+
+| Domínio | Dono (escreve) | Collections |
+|---|---|---|
+| Pessoas e vida da casa | **Admin** | `fin_filhos`, `adm_funcoes`, `adm_escalas`, `adm_disponibilidade`, `adm_kanban`, `adm_perguntas`, `adm_respostas`, `adm_avisos`, `adm_rega_diaria`, `adm_despensa`, `eventos` |
+| Agenda do Pai | **Admin** | `adm_atendimentos`, `adm_consulentes`, `adm_servicos`, `adm_solicitacoes`, `pub_slots_ocupados` |
+| Venda online | **Admin** | `vendas_produtos` · (`vendas_pedidos` nasce do público) |
+| Dinheiro da casa | **Financeiro** | `fin_gastos*`, `fin_dividas`, `fin_doacoes`, `fin_sonhos`, `fin_cursos*`, `fin_eventos`, `fin_reembolsos`, `fin_pagamentos` |
+| Loja física | **PDV** | `products`, `sales`, `eventos_caixa`, `pdv_repasses` |
+| Pagamento confirmado | **Worker** | tudo que marca pago: `pago_automatico` e afins, `fin_mensalidade_pedidos`, e o flip de `fin_pagamentos` |
+
+Três conflitos reais pra resolver, em ordem de dano:
+
+### 8.1 `fin_filhos` tem duas telas de cadastro
+
+Medido: o admin grava 17 campos, o financeiro grava 6, e os dois se sobrepõem em
+`tel`, `valor`, `prazo`, `obs`. Não há perda de dado (`updateDoc` não apaga o
+resto), mas **quem salva por último ganha** e ninguém sabe disso.
+
+**Proposta**: o admin é o dono da pessoa — a tela dele é a completa. No
+financeiro, o cadastro vira leitura + link pro admin, e sobra só a edição da
+**mensalidade** (`valor`, `prazo`, `prazoObs`), que é assunto financeiro
+legítimo e é onde o Pai está quando pensa nisso.
+
+Resultado: um campo, um lugar. `nome` e `tel` deixam de ter dois donos.
+
+### 8.2 `adm_despensa` × `fin_estoque`
+
+Já descrito em 2.1. Escolher a do admin, o financeiro passa a ler ela ou tira o
+painel. Enquanto os dois forem editáveis, divergem em silêncio.
+
+### 8.3 `fin_pagamentos` é escrito pelo financeiro e pelo Worker
+
+Este **não é conflito** e deve ficar: os dois escrevem a mesma intenção ("este
+filho pagou este mês"), um por confirmação automática e outro pela mão do Pai. É
+a saída manual que decidimos preservar. Registrado aqui pra não parecer
+esquecimento na próxima leitura.
+
+## 9. As rules param de documentar e passam a impor
+
+A tabela acima só é governança se o banco recusar o que ela proíbe. Hoje ele
+aceita tudo de qualquer conta autenticada.
+
+```js
+function ehAdmin()      { return request.auth.token.admin == true; }
+function ehFinanceiro() { return request.auth.token.financeiro == true || ehAdmin(); }
+function ehLoja()       { return request.auth.token.loja == true || ehAdmin(); }
+
+match /fin_gastos/{id}   { allow read: if isAuth(); allow write: if ehFinanceiro(); }
+match /sales/{id}        { allow read: if isAuth(); allow write: if ehLoja(); }
+match /fin_filhos/{id}   { allow write: if ehAdmin(); }   // financeiro edita mensalidade
+                                                          // por tela própria, ver 8.1
+```
+
+Custa: uma custom claim por conta (são 2 hoje) e ~30 linhas de rules. Compra: o
+plano de dar login pro filho deixa de ser bomba armada, e a conta da loja no
+tablet não alcança a contabilidade.
+
+**Ordem importa**: fazer isso ANTES de criar conta nova pra qualquer pessoa.
+
+## 10. Por dentro de cada app
+
+Ordenado por dor real, não por tamanho.
+
+### 10.1 Admin — 8.305 linhas num arquivo
+
+O único que dói. A boa notícia: **ele já está organizado por dentro**, só não
+está separado. A sidebar tem 6 grupos e o router é um `switch` de 24 casos.
+
+Corte que segue a estrutura que já existe, em vez de inventar uma:
+
+```
+index.html          marcação, sidebar, router
+css/main.css
+js/base.js          estado S, firebase, helpers, toast, modal
+js/pessoas.js       filhos, funções, controle-disp, rega
+js/operacao.js      kanban, calendário, escalas, despensa
+js/agenda.js        atendimentos, solicitações, consulentes, serviços
+js/vendas.js        produtos, pedidos
+js/comunicacao.js   avisos, lembretes, perguntas, inteligência
+```
+
+Mesmo padrão que o financeiro já usa (`firebase.js` expõe no `window` e injeta o
+resto), então não inventa mecanismo novo — copia um que já roda em produção.
+
+**Quando**: no dia em que duas pessoas mexerem no admin, ou na próxima vez que
+alguém precisar achar algo e não achar. Não antes: o arquivo funciona.
+
+### 10.2 PDV — 2.357 linhas num arquivo
+
+Não dói. Um app, uma tela, uma pessoa mexe. **Não fatiar.**
+
+Se fatiar algum dia, o mínimo que paga: tirar o CSS pra `css/`.
+
+### 10.3 Financeiro — já resolvido
+
+`index.html` + `js/app.js` + `js/firebase.js` + `css/main.css`. É o modelo pros
+outros. O `app.js` com 3.107 linhas é o próximo a incomodar, e o corte natural é
+por painel (mensalidades, gastos, cursos, reembolsos).
+
+### 10.4 Páginas públicas — o problema não é interno, é de dono
+
+Cada uma é um arquivo e está bom assim. O que precisa mudar é **onde elas
+moram**: hoje existem em dois repos, copiadas na mão (ver 3.1).
+
+`site-candieiro` é o dono natural — é quem serve o domínio. O `terreiro-admin`
+para de ter cópia e passa a linkar.
+
+`checkout.js` já é o exemplo do caminho certo: um arquivo, importado por 4
+páginas, com a regra de checkout num lugar só.
+
+## 11. Ordem recomendada
+
+1. **Claims + rules por dono** (§9) — antes de qualquer conta nova
+2. **Uma despensa** (§8.2) — decisão, não código
+3. **Um cadastro de pessoa** (§8.1) — tira a duplicata de campo
+4. **Páginas públicas com um dono** (§10.4) — mata a sincronia manual
+5. **Fatiar o admin** (§10.1) — quando doer, não antes
+
+1 a 4 não tocam em dado nenhum. O 5 é mecânico e não muda comportamento.
