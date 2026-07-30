@@ -87,9 +87,12 @@ const db = getFirestore(initializeApp({
   appId: "1:365180068240:web:7b2fe25ca670781f585315"
 }));
 
-const q = new URLSearchParams(location.search);
+// A redirect_url já vai com ?tipo=&id=, e a InfinitePay anexa os parâmetros
+// dela em cima. Se ela usar "?" em vez de "&", o id vem colado com o resto e
+// nada é legível. Troca todo "?" extra por "&" antes de parsear.
+const q = new URLSearchParams(location.search.replace(/^\?/, '').replace(/\?/g, '&'));
 const TIPO = q.get('tipo');
-const ID = q.get('id');
+const ID = (q.get('id') || '').match(/^[A-Za-z0-9_-]{1,64}$/) ? q.get('id') : null;
 const WHATSAPP_FALLBACK = '5519992494267';
 
 const $ = s => document.querySelector(s);
