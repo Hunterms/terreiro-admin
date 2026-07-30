@@ -67,6 +67,38 @@ service cloud.firestore {
     match /eventos_caixa/{id} { allow write: if ehLoja(); }
     match /pdv_repasses/{id}  { allow write: if ehLoja(); }
 
+    // ── O FINANCEIRO ENCOSTA EM TRÊS COISAS QUE NÃO SÃO DELE ──────────────
+    // Depois das mudanças de 30/07, o app do financeiro escreve em collections
+    // cujo dono é o admin. Hoje funciona porque as duas contas existentes são
+    // admin — mas uma conta com papel só `financeiro` ficaria quebrada, e sem
+    // estas regras a tabela de donos seria mentira.
+    //
+    // A permissão é por CAMPO, não por collection: cada uma libera exatamente
+    // o que a tela daquele app edita, e nada além. Se alguém mandar um campo a
+    // mais no mesmo update, o Firestore recusa o update inteiro.
+
+    // mensalidade do filho — a pessoa continua sendo do admin
+    match /fin_filhos/{id} {
+      allow update: if ehFinanceiro() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['valor', 'prazo', 'prazoObs']);
+    }
+
+    // planejamento de compra — a despensa continua sendo do admin
+    match /adm_despensa/{id} {
+      allow update: if ehFinanceiro() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['consumo', 'custo']);
+    }
+
+    // "avisou do atraso" tira o acréscimo — decisão de cobrança, do financeiro.
+    // O resto do doc é do Worker, que escreve por service account.
+    match /fin_mensalidade_pedidos/{id} {
+      allow update: if ehFinanceiro() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['avisou_atraso']);
+    }
+
     // ── Campos de pagamento: só o Worker escreve ──────────────────────────
     // O Worker usa a service account, que ignora estas rules. Então basta
     // barrar o público de já criar o doc com esses campos preenchidos.
@@ -267,8 +299,13 @@ service cloud.firestore {
     // O filho paga pela area-filho.html, que chama o Worker; o Worker escreve
     // com service account e ignora estas rules. Ninguém precisa de acesso
     // público a esta collection.
+    // Escrita é do admin e do Worker (que ignora rules). O financeiro tem uma
+    // permissão POR CAMPO mais abaixo, só pro `avisou_atraso` — se aqui
+    // estivesse `write: if request.auth != null`, aquela regra seria decorativa,
+    // porque permissões de blocos diferentes se somam.
     match /fin_mensalidade_pedidos/{id} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if ehAdmin();
     }
 
     // Rega diária: leitura + write público (QR-based / trust-based)
