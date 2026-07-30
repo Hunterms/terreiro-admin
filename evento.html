@@ -181,7 +181,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       <!-- Opções de pagamento -->
       <div id="pay-options">
         <div class="pay-box pay-box-pix" id="pix-box" style="display:none">
-          <div class="pay-label">💸 Opção 1 · PIX (copia e cola)</div>
+          <div class="pay-label" id="pix-label">💸 Opção 1 · PIX (copia e cola)</div>
           <div class="pay-pix-key" id="pix-key"></div>
           <div class="pay-pix-titular" id="pix-titular"></div>
           <button class="pay-pix-copy" id="pix-copy-btn">📋 Copiar chave PIX</button>
@@ -194,7 +194,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
         <div style="margin-top:14px">
           <button class="btn btn-primary" id="btn-confirmar">✅ Já paguei (registrar)</button>
-          <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.45;text-align:center">Clica aqui depois de pagar pra avisar o admin. Confirmação é manual via extrato.</div>
+          <div id="btn-confirmar-nota" style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.45;text-align:center">Clica aqui depois de pagar pra avisar o admin. Confirmação é manual via extrato.</div>
         </div>
       </div>
 
@@ -224,6 +224,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import { criarCheckout } from "./checkout.js";
 
 const cfgPvd = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -437,13 +438,23 @@ function irParaPagamento() {
       }).catch(() => alert('Chave PIX: '+APP.cfg.pix));
     };
   }
-  if(ev.infinity_link) {
+  // Com checkout automático a ordem inverte: inscreve primeiro, e o próprio
+  // botão leva pro pagamento. Sem ele, fica o fluxo antigo ("já paguei").
+  if(temCheckout()) {
+    $('#pix-label').textContent = '💸 Outra opção · PIX (copia e cola)';
+    $('#btn-confirmar').textContent = `💳 Inscrever e pagar ${fmt(valor)} →`;
+    $('#btn-confirmar-nota').innerHTML = 'Cartão em até 12x, débito ou PIX automático. Cai na hora, sem mandar comprovante.<br>Prefere PIX copia e cola? Paga acima e clica aqui pra registrar.';
+  } else if(ev.infinity_link) {
     $('#card-box').style.display = 'block';
     $('#card-link').href = ev.infinity_link;
     $('#card-link').innerHTML = `🔒 Pagar ${fmt(valor)} no crédito`;
   }
 
   $('#btn-confirmar').onclick = confirmarInscricao;
+}
+
+function temCheckout() {
+  return !!(APP.cfg?.checkout_ativo && APP.cfg?.checkout_worker_url);
 }
 
 async function confirmarInscricao() {
@@ -453,7 +464,7 @@ async function confirmarInscricao() {
   btn.disabled = true; btn.textContent = 'Registrando...';
   try {
     const valor = Number(ev.valor) || 0;
-    await addDoc(collection(dbPvd,'evento_inscricoes'), {
+    const insRef = await addDoc(collection(dbPvd,'evento_inscricoes'), {
       evento_id: ev.id,
       evento_nome: ev.nome || ev.titulo || 'Evento',
       evento_data: ev.data || null,
@@ -465,6 +476,19 @@ async function confirmarInscricao() {
       origem: 'evento_publico',
       criadoEm: serverTimestamp()
     });
+
+    // Inscrito. Se o checkout está ligado, manda direto pro pagamento — o valor
+    // vem do Worker, que lê o evento no Firestore. Se falhar, cai no fluxo
+    // antigo (tela de sucesso + PIX manual) em vez de travar a pessoa.
+    if(temCheckout()) {
+      btn.textContent = 'Abrindo o pagamento...';
+      const res = await criarCheckout(APP.cfg, 'ins', insRef.id);
+      if(res) { location.href = res.url; return; }
+      // Inscrição já está registrada; segue pra tela de sucesso, que tem o
+      // WhatsApp pro comprovante do PIX.
+      toast('Checkout fora do ar — sua inscrição está registrada, paga no PIX e manda o comprovante.','err');
+    }
+
     $('#pay-options').style.display = 'none';
     $('#banner-status').style.display = 'none';
     const succ = $('#success');

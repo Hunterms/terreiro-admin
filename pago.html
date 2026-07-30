@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pagamento recebido · Terreiro do Candieiro</title>
+<meta name="robots" content="noindex"/>
+<link rel="icon" type="image/png" href="logocandieiro.png"/>
+<link rel="apple-touch-icon" href="logocandieiro.png"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d0d;
+  --glass:rgba(255,255,255,0.04);
+  --glass2:rgba(255,255,255,0.08);
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.15);
+  --gold:#d4a843;
+  --green:#2ecc71;
+  --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
+  --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --rad:10px;--radlg:14px;
+}
+html,body{background:var(--bg);min-height:100vh}
+body{
+  font-family:var(--font);color:var(--text);min-height:100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%,rgba(46,204,113,0.08) 0%,transparent 60%),
+    radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.05) 0%,transparent 50%);
+  display:flex;align-items:center;justify-content:center;padding:24px 16px;
+}
+.container{max-width:480px;width:100%}
+header{text-align:center;margin-bottom:24px}
+h1{font-size:24px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
+.subtitle{font-size:12px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:28px 24px;text-align:center}
+.sucesso-icon{width:76px;height:76px;color:var(--green);margin:0 auto 16px;display:block}
+.sucesso-titulo{font-size:22px;font-weight:700;color:var(--green);margin-bottom:10px}
+.sucesso-msg{font-size:15px;color:var(--text2);line-height:1.6}
+.metodo{display:inline-block;margin:16px 0 4px;padding:7px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:999px;font-size:12.5px;font-weight:700;color:var(--green);letter-spacing:.04em}
+.linha{margin-top:20px;padding-top:18px;border-top:1px solid var(--border)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:15px 20px;border-radius:var(--rad);border:none;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font);width:100%;text-decoration:none;letter-spacing:.02em}
+.btn-recibo{background:var(--glass2);border:1px solid var(--border2);color:var(--text)}
+.btn-whats{background:linear-gradient(135deg,#25d366 0%,#1da851 100%);color:#fff;margin-top:10px}
+.aviso{font-size:12.5px;color:var(--text3);margin-top:16px;line-height:1.5}
+footer{text-align:center;margin-top:22px;color:var(--text3);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <img src="logocandieiro.png" alt="Candieiro" style="width:80px;height:80px;object-fit:contain;margin:0 auto 14px;display:block"/>
+    <h1>Pagamento recebido</h1>
+    <div class="subtitle">Terreiro do Candieiro</div>
+  </header>
+
+  <div class="card">
+    <svg class="sucesso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+    <div class="sucesso-titulo">Tudo certo!</div>
+    <div class="sucesso-msg">
+      Seu pagamento foi processado e <strong style="color:var(--text)">já entrou no sistema do terreiro</strong>.
+      Não precisa mandar comprovante.
+    </div>
+    <div id="metodo-box"></div>
+
+    <div class="linha">
+      <a id="btn-recibo" class="btn btn-recibo" style="display:none" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Ver comprovante
+      </a>
+      <a id="btn-whats" class="btn btn-whats" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23z"/></svg>
+        Falar com o terreiro
+      </a>
+    </div>
+
+    <div class="aviso">
+      Qualquer dúvida, chama no WhatsApp. Guarde o comprovante da InfinitePay.
+    </div>
+  </div>
+
+  <footer>Terreiro do Candieiro · Barão Geraldo, Campinas-SP</footer>
+</div>
+
+<script>
+// Só cosmético: os parâmetros vêm da URL de retorno da InfinitePay, então não
+// servem de prova de nada. Quem decide se o pedido está pago é o webhook do
+// Worker, que confere no payment_check antes de escrever no Firestore.
+const q = new URLSearchParams(location.search);
+const WHATSAPP = '5519992494267';
+
+const metodo = q.get('capture_method');
+if (metodo) {
+  document.getElementById('metodo-box').innerHTML =
+    '<div class="metodo">' + (metodo === 'pix' ? '⚡ pago no PIX' : '💳 pago no cartão') + '</div>';
+}
+
+const recibo = q.get('receipt_url');
+if (recibo && /^https:\/\//.test(recibo)) {
+  const b = document.getElementById('btn-recibo');
+  b.href = recibo;
+  b.style.display = 'flex';
+}
+
+document.getElementById('btn-whats').href =
+  'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent('Olá! Acabei de pagar pelo site.');
+</script>
+
+</body>
+</html>

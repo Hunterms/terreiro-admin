@@ -2282,6 +2282,8 @@ async function abrirPagamentosEvento(eventoId) {
             <div class="li-meta">
               <span style="font-weight:700;color:var(--gold)">R$ ${(Number(insc.valor)||0).toFixed(2).replace('.',',')}</span>
               ${stChip}
+              ${chipPagoAuto(insc)}
+              ${chipPagoSuspeito(insc)}
               ${insc.metodo?`<span class="chip">${insc.metodo}</span>`:''}
               ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
               ${insc.tel?`<span style="color:var(--text3)">📱 ${insc.tel}</span>`:''}
@@ -5946,10 +5948,31 @@ function atualizarBadgeSolicitacoes() {
 const METODO_PAG_LABEL = {
   pix: '💳 PIX',
   dinheiro: '💵 Dinheiro (no dia)',
+  cartao: '💳 Cartão',
   cartao_credito: '💳 Crédito',
   cartao_debito: '💳 Débito',
   transferencia: '🏦 Transferência'
 };
+
+// Pagamento que entrou pelo checkout da InfinitePay: confirmado pelo Worker
+// (payment_check + valor conferido), não por alguém olhando o extrato.
+// `d` é o doc da solicitação, pedido ou inscrição.
+function chipPagoAuto(d) {
+  if(!d?.pago_automatico) return '';
+  const parcelas = Number(d.pagamento_parcelas) || 1;
+  const valor = (Number(d.pagamento_centavos) || 0) / 100;
+  const recibo = d.pagamento_recibo_url
+    ? ` <a href="${d.pagamento_recibo_url}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">recibo ↗</a>`
+    : '';
+  return `<span class="chip chip-green" title="Confirmado pela InfinitePay, valor conferido pelo Worker">⚡ pago automático${valor?` · R$ ${valor.toFixed(0)}`:''}${parcelas>1?` · ${parcelas}x`:''}</span>${recibo}`;
+}
+
+// Divergência de valor pega pelo Worker: pagou menos do que o pedido vale.
+// Não marca pago, e grava o motivo pra aparecer aqui.
+function chipPagoSuspeito(d) {
+  if(!d?.pagamento_suspeito) return '';
+  return `<span class="chip chip-red" title="${d.pagamento_suspeito}">⚠ pagamento com valor divergente — confere na InfinitePay</span>`;
+}
 
 function telLimpoBR(tel) {
   if(!tel) return '';
@@ -6026,7 +6049,9 @@ function renderSolicitacoes(c) {
               </div>
               <div class="li-meta" style="margin-top:6px">
                 ${metPag?`<span>${metPag}</span>`:''}
-                ${s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
+                ${chipPagoAuto(s)}
+                ${chipPagoSuspeito(s)}
+                ${!s.pago_automatico && s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
               </div>
               ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${s.observacao}"</div>`:''}
@@ -6270,9 +6295,9 @@ function openServicoForm(id=null) {
         </div>
       </div>
       <div class="fi-group">
-        <label>Link InfinityPay (cartão de crédito/débito)</label>
+        <label>Link InfinitePay fixo <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">— legado</span></label>
         <input class="fi" id="sv-infinity" value="${s?.infinity_link||''}" placeholder="ex: https://link.infinitepay.io/candieiro/XXXXXX-150,00"/>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Crie o link de pagamento na <strong>InfinityPay app</strong> com o valor exato desse serviço e cole a URL aqui. Vazio = botão de cartão não aparece pro cliente.</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Só entra em cena se o <strong>checkout automático estiver desligado</strong> (Config do agendamento). Com ele ligado, o link é gerado na hora com o valor certo e este campo é ignorado.</div>
       </div>
       <div class="row-2">
         <div class="fi-group"><label>Ordem na lista</label><input type="number" class="fi" id="sv-ord" value="${s?.ordem||(S.servicos.length+1)}"/></div>
@@ -6998,8 +7023,10 @@ function renderPedidos(c) {
                 ${p.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
                 ${p.parcela_num && p.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 parcela ${p.parcela_num}/${p.parcelas_total}</span>`:''}
                 ${p.promo_aplicada?`<span class="chip chip-green" style="font-size:10px">${p.promo_label||'promo'}</span>`:''}
-                ${p.metodo_pagamento?`<span>${p.metodo_pagamento}</span>`:''}
-                ${p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
+                ${p.metodo_pagamento?`<span>${METODO_PAG_LABEL[p.metodo_pagamento]||p.metodo_pagamento}</span>`:''}
+                ${chipPagoAuto(p)}
+                ${chipPagoSuspeito(p)}
+                ${!p.pago_automatico && p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
               </div>
               <div class="li-meta" style="margin-top:4px">
                 ${p.tel?`<span>📱 ${p.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
@@ -7661,8 +7688,25 @@ async function renderConfigAgendamento(c) {
         <div class="fi-group"><label>Chave PIX do terreiro</label><input class="fi" id="cf-pix" value="${cfg.pix||''}" placeholder="ex: 19992494267 ou candieiro@email.com"/></div>
         <div class="fi-group"><label>Titular do PIX</label><input class="fi" id="cf-pix-titular" value="${cfg.pix_titular||''}" placeholder="ex: Fernando Soares"/></div>
       </div>
-      <div style="padding:12px 14px;background:rgba(52,152,219,0.06);border:1px solid rgba(52,152,219,0.2);border-radius:10px;font-size:12.5px;color:var(--text2);line-height:1.55">
-        💳 <strong>Pagamento com cartão (InfinityPay)</strong>: cada serviço e cada produto agora tem campo próprio pra colar o link da InfinityPay (já que cada link tem ID gerado por eles + valor fixo). Crie o link no app da InfinityPay com o valor exato e cole no formulário do serviço/produto.
+      <div style="padding:14px;background:rgba(52,152,219,0.06);border:1px solid rgba(52,152,219,0.25);border-radius:10px;margin-bottom:14px">
+        <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">💳 Checkout automático (InfinitePay)</div>
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-bottom:12px">
+          Ligado, o cliente paga na hora (cartão em 12x, débito ou PIX) e o pedido já entra como <strong>pago</strong> sozinho — sem conferir extrato, sem receber print. O valor é calculado pelo Worker lendo o preço do Firestore, então ninguém consegue pagar menos mexendo na página.<br>
+          Desligado, volta pro PIX manual + link fixo por serviço/produto.
+        </div>
+        <div class="fi-group">
+          <label class="checkbox-row">
+            <input type="checkbox" id="cf-ck-ativo" ${cfg.checkout_ativo?'checked':''}/>
+            Checkout automático ligado
+          </label>
+        </div>
+        <div class="fi-group">
+          <label>URL do Worker</label>
+          <input class="fi" id="cf-ck-url" value="${cfg.checkout_worker_url||''}" placeholder="https://terreiro-email.SEU-SUBDOMINIO.workers.dev"/>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:4px">É o mesmo Worker do email. Antes de ligar, faz o deploy da versão nova (<code>worker/worker.js</code>) e configura <code>INFINITEPAY_HANDLE</code>, <code>GCP_SA_EMAIL</code> e <code>GCP_SA_KEY</code> — passo a passo em <code>worker/README.md</code>.</div>
+        </div>
+        <button class="btn btn-sm" id="cf-ck-teste" type="button">🔍 Testar conexão</button>
+        <span id="cf-ck-status" style="font-size:12px;margin-left:10px;color:var(--text3)"></span>
       </div>
       <div class="fi-group"><label>Texto de introdução (substitui o default)</label><textarea class="fi" id="cf-intro" placeholder="Atendimentos individuais com Pai Nando...">${cfg.texto_intro||''}</textarea></div>
     </div>
@@ -7748,6 +7792,45 @@ async function renderConfigAgendamento(c) {
     });
   };
 
+  // Smoke test do checkout: manda um doc_id que não existe. Se o Worker
+  // responder "pedido não encontrado", é porque a rota existe, o handle está
+  // setado e a service account conseguiu falar com o Firestore. Qualquer outro
+  // erro entrega qual peça está faltando.
+  $('#cf-ck-teste').onclick = async () => {
+    const url = $('#cf-ck-url').value.trim().replace(/\/+$/,'');
+    const st = $('#cf-ck-status');
+    if(!url) { st.style.color = 'var(--red)'; st.textContent = 'Preenche a URL do Worker primeiro.'; return; }
+    st.style.color = 'var(--text3)'; st.textContent = 'Testando...';
+    try {
+      const resp = await fetch(url + '/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: 'ped', doc_id: 'testeDeConexao000' })
+      });
+      const data = await resp.json().catch(() => ({}));
+      const erro = data?.error || '';
+      if(resp.status === 404 && /não encontrado/.test(erro)) {
+        st.style.color = 'var(--green)';
+        st.textContent = '✓ Worker respondendo, Firestore e handle OK. Pode ligar.';
+      } else if(/INFINITEPAY_HANDLE/.test(erro)) {
+        st.style.color = 'var(--red)';
+        st.textContent = '✗ Falta a variável INFINITEPAY_HANDLE no Worker (valor: pai-nando).';
+      } else if(/GCP_SA/.test(erro)) {
+        st.style.color = 'var(--red)';
+        st.textContent = '✗ Falta GCP_SA_EMAIL / GCP_SA_KEY no Worker (chave da service account).';
+      } else if(/OAuth/.test(erro)) {
+        st.style.color = 'var(--red)';
+        st.textContent = '✗ A service account foi rejeitada pelo Google. Confere se a chave privada foi colada inteira.';
+      } else {
+        st.style.color = 'var(--amber)';
+        st.textContent = `? Resposta inesperada (${resp.status}): ${erro || 'sem detalhe'}`;
+      }
+    } catch(e) {
+      st.style.color = 'var(--red)';
+      st.textContent = '✗ Não alcancei o Worker. Confere a URL e se o deploy foi feito.';
+    }
+  };
+
   $('#cf-save').onclick = async () => {
     // Lê janelas atuais do DOM
     const horarios_semana = {};
@@ -7766,6 +7849,8 @@ async function renderConfigAgendamento(c) {
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       pix: $('#cf-pix').value.trim() || null,
       pix_titular: $('#cf-pix-titular').value.trim() || null,
+      checkout_ativo: $('#cf-ck-ativo').checked,
+      checkout_worker_url: $('#cf-ck-url').value.trim().replace(/\/+$/,'') || null,
       texto_intro: $('#cf-intro').value.trim() || null,
       horarios_semana,
       atualizadoEm: serverTimestamp()
