@@ -238,14 +238,55 @@ a mandar o link, e o `prazo` diz quando.
 
 ---
 
-## 10. Risco aberto: o financeiro não tem controle de versão
+## 10. Risco aberto: a produção do financeiro está 2 meses atrás do repo dele
 
-`financeiro.terreirodocandieiro.com.br` está na **Netlify**, e o
-`candieiro-simples` local **não é repo git** — sem remote, sem histórico, e não
-existe repo com esse nome em nenhuma das contas. O arquivo local é byte a byte
-igual ao que está no ar (249.923 bytes).
+O financeiro **é versionado**: `Hunterms/candieiro-financeiro` (privado), 3
+commits, modular desde 11/04 (`index.html` + `js/app.js` + `css/main.css`).
+Repo em `~/Desktop/Docs/candieiro-financeiro`.
 
-Ou seja: hoje mexer no financeiro é editar um arquivo sem volta possível. É um
-app que mexe com dinheiro, e a fase 5 mexe justamente nele.
+O problema é outro: **a Netlify não está conectada ao repo**. O que está no ar é
+o monolito da linhagem antiga (250 KB num arquivo, sha `f120b877ce75bf0d`), que
+sobrevive em `~/Desktop/Docs/candieiro-simples` e é de onde os deploys manuais
+saíam.
 
-`git init` + repo antes da fase 5. Cinco minutos, e passa a ter rollback.
+Medido, não estimado — marcadores de funcionalidade dos dois lados:
+
+| | |
+|---|---|
+| só no repo | `fin_reembolsos`, `renderReembolsos`, `panel-reembolsos`, `aprovarReembolso`, `pagarReembolso`, `rejeitarReembolso`, `setReembTab` |
+| só na produção | `window.salvarTemplate` — e **não é perda**: no repo o template salva no `input` via `addEventListener`, o botão ficou desnecessário |
+
+**Custo que isso já tem hoje**: `fin_reembolsos` é escrito pelo form público
+(`reembolso.html`, linkado na área do filho) e **lido por ninguém em produção** —
+o `terreiro-admin` não tem tela de reembolso (zero referências), e a única que
+existe é a aba que nunca foi publicada. Todo reembolso pedido desde junho está
+invisível.
+
+Então a ordem certa é: **conectar a Netlify ao repo** (ganha Reembolsos e o fix
+de isento, perde nada), conferir no ar, e só depois a fase 5. Feito isso, a
+pasta `candieiro-simples` deve sair do disco — enquanto existir, alguém pode
+arrastar ela pra Netlify e reverter dois meses.
+
+### Nota de implementação achada aqui
+
+O repo já tem `getPrazoNum(f)`, que é exatamente a conversão que a multa precisa:
+`10|15|20` → o dia, `'ultimo'` → 31, `'combinado'` → 99. A regra da seção 6 deve
+**espelhar essa**, não inventar outra.
+
+Um detalhe: `'ultimo'` → 31 significa que em mês de 30 dias o vencimento nunca
+chega. Pra exibição tanto faz, pra multa não — no Worker o `'ultimo'` usa o
+último dia real do mês do ciclo. É divergência deliberada, e é por isso que a
+regra tem teste.
+
+---
+
+## 11. Dívida achada de passagem: dois tokens em texto puro
+
+Dois remotes guardavam Personal Access Token na URL, legível em `.git/config`:
+
+- `terreiro-pdv` → `ghp_3NYO…`
+- `candieiro-financeiro` → `ghp_aqI5…` (já trocado pro alias SSH `github-hunterms`)
+
+Os dois apareceram em output de terminal em 30/07/2026. **Revogar ambos** em
+github.com/settings/tokens e deixar os remotes em SSH. O `terreiro-pdv` ainda
+está com token na URL.
