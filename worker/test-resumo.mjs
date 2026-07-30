@@ -11,9 +11,13 @@ assert.equal(n(brl(1000)), 'R$ 1.000,00');
 const a = n(caixaCheckout({ url:'https://x', valor:200, item:'Curso de Tarot' }));
 assert.ok(a.includes('R$ 200,00'), 'total');
 assert.ok(!a.includes('Subtotal'), 'sem subtotal quando não tem desconto');
-assert.ok(a.includes('ou até 12x de R$ 16,67'), 'parcela do cartão');
 assert.ok(a.includes('href="https://x"'), 'link');
 assert.ok(a.includes('Curso de Tarot'), 'nome do item');
+
+// Não induzir crédito parcelado: quem oferece isso é a InfinitePay, na tela
+// dela. O terreiro mostra o que está sendo comprado e quanto é.
+assert.ok(!/\d+x/.test(a), 'não fala de parcelar no cartão');
+assert.ok(!a.includes('parcela'), 'nem menciona parcela quando não é curso');
 
 const b = n(caixaCheckout({ url:'https://x', valor:100, item:'Curso', valorCheio:200, descontoLabel:'Desconto afirmativo' }));
 assert.ok(b.includes('Subtotal') && b.includes('R$ 200,00'), 'subtotal cheio');
@@ -24,9 +28,10 @@ assert.ok(b.includes('Desconto afirmativo'), 'label do desconto');
 const c = n(caixaCheckout({ url:'https://x', valor:200, item:'Curso', valorCheio:200 }));
 assert.ok(!c.includes('Subtotal'), 'sem desconto falso');
 
-// curso parcelado: mostra 1ª de N e não oferece 12x em cima da parcela
+// Mensalidade de curso é outra coisa e continua: o que está sendo cobrado
+// agora é a 1ª de N. Omitir isso seria esconder o preço real.
 const d = n(caixaCheckout({ url:'https://x', valor:150, item:'Curso', parcelaDe:4 }));
-assert.ok(d.includes('1ª de 4 parcelas'), 'primeira parcela');
-assert.ok(!d.includes('ou até 12x'), 'não empilha parcelamento');
+assert.ok(d.includes('1ª de 4 parcelas'), 'primeira parcela da matrícula');
+assert.ok(!/\d+x de R\$/.test(d), 'ainda sem oferta de crédito parcelado');
 
-console.log('ok — 13 asserts do resumo passaram');
+console.log('ok — 14 asserts do resumo passaram');

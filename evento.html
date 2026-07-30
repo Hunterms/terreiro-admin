@@ -445,7 +445,7 @@ function irParaPagamento() {
   // botão leva pro pagamento. Sem ele, fica o fluxo antigo ("já paguei").
   if(temCheckout()) {
     $('#btn-confirmar').textContent = `💳 Inscrever e pagar ${fmt(valor)} →`;
-    $('#btn-confirmar-nota').innerHTML = 'Cartão em até 12x, débito ou PIX. Cai na hora, sem mandar comprovante.';
+    $('#btn-confirmar-nota').innerHTML = 'Cartão ou PIX. Cai na hora, sem mandar comprovante.';
   } else if(ev.infinity_link) {
     $('#card-box').style.display = 'block';
     $('#card-link').href = ev.infinity_link;

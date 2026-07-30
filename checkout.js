@@ -61,9 +61,16 @@ const ICO_PIX = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentCo
  *   detalhe,                // linha fina embaixo do item (data, hora, turma…)
  *   valorCheio,             // preço sem desconto — só se for MAIOR que o total
  *   descontoLabel,          // "promo de julho", "desconto afirmativo"…
- *   parcelaDe,              // n de parcelas, quando é matrícula de curso
- *   parcelasCartao,         // até quantas vezes dá pra dividir (default 12)
+ *   parcelaDe,              // n de parcelas da MATRÍCULA (mensalidade do curso)
  * }
+ *
+ * Não fala de parcelar no cartão, de propósito: quem oferece isso é a
+ * InfinitePay, na tela dela. Aqui a pessoa vê o que está comprando e quanto é —
+ * induzir crédito parcelado não é papel do terreiro.
+ *
+ * `parcelaDe` é outra coisa e continua: é a mensalidade do curso, ou seja, o
+ * que está sendo cobrado AGORA é a 1ª de N. Omitir isso seria esconder o preço
+ * real, não evitar indução.
  *
  * Com o checkout ligado, esta é a única forma de pagar mostrada: a InfinitePay
  * também recebe PIX, então a chave copia e cola só duplicaria o caminho — e
@@ -71,11 +78,10 @@ const ICO_PIX = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentCo
  * continua na página como fallback escondido, e só aparece se o Worker falhar.
  */
 export function caixaCheckout(dados) {
-  const { url, valor, item, detalhe, descontoLabel, parcelaDe, parcelasCartao = 12 } = dados;
+  const { url, valor, item, detalhe, descontoLabel, parcelaDe } = dados;
   const cheio = Number(dados.valorCheio) || 0;
   const temDesconto = cheio > Number(valor);
   const economia = temDesconto ? cheio - Number(valor) : 0;
-  const parcela = Number(valor) / parcelasCartao;
 
   const linha = (rot, val, cor) => `
     <div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:5px 0">
@@ -113,9 +119,7 @@ export function caixaCheckout(dados) {
         </div>
         ${parcelaDe ? `
           <div style="font-size:12px;color:var(--text3);text-align:right;margin-top:6px">1ª de ${parcelaDe} parcelas · as próximas combinadas com o terreiro</div>
-        ` : `
-          <div style="font-size:12px;color:var(--text3);text-align:right;margin-top:6px">ou até ${parcelasCartao}x de ${brl(parcela)} no cartão</div>
-        `}
+        ` : ''}
       </div>
 
       <div style="padding:0 18px 18px">
