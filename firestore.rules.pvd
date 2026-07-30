@@ -17,10 +17,55 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── ADMIN: tudo aberto pra usuário autenticado ────────────────────────
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // ── PAPÉIS ────────────────────────────────────────────────────────────
+    // Antes desta seção, a regra era `allow read, write: if request.auth != null`
+    // pra tudo: qualquer conta autenticada escrevia qualquer coisa. Com 2 contas
+    // dava pra viver; no dia em que um filho ganhasse login, ele alcançaria a
+    // contabilidade inteira.
+    //
+    // Papéis são custom claims, gravadas pela rota /papel do Worker (não dá pelo
+    // console). A LISTA DE EMAIL abaixo é rede de segurança, não desleixo: claim
+    // só entra no token depois de renovar a sessão, e sem a rede publicar estas
+    // rules trancaria admin, financeiro e PDV de uma vez. Some quando as claims
+    // estiverem confirmadas nas duas contas.
+    function ehAuth()  { return request.auth != null; }
+    function email()   { return request.auth.token.email; }
+    function claim(p)  { return request.auth.token[p] == true; }
+
+    function ehAdmin() {
+      return ehAuth() && (claim('admin') ||
+        email() in ['hunter.soares.c@gmail.com', 'nandomacedo42@gmail.com']);
     }
+    function ehFinanceiro() { return ehAdmin() || (ehAuth() && claim('financeiro')); }
+    function ehLoja()       { return ehAdmin() || (ehAuth() && claim('loja')); }
+
+    // ── LEITURA AUTENTICADA AMPLA, ESCRITA POR DONO ───────────────────────
+    // O risco é escrita. Leitura entre apps é o que faz o sistema funcionar
+    // (o admin cruza dado do financeiro, o financeiro lê filhos, etc).
+    match /{document=**} {
+      allow read: if ehAuth();
+      allow write: if ehAdmin();
+    }
+
+    // Dinheiro da casa: o financeiro é o dono
+    match /fin_gastos/{id}           { allow write: if ehFinanceiro(); }
+    match /fin_gastos_var/{id}       { allow write: if ehFinanceiro(); }
+    match /fin_gastos_avulso/{id}    { allow write: if ehFinanceiro(); }
+    match /fin_dividas/{id}          { allow write: if ehFinanceiro(); }
+    match /fin_doacoes/{id}          { allow write: if ehFinanceiro(); }
+    match /fin_sonhos/{id}           { allow write: if ehFinanceiro(); }
+    match /fin_eventos/{id}          { allow write: if ehFinanceiro(); }
+    match /fin_cursos/{id}           { allow write: if ehFinanceiro(); }
+    match /fin_curso_alunos/{id}     { allow write: if ehFinanceiro(); }
+    match /fin_curso_pagamentos/{id} { allow write: if ehFinanceiro(); }
+    match /fin_pagamentos/{id}       { allow write: if ehFinanceiro(); }
+    match /fin_estoque/{id}          { allow write: if ehFinanceiro(); }
+
+    // Loja física: o PDV é o dono. A conta do tablet NÃO alcança contabilidade.
+    match /products/{id}      { allow write: if ehLoja(); }
+    match /sales/{id}         { allow write: if ehLoja(); }
+    match /eventos_caixa/{id} { allow write: if ehLoja(); }
+    match /pdv_repasses/{id}  { allow write: if ehLoja(); }
 
     // ── Campos de pagamento: só o Worker escreve ──────────────────────────
     // O Worker usa a service account, que ignora estas rules. Então basta
