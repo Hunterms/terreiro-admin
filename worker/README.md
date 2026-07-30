@@ -3,7 +3,7 @@
 | `POST /papel` | você, na mão | `X-Auth-Secret` |
 # Worker do Candieiro — email + checkout automático
 
-Um Worker só, duas funções:
+Um Worker, quatro assuntos: email, checkout, mensalidade e papéis.
 
 | Rota | Quem chama | Protegida por |
 |---|---|---|
@@ -11,7 +11,9 @@ Um Worker só, duas funções:
 | `POST /checkout` | páginas públicas | nada — só aceita id de pedido, nunca valor |
 | `POST /status` | `pago.html` | nada — só responde pago/não, e confirma no `payment_check` |
 | `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
+| `POST /mensalidade` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
+| `POST /papel` | você, na mão | `X-Auth-Secret` |
 | cron `0 9 1 * *` | Cloudflare | — gera o lote do mês |
 
 Arquivo: **`worker.js`** (era `email-worker.js`, que virou este).
