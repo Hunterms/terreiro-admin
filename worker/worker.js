@@ -17,7 +17,7 @@
  * o id do pedido — nada de dinheiro.
  *
  * A conferência acontece duas vezes:
- *   1. na criação do link  — preço vem do Firestore, e fica gravado no pedido
+ *   1. na criação do link  — preço vem do F  irestore, e fica gravado no pedido
  *      (campo `checkout_centavos`, que o público não consegue escrever)
  *   2. no webhook          — payment_check confirma na InfinitePay, e o valor
  *      pago é comparado com o gravado. Menor = não marca pago.
@@ -72,10 +72,19 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 // `campoValor` é o campo de dinheiro que o admin lê depois (relatório, aprovação).
 // O cliente escreve ele na criação do doc, então não é confiável: o Worker
 // sobrescreve com o valor que de fato cobrou.
+// `statusAguardando` é o status enquanto o pagamento não entrou. Quem escreve
+// ele é o Worker, ao gerar o link — não a página. A ordem importa: a página
+// cria o pedido como 'pendente' (igual sempre), e só se o link for gerado ele
+// sai da fila do admin. Se o checkout falhar e a pessoa pagar no PIX manual, o
+// pedido continua 'pendente' e o Pai vê normalmente. Nenhum pedido some por
+// causa de erro nosso.
+//
+// evento_inscricoes já nasce 'aguardando', que ali sempre significou não pago —
+// não tem o que mudar.
 const TIPOS = {
-  sol: { colecao: 'adm_solicitacoes',  fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: null,         campoValor: 'valor_proposto' },
-  ped: { colecao: 'vendas_pedidos',    fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', campoValor: 'valor'          },
-  ins: { colecao: 'evento_inscricoes', fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       campoValor: 'valor'          },
+  sol: { colecao: 'adm_solicitacoes',  fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: null,         statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto' },
+  ped: { colecao: 'vendas_pedidos',    fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', statusAguardando: 'aguardando_pagamento', campoValor: 'valor'          },
+  ins: { colecao: 'evento_inscricoes', fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor'          },
 };
 
 const ALLOW_ORIGINS = '*'; // pra apertar, troca pela URL exata do admin
@@ -252,6 +261,9 @@ async function rotaCheckout(body, env, origem) {
     checkout_url: data.url,
     checkout_criadoEm: new Date().toISOString(),
     [t.campoValor]: centavos / 100,
+    // Sai da fila do admin até o pagamento entrar. Só acontece aqui, depois de
+    // o link existir de verdade — ver comentário do TIPOS.
+    ...(t.statusAguardando && { status: t.statusAguardando }),
   });
 
   return json({ url: data.url, valor_centavos: centavos });

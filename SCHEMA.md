@@ -418,13 +418,30 @@ pagamento_suspeitoEm:       string        // ISO
 ```
 
 **O `status` muda diferente em cada collection**, porque o vocabulário é
-diferente em cada uma:
+diferente em cada uma. E tem dois momentos: quando o link é gerado, e quando o
+pagamento entra.
 
-| Collection | Status ao pagar |
-|---|---|
-| `vendas_pedidos` | `pendente` → `confirmado` |
-| `evento_inscricoes` | `aguardando` → `pago` |
-| `adm_solicitacoes` | **não muda** — fica `pendente` |
+| Collection | Ao gerar o link | Ao pagar |
+|---|---|---|
+| `vendas_pedidos` | `pendente` → `aguardando_pagamento` | → `confirmado` |
+| `adm_solicitacoes` | `pendente` → `aguardando_pagamento` | **não muda** |
+| `evento_inscricoes` | não muda (`aguardando` já é isso) | → `pago` |
+
+`aguardando_pagamento` existe pra o pedido **não chegar no admin antes de estar
+pago** — o Pai não deve ver como fila de trabalho algo que ninguém pagou. Quem
+escreve esse status é o Worker, ao gerar o link, nunca a página. A ordem é de
+propósito: a página cria o doc como `pendente` igual sempre, e ele só sai da
+fila se o link existir de verdade. Checkout fora do ar → continua `pendente` e o
+Pai vê normalmente, com o PIX manual como antes. Nenhum pedido desaparece por
+erro nosso.
+
+Preso em `aguardando_pagamento` = carrinho abandonado. O admin mostra numa aba
+própria em Pedidos, e numa seção própria em Solicitações (com "→ Mandar pra
+fila" pra quando a pessoa combinou de pagar de outro jeito). Não entra no badge
+nem no total arrecadado.
+
+Ao pagar, `adm_solicitacoes` continua sem mudar de status: aprovar é o que cria
+o `adm_atendimentos` e ocupa a agenda, e isso é decisão do Pai.
 
 A solicitação de consulta não muda de propósito: pagar não aprova. A aprovação é
 que cria o `adm_atendimentos` e ocupa o horário, e isso é decisão do Pai. O
