@@ -459,6 +459,32 @@ tela de aprovação lê pra já vir com "já pago" marcado e derivar `pago_carta
 O campo de dinheiro do próprio pedido (`valor` / `valor_proposto`) é criado pelo
 cliente, então não é confiável: o Worker sobrescreve com o valor que calculou.
 
+### `vendas_pedidos.ciclo` — produto recorrente
+
+`"YYYY-MM"` do mês de referência, gravado quando `vendas_produtos.recorrente`.
+Sem ele não há como saber se aquele pagamento é de junho ou de julho — o pedido
+é um doc novo a cada mês, e todos ficariam indistinguíveis. `null` em produto
+que não é recorrente.
+
+O admin mostra como chip `🔁 jul/2026` na lista de Pedidos e no modal de
+pagamentos do produto.
+
+### `vendas_alunos` — leitura pública só por `get`
+
+```
+allow get:  if true
+allow list: if request.auth != null
+```
+
+O modo "Já sou aluno" do `vendas.html` busca `vendas_alunos/{produto}__{email}`
+pra não fazer o aluno antigo refazer o cadastro. Sem `get` público isso caía em
+permission-denied e a busca só mostrava erro.
+
+`get` e `list` são permissões diferentes, e a diferença é o que segura isto de
+pé: pra ler um doc é preciso **já saber o email** (ele está no id), e a resposta
+é só o cadastro daquela pessoa. Sem `list`, ninguém varre a collection e sai com
+a lista de emails e telefones dos alunos.
+
 **Config** — em `adm_config/agendamento` (leitura pública, já usada pelas 3 páginas):
 
 ```

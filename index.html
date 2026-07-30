@@ -3142,6 +3142,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
             <div class="li-meta">
               ${stChip}
               <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
+              ${x.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)">🔁 ${fmtCiclo(x.ciclo)}</span>`:''}
               ${x.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${x.turma_nome}</span>`:''}
               ${x.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
               ${x.parcela_num && x.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 ${x.parcela_num}/${x.parcelas_total}</span>`:''}
@@ -5957,6 +5958,15 @@ const METODO_PAG_LABEL = {
   transferencia: '🏦 Transferência'
 };
 
+// Ciclo "2026-07" → "jul/2026". Mês de referência de pagamento recorrente:
+// sem ele não se sabe se o pedido é de junho ou de julho.
+function fmtCiclo(c) {
+  if(!/^\d{4}-\d{2}$/.test(String(c||''))) return c || '';
+  const [ano, mes] = c.split('-');
+  const nome = new Date(`${c}-02T00:00:00`).toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
+  return `${nome}/${ano}`;
+}
+
 // Pagamento que entrou pelo checkout da InfinitePay: confirmado pelo Worker
 // (payment_check + valor conferido), não por alguém olhando o extrato.
 // `d` é o doc da solicitação, pedido ou inscrição.
@@ -7077,6 +7087,7 @@ function renderPedidos(c) {
               <div class="li-meta" style="margin-top:4px">
                 <strong style="color:var(--text)">${p.produto_nome||'?'}</strong>
                 <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${p.valor_cheio}</span>`:''}</span>
+                ${p.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)" title="Mês de referência deste pagamento recorrente">🔁 ${fmtCiclo(p.ciclo)}</span>`:''}
                 ${p.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${p.turma_nome}</span>`:''}
                 ${p.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
                 ${p.parcela_num && p.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 parcela ${p.parcela_num}/${p.parcelas_total}</span>`:''}

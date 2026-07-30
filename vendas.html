@@ -548,6 +548,12 @@ function renderProduto(prod) {
         turma_nome: turmaNome,
         parcelas_total: prod.parcelamento?.ativo ? (Number(prod.parcelamento.qtd)||1) : 1,
         parcela_num: prod.parcelamento?.ativo ? 1 : null,
+        // Produto recorrente (pilates, ninjutsu, curso mensal): sem ciclo não há
+        // como saber se este pagamento é de junho ou de julho. Fuso de Brasília,
+        // senão depois das 21h o mês vira antes da hora na virada.
+        ciclo: prod.recorrente
+          ? new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7)
+          : null,
         demografia,
         metodo_pagamento: null,
         comprovante_anexado: false,
