@@ -3121,6 +3121,9 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
       ? '<span class="chip chip-green">✓ Pago</span>'
       : x.status === 'cancelado'
       ? '<span class="chip" style="background:rgba(230,51,41,.12);color:var(--red)">✕ Cancelado</span>'
+      : x.status === 'aguardando_pagamento'
+      // Não é "pendente": foi pro checkout e não voltou pago. Carrinho abandonado.
+      ? '<span class="chip" title="Foi pro checkout e não voltou pago">⏳ Aguardando pagamento</span>'
       : '<span class="chip chip-amber">⏳ Pendente</span>';
     const dt = x.criadoEm?.toDate ? x.criadoEm.toDate() : (x.criadoEm?.seconds ? new Date(x.criadoEm.seconds*1000) : null);
     const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
@@ -3148,7 +3151,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
             ${demoSummary?`<div style="font-size:11.5px;color:var(--text3);margin-top:3px">📊 ${demoSummary}${d.ja_terreiro==='sim'?' · ex-terreiro':''}</div>`:''}
           </div>
           <div class="li-actions">
-            ${(x.status==='pendente'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${x.id}')">Confirmar</button>` : ''}
+            ${(x.status==='pendente'||x.status==='aguardando_pagamento'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${x.id}')">Confirmar</button>` : ''}
             ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${x.id}')">Desfazer</button>` : ''}
           </div>
         </div>
@@ -6011,7 +6014,11 @@ function linkWaConfirmacao(s) {
 function renderSolicitacoes(c) {
   atualizarBadgeSolicitacoes();
   const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
-  const processadas = S.solicitacoes.filter(s => s.status !== 'pendente').sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
+  // Foram pro checkout e não voltaram pagas. Não entram na fila de aprovação —
+  // aprovar cria atendimento, e não se cria atendimento sem dinheiro. Mas
+  // também não podem virar histórico: ninguém processou nada.
+  const aguardando = S.solicitacoes.filter(s => s.status === 'aguardando_pagamento').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  const processadas = S.solicitacoes.filter(s => s.status !== 'pendente' && s.status !== 'aguardando_pagamento').sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
 
   c.innerHTML = `
     <div class="page-head">
@@ -6065,6 +6072,36 @@ function renderSolicitacoes(c) {
         `}).join('')}
       </div>
     `}
+
+    ${aguardando.length ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--border2)">
+        <div class="card-h">
+          <div class="card-title" style="color:var(--text2)">⏳ Aguardando pagamento (${aguardando.length})</div>
+        </div>
+        <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">
+          Foram pro checkout e não voltaram pagas. O horário segue reservado. Se a pessoa combinou de pagar de outro jeito, manda pra fila e aprova normal — aprovar é o que cria o atendimento.
+        </div>
+        ${aguardando.map(s => `
+          <div class="list-item" style="opacity:.85">
+            <div class="li-avatar">${fmt.initials(s.nome)}</div>
+            <div class="li-main">
+              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${fmt.dataLong(s.data)} · ${s.hora}</span></div>
+              <div class="li-meta" style="margin-top:4px">
+                <span>${s.servico_nome || 'Consulta'}</span>
+                <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
+                ${chipPagoSuspeito(s)}
+                ${s.tel?`<span>📱 ${s.tel}</span>`:''}
+                <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
+              </div>
+            </div>
+            <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
+              <button class="btn btn-sm" onclick="window._app.solicitacaoPraFila('${s.id}')" title="Devolve pra fila de aprovação, como se tivesse chegado agora">→ Mandar pra fila</button>
+              <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${s.id}')">Descartar</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
 
     ${processadas.length ? `
       <details>
@@ -6212,6 +6249,21 @@ async function rejeitarSolicitacao(id) {
       await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { status: 'rejeitada', atualizadoEm: serverTimestamp() });
       await delSlotPub('sol_'+id);
       toast('Rejeitada','ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+// Devolve uma solicitação de 'aguardando_pagamento' pra fila de aprovação.
+// Serve pra quando a pessoa desistiu do checkout mas combinou de pagar de
+// outro jeito — PIX na mão, dinheiro no dia. Só mexe no status: o horário já
+// estava reservado desde a criação.
+async function solicitacaoPraFila(id) {
+  const s = S.solicitacoes.find(x => x.id === id);
+  if(!s) return;
+  confirmar(`Mandar o pedido de <strong>${s.nome}</strong> pra fila de aprovação? Ele volta a aparecer como pendente, sem pagamento confirmado.`, async () => {
+    try {
+      await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { status: 'pendente', atualizadoEm: serverTimestamp() });
+      toast('Voltou pra fila','ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
   });
 }
@@ -6453,6 +6505,10 @@ function slugify(txt) {
 }
 
 const STATUS_PEDIDO_LABEL = {
+  // Quem põe esse status é o Worker, ao gerar o link de checkout: o pedido sai
+  // da fila até o pagamento entrar, e volta como 'confirmado' quando entra.
+  // Se ficar preso aqui, é carrinho abandonado — ninguém pagou.
+  aguardando_pagamento: { lbl:'Aguardando pagamento', chip:'chip' },
   pendente:   { lbl:'Pendente',    chip:'chip-amber' },
   confirmado: { lbl:'Confirmado',  chip:'chip-green' },
   cancelado:  { lbl:'Cancelado',   chip:'chip' }
@@ -6955,6 +7011,7 @@ function renderPedidos(c) {
 
   const contagem = {
     pendente: todos.filter(p => (p.status||'pendente') === 'pendente').length,
+    aguardando_pagamento: todos.filter(p => p.status === 'aguardando_pagamento').length,
     confirmado: todos.filter(p => p.status === 'confirmado').length,
     cancelado: todos.filter(p => p.status === 'cancelado').length
   };
@@ -6964,7 +7021,7 @@ function renderPedidos(c) {
     <div class="page-head">
       <div>
         <div class="page-title">Pedidos de venda</div>
-        <div class="page-sub">${contagem.pendente} pendente${contagem.pendente===1?'':'s'} · ${contagem.confirmado} confirmado${contagem.confirmado===1?'':'s'} · <strong style="color:var(--green)">R$ ${arrecadado.toFixed(0)} arrecadado</strong></div>
+        <div class="page-sub">${contagem.pendente} pendente${contagem.pendente===1?'':'s'} · ${contagem.confirmado} confirmado${contagem.confirmado===1?'':'s'}${contagem.aguardando_pagamento?` · ${contagem.aguardando_pagamento} aguardando pagamento`:''} · <strong style="color:var(--green)">R$ ${arrecadado.toFixed(0)} arrecadado</strong></div>
       </div>
       <div class="page-actions">
         <button class="btn" onclick="window._app.navigate('produtos')">Ver produtos</button>
@@ -6974,6 +7031,7 @@ function renderPedidos(c) {
     <div class="tabs">
       <button class="${pedTab==='pendente'?'active':''}" onclick="window._app.setPedTab('pendente')">Pendentes (${contagem.pendente})</button>
       <button class="${pedTab==='confirmado'?'active':''}" onclick="window._app.setPedTab('confirmado')">Confirmados (${contagem.confirmado})</button>
+      ${contagem.aguardando_pagamento ? `<button class="${pedTab==='aguardando_pagamento'?'active':''}" onclick="window._app.setPedTab('aguardando_pagamento')" title="Foram pro checkout e não voltaram pagos. Carrinho abandonado.">⏳ Aguardando pagamento (${contagem.aguardando_pagamento})</button>` : ''}
       <button class="${pedTab==='cancelado'?'active':''}" onclick="window._app.setPedTab('cancelado')">Cancelados (${contagem.cancelado})</button>
       <button class="${pedTab==='todos'?'active':''}" onclick="window._app.setPedTab('todos')">Todos</button>
     </div>
@@ -8166,6 +8224,7 @@ window._app = {
   setAgendaFiltro,
   aprovarSolicitacao,
   rejeitarSolicitacao,
+  solicitacaoPraFila,
   openAvisoForm,
   arquivarAviso,
   openPerguntaForm,

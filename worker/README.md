@@ -141,7 +141,24 @@ O `status` muda conforme a collection, porque o vocabulário é diferente em cad
 
 - `vendas_pedidos` → `confirmado`
 - `evento_inscricoes` → `pago`
-- `adm_solicitacoes` → **não muda**, fica `pendente`
+- `adm_solicitacoes` → **não muda**
+
+### Pedido só chega no admin depois de pago
+
+Ao gerar o link, o Worker põe `status: 'aguardando_pagamento'` em
+`vendas_pedidos` e `adm_solicitacoes`. Assim o Pai não vê como fila de trabalho
+algo que ninguém pagou.
+
+Quem escreve esse status é o Worker, nunca a página, e a ordem é de propósito: a
+página cria o doc como `pendente` igual sempre, e ele só sai da fila **se o link
+for gerado de verdade**. Checkout fora do ar → o pedido continua `pendente`, o
+Pai vê normalmente e o PIX manual funciona como antes. Nenhum pedido some por
+erro nosso.
+
+Preso em `aguardando_pagamento` é carrinho abandonado: aparece numa aba própria
+em Pedidos e numa seção própria em Solicitações, fora do badge e fora do total
+arrecadado. Em Solicitações tem "→ Mandar pra fila" pra quando a pessoa combinou
+de pagar de outro jeito.
 
 A solicitação de consulta é de propósito: pagar não aprova. Quem aprova é o Pai,
 porque a aprovação é que cria o atendimento e ocupa o horário na agenda. O que o
