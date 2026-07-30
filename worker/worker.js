@@ -128,6 +128,7 @@ export default {
       if (rota === '/status') return await rotaStatus(body, env);
       if (rota === '/webhook') return await rotaWebhook(body, env);
       if (rota === '/lote') return await rotaLote(body, request, env);
+      if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
@@ -419,6 +420,78 @@ async function gerarLoteMensalidade(ciclo, env) {
   };
   console.log('lote de mensalidade', JSON.stringify(resumo));
   return resumo;
+}
+
+// ── MENSALIDADE DO FILHO ───────────────────────────────────────────────────
+// Entra: { filho_id, tel4, ciclo? }. Sai: quanto ele deve neste mês e se pagou.
+//
+// Existe porque a area-filho.html NÃO pode ler fin_mensalidade_pedidos: a
+// collection é fechada de propósito, senão qualquer visitante veria quem está
+// atrasado na casa.
+//
+// A prova é a mesma que a página já usa: os 4 últimos dígitos do telefone
+// cadastrado (ou o PIN). É fraca, e é de propósito — é o modelo de confiança que
+// a área do filho já tem, e sem ela este endpoint viraria uma lista pública de
+// quem deve mensalidade, o que é pior.
+//
+// Se o pedido do ciclo não existe ainda, o Worker CRIA. Quem não pode criar é o
+// público (plantaria checkout_centavos); o Worker escreve com service account.
+// Assim ninguém fica sem poder pagar por causa de lote não rodado.
+
+async function rotaMensalidade(body, env) {
+  const { filho_id, tel4 } = body || {};
+  const ciclo = body?.ciclo || cicloAtual();
+
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+  if (!/^\d{4}-\d{2}$/.test(ciclo)) return json({ error: 'ciclo inválido' }, 400);
+
+  const token = await tokenGoogle(env);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filho_id, { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
+  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
+  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+
+  const base = Number(filho.valor) || 0;
+  if (base <= 0) return json({ isento: true, ciclo });
+
+  const docId = `${filho_id}__${ciclo}`;
+  let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+
+  if (!pedido) {
+    await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+      filho_id,
+      filho_nome: filho.nome || '',
+      ciclo,
+      status: 'aberto',
+      avisou_atraso: false,
+      geradoEm: new Date().toISOString(),
+      geradoPor: 'area-filho',
+    });
+    pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+    if (!pedido) return json({ error: 'não consegui abrir a mensalidade do mês' }, 500);
+  }
+
+  const pago = pedido.pago_automatico === true || pedido.status === 'pago';
+  const valor = mensalidadeReais(pedido, filho, hojeSP());
+
+  return json({
+    isento: false,
+    ciclo,
+    doc_id: docId,
+    pago,
+    valor: pago ? Number(pedido.valor_cobrado) || valor : valor,
+    base,
+    multa: Math.max(0, valor - base),
+    vencimento: vencimentoMensalidade(filho.prazo, ciclo),
+    avisou_atraso: !!pedido.avisou_atraso,
+    metodo: pago ? pedido.metodo_pagamento || null : null,
+    recibo_url: pago ? pedido.pagamento_recibo_url || null : null,
+  });
 }
 
 // ── STATUS ─────────────────────────────────────────────────────────────────

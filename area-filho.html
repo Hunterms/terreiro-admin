@@ -342,6 +342,20 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <!-- Dashboard: TODOS chevrons, TODOS começam fechados -->
           <!-- Ordem: Tarefas → Escalas → Reembolso → Disponibilidade → Afilhados -->
 
+          <!-- Mensalidade do mês (escondida até o Worker responder) -->
+          <details class="dash-secao" id="dash-sec-mensalidade" style="display:none">
+            <summary>
+              <div class="dash-head-text">
+                <h2>💰 Minha mensalidade <span class="dash-badge" id="dash-cnt-mensalidade"></span></h2>
+                <p class="dash-sub">Sua contribuição do mês, e o pagamento na hora.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="mensalidade-container"></div>
+            </div>
+          </details>
+
           <!-- Tarefas (kanban) -->
           <details class="dash-secao" id="dash-sec-tarefas">
             <summary>
@@ -479,6 +493,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import { criarCheckout } from "./checkout.js";
 
 const cfgPvd = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -522,6 +537,7 @@ let APP = {
   perguntas: [], // adm_perguntas ativas + não arquivadas
   minhasRespostas: [], // adm_respostas do filho atual
   lojinhaEscalas: [], // adm_escalas onde tipo='lojinha' (semanal). Só carrega se gerencia_lojinha
+  cfgAgendamento: null, // adm_config/agendamento — de onde sai a URL do Worker do checkout
   eventos: [],
   avisos: [],
   eventoInscricoes: [], // inscrições em eventos_filho (pra mostrar status no card)
@@ -698,6 +714,15 @@ async function selecionarFilho(id) {
   const despSec = document.getElementById('dash-sec-despensa');
   if (despSec) despSec.style.display = filho.gerencia_despensa ? '' : 'none';
 
+  // Config do checkout (leitura pública). Sem ela a mensalidade não aparece.
+  if (!APP.cfgAgendamento) {
+    try {
+      const cSnap = await getDoc(doc(dbPvd,'adm_config','agendamento'));
+      APP.cfgAgendamento = cSnap.exists() ? cSnap.data() : {};
+    } catch(e) { console.warn('cfg agendamento', e); APP.cfgAgendamento = {}; }
+  }
+
+  renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
   renderDisp();
   renderEsc();
   renderTarefas();
@@ -969,6 +994,103 @@ function renderIdentityHero(f) {
     ? roles.map(r => `<span class="identity-role">${r}</span>`).join('')
     : '';
   rl.style.display = roles.length ? '' : 'none';
+}
+
+// ── MENSALIDADE ───────────────────────────────────────────────────────────
+// Esta página NÃO lê fin_mensalidade_pedidos: a collection é fechada de
+// propósito, senão qualquer visitante veria quem está atrasado na casa. Quem
+// responde é o Worker, que confere os 4 dígitos do telefone antes — a mesma
+// prova que a página já usou pra deixar o filho entrar.
+async function renderMensalidade() {
+  const f = APP.filhoAtual;
+  const sec = document.getElementById('dash-sec-mensalidade');
+  const cont = document.getElementById('mensalidade-container');
+  const cnt = document.getElementById('dash-cnt-mensalidade');
+  if (!f || !sec || !cont) return;
+
+  const worker = APP.cfgAgendamento?.checkout_worker_url;
+  const ativo = APP.cfgAgendamento?.checkout_ativo;
+  if (!worker || !ativo) { sec.style.display = 'none'; return; }
+
+  const tel4 = (f.tel || '').replace(/\D/g, '').slice(-4) || f.pin || '';
+  if (!tel4) { sec.style.display = 'none'; return; }
+
+  let d;
+  try {
+    const resp = await fetch(worker.replace(/\/+$/, '') + '/mensalidade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filho_id: f.id, tel4 })
+    });
+    d = await resp.json();
+    if (!resp.ok) throw new Error(d?.error || resp.status);
+  } catch (e) {
+    console.warn('mensalidade indisponível:', e?.message || e);
+    sec.style.display = 'none';
+    return;
+  }
+
+  // Isento não vê cobrança — vê que é isento, o que é diferente de vazio.
+  if (d.isento) {
+    sec.style.display = '';
+    cnt.textContent = 'isento';
+    cnt.className = 'dash-badge muted';
+    cont.innerHTML = `<div style="padding:16px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text2);line-height:1.55">Sua mensalidade está <strong style="color:var(--text)">isenta</strong>. Nada a pagar.</div>`;
+    return;
+  }
+
+  const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const mes = new Date(d.ciclo + '-02T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  sec.style.display = '';
+
+  if (d.pago) {
+    cnt.textContent = 'pago';
+    cnt.className = 'dash-badge';
+    cont.innerHTML = `
+      <div style="padding:18px;background:var(--green-bg,rgba(46,204,113,0.1));border:1px solid var(--green-bd,rgba(46,204,113,0.3));border-radius:12px;text-align:center">
+        <div style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:6px">✓ ${mes} está pago</div>
+        <div style="font-size:13.5px;color:var(--text2)">${brl(d.valor)}${d.metodo ? ` · ${d.metodo === 'pix' ? 'PIX' : 'cartão'}` : ''}</div>
+        ${d.recibo_url ? `<a href="${d.recibo_url}" target="_blank" rel="noopener" style="display:inline-block;margin-top:12px;font-size:13px;color:var(--gold)">Ver comprovante ↗</a>` : ''}
+      </div>`;
+    return;
+  }
+
+  const atrasado = d.multa > 0;
+  cnt.textContent = atrasado ? 'em atraso' : 'em aberto';
+  cnt.className = 'dash-badge';
+
+  cont.innerHTML = `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Mensalidade de ${mes}</div>
+      <div style="padding:16px">
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0">
+          <span style="color:var(--text2)">Contribuição</span><span>${brl(d.base)}</span>
+        </div>
+        ${atrasado ? `
+          <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0">
+            <span style="color:var(--red)">Acréscimo por atraso</span><span style="color:var(--red)">+ ${brl(d.multa)}</span>
+          </div>` : ''}
+        <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:12px;display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Total</span>
+          <span style="font-size:24px;font-weight:800;color:var(--gold);line-height:1">${brl(d.valor)}</span>
+        </div>
+        ${d.vencimento ? `<div style="font-size:12px;color:${atrasado ? 'var(--red)' : 'var(--text3)'};text-align:right;margin-top:6px">${atrasado ? 'venceu' : 'vence'} em ${new Date(d.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</div>` : ''}
+        ${atrasado ? `<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Combinou o atraso com a administração? Fala com eles pra tirar o acréscimo.</div>` : ''}
+      </div>
+      <div style="padding:0 16px 16px">
+        <button id="mens-pagar" class="btn btn-primary" style="width:100%">💳 Pagar ${brl(d.valor)}</button>
+        <div style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:10px;line-height:1.5">Cartão ou PIX pela InfinitePay. Cai na hora — o terreiro não precisa conferir extrato.</div>
+      </div>
+    </div>`;
+
+  document.getElementById('mens-pagar').onclick = async (ev) => {
+    const b = ev.currentTarget;
+    b.disabled = true; b.textContent = 'Abrindo o pagamento...';
+    const res = await criarCheckout(APP.cfgAgendamento, 'men', d.doc_id);
+    if (res) { location.href = res.url; return; }
+    b.disabled = false; b.textContent = `💳 Pagar ${brl(d.valor)}`;
+    alert('Não consegui abrir o pagamento agora. Tenta de novo em instantes, ou fala com a administração.');
+  };
 }
 
 function renderActionItems() {
