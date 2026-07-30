@@ -771,10 +771,13 @@ function mostrarSucesso(nome, solId) {
   $('#modal-c').innerHTML = `
     <div class="success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <div class="success-t">Agendamento garantido!</div>
+      <div class="success-t">${temCheckout ? 'Falta só o pagamento' : 'Agendamento garantido!'}</div>
       <div class="success-d">
-        <strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
-        Seu horário tá reservado. Agora <strong style="color:var(--text)">escolhe como pagar R$ ${valor}</strong>:
+        ${temCheckout
+          // O resumo abaixo já mostra serviço, data, hora e valor.
+          ? `Seu horário está <strong style="color:var(--text)">guardado</strong> enquanto você paga.`
+          : `<strong style="color:var(--gold);text-transform:capitalize">${APP.servico.nome} · ${fmtData(APP.dataSel)} · ${APP.horaSel}</strong><br><br>
+             Seu horário tá reservado. Agora <strong style="color:var(--text)">escolhe como pagar R$ ${valor}</strong>:`}
       </div>
       <div style="margin:20px 0;text-align:left">
         ${temCheckout ? caixaCheckoutCarregando(1) : ''}
@@ -810,7 +813,13 @@ function mostrarSucesso(nome, solId) {
       const box = $('#cx-checkout-load');
       if(!box) return;
       if(res) {
-        box.outerHTML = caixaCheckout(res.url, res.valor);
+        // Valor mostrado é o que o Worker devolveu, não o desta página.
+        box.outerHTML = caixaCheckout({
+          url: res.url,
+          valor: res.valor,
+          item: APP.servico.nome,
+          detalhe: `${fmtData(APP.dataSel)} · ${APP.horaSel} · ${APP.modalidade==='online'?'online':'presencial'}${APP.servico.duracao_min?` · ${APP.servico.duracao_min} min`:''}`,
+        });
         armarCheckout(res.url);
         // Pagou pelo checkout: não existe comprovante pra mandar.
         const txt = $('#txt-comprovante');
