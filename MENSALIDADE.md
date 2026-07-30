@@ -56,7 +56,7 @@ Duas consequências:
 |---|---|---|
 | Quando cai o acréscimo de R$ 10 | **o `prazo` de cada filho** | O dado já está em `fin_filhos.prazo` e já foi combinado com cada um. Quem tem prazo 20 só é multado no dia 21. |
 | Atraso acumula no mês seguinte | **não, cada mês é independente** | É o que o booleano de hoje já faz. Acumular exige regra de juros e mexe no `fin_dividas` — outro projeto. |
-| Quem gera a cobrança | **admin, em lote, dia 1** | Fica perto da "Gestão de Cobranças" e o Pai vê o mês inteiro de uma vez. |
+| Quem gera a cobrança | **lote do admin + cron dia 1; e o Worker cria sob demanda se faltar** | Fica perto da "Gestão de Cobranças" e o Pai vê o mês inteiro de uma vez. |
 | Toggle manual do financeiro | **continua** | Webhook fora do ar, dinheiro na gira, filho mais velho que não usa a interface. Automação não pode tirar a saída manual. |
 | Financeiro reflete o detalhe | **sim** | Sem isso a automação só troca de lugar o trabalho: alguém ainda teria que olhar extrato pra saber quanto e como entrou. |
 
@@ -148,7 +148,7 @@ valor_base = fin_filhos.valor        (0 = isento, não gera pedido)
 
 Mesma situação de `precoEfetivo` × `precoCentavos`: a regra existe em dois
 lugares (Worker pra cobrar, tela pra mostrar) e por isso **tem teste**
-(`worker/test-mensalidade.mjs`, a escrever na fase 1). Se as duas discordarem, o filho vê um preço e
+(`worker/test-mensalidade.mjs`, 30 asserts). Se as duas discordarem, o filho vê um preço e
 paga outro.
 
 ---
@@ -223,16 +223,19 @@ a mandar o link, e o `prazo` diz quando.
 
 ## 9. Fases
 
+0. ~~Repo e deploy do financeiro~~ — feito: Netlify conectada ao git, login
+   trocado por Firebase Auth de verdade (os painéis não liam nada sem isso).
 1. **Worker + dados** — tipo `men` na tabela `TIPOS`, valor fixado, regra da
    multa com teste, rules negando create público em `fin_mensalidade_pedidos`.
 2. **Lote** — botão no admin + Cron Trigger, idempotente (rodar duas vezes não
    duplica, por causa do id determinístico).
 3. **Filho paga** — bloco de mensalidade na `area-filho.html`, reusando o
    `checkout.js` que já existe.
-4. **Admin vê** — painel do ciclo: filho, valor, vencimento, toggle `avisou_atraso`,
-   status, recibo.
-5. **Financeiro responde** — painel de mensalidades lê o pedido do ciclo em vez
-   de só o booleano. **Bloqueado**: ver risco abaixo.
+4. **Governança no financeiro** — decidido em 30/07: fica na aba de mensalidades
+   que já existe, não vira tela nova no admin. O painel lê o pedido do ciclo e
+   mostra pago-no-cartão, acréscimo, recibo, e o botão "avisou o atraso". O
+   toggle manual continua. **Feito** (`candieiro-financeiro` 5e794ca).
+5. ~~Financeiro responde~~ — virou a fase 4.
 6. **Produto recorrente** — `ciclo` em `vendas_pedidos` e aviso de "já pago
    este mês" no `vendas.html`.
 
