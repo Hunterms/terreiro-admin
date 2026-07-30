@@ -752,10 +752,13 @@ function mostrarSucesso(prod, nome, efetivo, pedidoId) {
   c.innerHTML = `
     <div class="card success-box">
       <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      <div class="success-t">Reserva garantida!</div>
+      <div class="success-t">${temCheckout ? 'Falta só o pagamento' : 'Reserva garantida!'}</div>
       <div class="success-d">
-        <strong style="color:var(--gold)">${prod.nome}</strong> · R$ ${valorPago}${labelPromo}<br>
-        Sua vaga tá reservada. Agora <strong style="color:var(--text)">escolhe como pagar</strong>:
+        ${temCheckout
+          // O resumo abaixo já mostra item e valor — repetir aqui só polui.
+          ? `Sua vaga está <strong style="color:var(--text)">guardada</strong> enquanto você paga.`
+          : `<strong style="color:var(--gold)">${prod.nome}</strong> · R$ ${valorPago}${labelPromo}<br>
+             Sua vaga tá reservada. Agora <strong style="color:var(--text)">escolhe como pagar</strong>:`}
       </div>
       <div style="margin:20px 0;text-align:left">
         ${temCheckout ? caixaCheckoutCarregando(1) : ''}
@@ -789,7 +792,18 @@ function mostrarSucesso(prod, nome, efetivo, pedidoId) {
       const box = $('#cx-checkout-load');
       if(!box) return;
       if(res) {
-        box.outerHTML = caixaCheckout(res.url, res.valor);
+        // O valor mostrado é o que o Worker devolveu (res.valor), não o que esta
+        // página calculou — assim tela e cobrança não têm como discordar.
+        box.outerHTML = caixaCheckout({
+          url: res.url,
+          valor: res.valor,
+          item: prod.nome,
+          detalhe: prod.data_evento ? fmtData(prod.data_evento) : null,
+          valorCheio: prod.valor,
+          descontoLabel: efetivo?.ehAfirmativo ? 'Desconto afirmativo'
+                       : efetivo?.ehPromo ? (efetivo.label || 'Promoção') : null,
+          parcelaDe: prod.parcelamento?.ativo ? (Number(prod.parcelamento.qtd)||null) : null,
+        });
         armarCheckout(res.url);
         // Pagou pelo checkout: não existe comprovante pra mandar.
         const txt = $('#txt-comprovante');
