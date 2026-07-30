@@ -29,13 +29,24 @@ pega() { curl -s "$1?cb=$(date +%s)"; }
 http() { curl -s -o /dev/null -w '%{http_code}' "$1?cb=$(date +%s)"; }
 
 # checa(url, "descrição", marcador-que-precisa-existir)
+#
+# O corpo é guardado numa variável antes do grep, e não canalizado. Motivo achado
+# na primeira execução: `curl | grep -q` faz o grep sair no primeiro match, o
+# curl morre com SIGPIPE, e com `pipefail` isso conta como falha do pipeline.
+# Só os arquivos grandes falhavam (o admin tem 456KB) — os pequenos terminavam
+# antes do grep sair. Falso negativo dos bons: parecia deploy velho.
+#
+# E o grep leva `--` porque marcador pode começar com hífen (ex: `--bg` no CSS).
 checa() {
   local url="$1" desc="$2" marcador="$3"
   local code; code=$(http "$url")
   if [[ "$code" != "200" ]]; then erro "$desc — HTTP $code"; return; fi
-  if [[ -n "$marcador" ]] && ! pega "$url" | grep -q "$marcador"; then
-    erro "$desc — abriu, mas não achei '$marcador' (versão velha no ar?)"
-    return
+  if [[ -n "$marcador" ]]; then
+    local corpo; corpo=$(pega "$url")
+    if ! grep -q -- "$marcador" <<< "$corpo"; then
+      erro "$desc — abriu, mas não achei '$marcador' (versão velha no ar?)"
+      return
+    fi
   fi
   ok "$desc"
 }
@@ -67,7 +78,8 @@ if [[ "$alvo" == "tudo" || "$alvo" == "financeiro" ]]; then
   # o bug de 30/07: app.js declarava Firebase como se fosse global
   checa https://financeiro.terreirodocandieiro.com.br/js/app.js "app.js" "ouvirMensPedidos"
   checa https://financeiro.terreirodocandieiro.com.br/js/firebase.js "auth de verdade" "signInWithEmailAndPassword"
-  if pega https://financeiro.terreirodocandieiro.com.br/js/app.js | grep -qE '^const app = initializeApp'; then
+  corpo=$(pega https://financeiro.terreirodocandieiro.com.br/js/app.js)
+  if grep -qE '^const app = initializeApp' <<< "$corpo"; then
     erro "app.js voltou a chamar initializeApp como global — quebra na carga"
   else
     ok "sem initializeApp solto no app.js"
@@ -77,7 +89,11 @@ fi
 if [[ "$alvo" == "tudo" || "$alvo" == "pdv" ]]; then
   echo "PDV"
   checa https://vendas.terreirodocandieiro.com.br/ "carrega com auth" "signInWithEmailAndPassword"
-  if pega https://vendas.terreirodocandieiro.com.br/ | grep -q "CREDENTIALS"; then
+  # Procura a DECLARAÇÃO e as senhas, não a palavra: o arquivo tem um comentário
+  # explicando que o array CREDENTIALS saiu, e buscar só o nome dava falso
+  # positivo contra a própria documentação.
+  corpo=$(pega https://vendas.terreirodocandieiro.com.br/)
+  if grep -qE 'const CREDENTIALS *=|candieiro2025|pdv2025' <<< "$corpo"; then
     erro "PDV voltou a ter senha no JS — não grava venda com as rules atuais"
   else
     ok "sem senha no JS"
