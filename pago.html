@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Pagamento recebido · Terreiro do Candieiro</title>
+<title>Pagamento · Terreiro do Candieiro</title>
 <meta name="robots" content="noindex"/>
 <link rel="icon" type="image/png" href="logocandieiro.png"/>
 <link rel="apple-touch-icon" href="logocandieiro.png"/>
@@ -18,6 +18,8 @@
   --gold:#d4a843;
   --green:#2ecc71;
   --green-bg:rgba(46,204,113,0.1);--green-bd:rgba(46,204,113,0.3);
+  --amber:#f39c12;--amber-bg:rgba(243,156,18,0.1);--amber-bd:rgba(243,156,18,0.3);
+  --red:#e63329;--red-bg:rgba(230,51,41,0.1);--red-bd:rgba(230,51,41,0.3);
   --text:#f0e8d8;--text2:#a89880;--text3:#6b5d4f;
   --font:-apple-system,'SF Pro Rounded','SF Pro Display',BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   --rad:10px;--radlg:14px;
@@ -26,24 +28,32 @@ html,body{background:var(--bg);min-height:100vh}
 body{
   font-family:var(--font);color:var(--text);min-height:100vh;
   background-image:
-    radial-gradient(ellipse at 20% 0%,rgba(46,204,113,0.08) 0%,transparent 60%),
+    radial-gradient(ellipse at 20% 0%,rgba(46,204,113,0.07) 0%,transparent 60%),
     radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.05) 0%,transparent 50%);
   display:flex;align-items:center;justify-content:center;padding:24px 16px;
 }
 .container{max-width:480px;width:100%}
-header{text-align:center;margin-bottom:24px}
-h1{font-size:24px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
+header{text-align:center;margin-bottom:22px}
+h1{font-size:22px;font-weight:700;letter-spacing:.02em;margin-bottom:6px}
 .subtitle{font-size:12px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
 .card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:28px 24px;text-align:center}
-.sucesso-icon{width:76px;height:76px;color:var(--green);margin:0 auto 16px;display:block}
-.sucesso-titulo{font-size:22px;font-weight:700;color:var(--green);margin-bottom:10px}
-.sucesso-msg{font-size:15px;color:var(--text2);line-height:1.6}
-.metodo{display:inline-block;margin:16px 0 4px;padding:7px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:999px;font-size:12.5px;font-weight:700;color:var(--green);letter-spacing:.04em}
-.linha{margin-top:20px;padding-top:18px;border-top:1px solid var(--border)}
+.ico{width:72px;height:72px;margin:0 auto 16px;display:block}
+.ico-ok{color:var(--green)}
+.ico-wait{color:var(--amber)}
+.ico-warn{color:var(--red)}
+.titulo{font-size:21px;font-weight:700;margin-bottom:10px}
+.msg{font-size:14.5px;color:var(--text2);line-height:1.6}
+.chip{display:inline-block;margin-top:16px;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;letter-spacing:.04em}
+.chip-ok{background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green)}
+.linha{margin-top:20px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:15px 20px;border-radius:var(--rad);border:none;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font);width:100%;text-decoration:none;letter-spacing:.02em}
-.btn-recibo{background:var(--glass2);border:1px solid var(--border2);color:var(--text)}
-.btn-whats{background:linear-gradient(135deg,#25d366 0%,#1da851 100%);color:#fff;margin-top:10px}
+.btn-azul{background:#3498db;color:#fff}
+.btn-neutro{background:var(--glass2);border:1px solid var(--border2);color:var(--text)}
+.btn-whats{background:linear-gradient(135deg,#25d366 0%,#1da851 100%);color:#fff}
+.btn:disabled{opacity:.55;cursor:wait}
 .aviso{font-size:12.5px;color:var(--text3);margin-top:16px;line-height:1.5}
+.spinner{width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
 footer{text-align:center;margin-top:22px;color:var(--text3);font-size:12px}
 </style>
 </head>
@@ -51,63 +61,187 @@ footer{text-align:center;margin-top:22px;color:var(--text3);font-size:12px}
 
 <div class="container">
   <header>
-    <img src="logocandieiro.png" alt="Candieiro" style="width:80px;height:80px;object-fit:contain;margin:0 auto 14px;display:block"/>
-    <h1>Pagamento recebido</h1>
+    <img src="logocandieiro.png" alt="Candieiro" style="width:74px;height:74px;object-fit:contain;margin:0 auto 14px;display:block"/>
+    <h1 id="h-titulo">Pagamento</h1>
     <div class="subtitle">Terreiro do Candieiro</div>
   </header>
 
-  <div class="card">
-    <svg class="sucesso-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-    </svg>
-    <div class="sucesso-titulo">Tudo certo!</div>
-    <div class="sucesso-msg">
-      Seu pagamento foi processado e <strong style="color:var(--text)">já entrou no sistema do terreiro</strong>.
-      Não precisa mandar comprovante.
-    </div>
-    <div id="metodo-box"></div>
-
-    <div class="linha">
-      <a id="btn-recibo" class="btn btn-recibo" style="display:none" target="_blank" rel="noopener">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Ver comprovante
-      </a>
-      <a id="btn-whats" class="btn btn-whats" target="_blank" rel="noopener">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.264 8.264 0 01-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.183 8.183 0 012.41 5.83c.02 4.54-3.68 8.23-8.22 8.23z"/></svg>
-        Falar com o terreiro
-      </a>
-    </div>
-
-    <div class="aviso">
-      Qualquer dúvida, chama no WhatsApp. Guarde o comprovante da InfinitePay.
-    </div>
+  <div class="card" id="card">
+    <div class="spinner"></div>
+    <div class="msg">Confirmando seu pagamento...</div>
   </div>
 
   <footer>Terreiro do Candieiro · Barão Geraldo, Campinas-SP</footer>
 </div>
 
-<script>
-// Só cosmético: os parâmetros vêm da URL de retorno da InfinitePay, então não
-// servem de prova de nada. Quem decide se o pedido está pago é o webhook do
-// Worker, que confere no payment_check antes de escrever no Firestore.
+<script type="module">
+import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
+import { getFirestore, doc, getDoc } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+const db = getFirestore(initializeApp({
+  apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
+  authDomain: "terreiro-pvd.firebaseapp.com",
+  projectId: "terreiro-pvd",
+  storageBucket: "terreiro-pvd.firebasestorage.app",
+  messagingSenderId: "365180068240",
+  appId: "1:365180068240:web:7b2fe25ca670781f585315"
+}));
+
 const q = new URLSearchParams(location.search);
-const WHATSAPP = '5519992494267';
+const TIPO = q.get('tipo');
+const ID = q.get('id');
+const WHATSAPP_FALLBACK = '5519992494267';
 
-const metodo = q.get('capture_method');
-if (metodo) {
-  document.getElementById('metodo-box').innerHTML =
-    '<div class="metodo">' + (metodo === 'pix' ? '⚡ pago no PIX' : '💳 pago no cartão') + '</div>';
+const $ = s => document.querySelector(s);
+let CFG = {}, tentativas = 0;
+
+const whatsLink = (texto) =>
+  `https://wa.me/${CFG.whatsapp || WHATSAPP_FALLBACK}?text=${encodeURIComponent(texto)}`;
+
+const btnWhats = (texto, label) =>
+  `<a class="btn btn-whats" href="${whatsLink(texto)}" target="_blank" rel="noopener">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2z"/></svg>
+    ${label}
+  </a>`;
+
+// ── ESTADOS ──────────────────────────────────────────────────────────────
+// A resposta vem do Worker, que lê o campo que só o webhook escreve. Os
+// parâmetros da URL vêm do cliente, então não decidem nada — no máximo dão o
+// link do recibo, que é enfeite.
+
+function telaPago(st) {
+  $('#h-titulo').textContent = 'Pagamento confirmado';
+  // O recibo pode vir do Worker (fonte boa) ou da URL de retorno (enfeite, não
+  // decide nada). Só aceita https pra não virar vetor de link qualquer.
+  const cand = st.recibo_url || q.get('receipt_url') || '';
+  const recibo = cand.startsWith('https://') ? cand : null;
+  const metodo = st.metodo || q.get('capture_method');
+  $('#card').innerHTML = `
+    <svg class="ico ico-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+    <div class="titulo" style="color:var(--green)">Tudo certo!</div>
+    <div class="msg">
+      Recebemos seu pagamento e ele <strong style="color:var(--text)">já entrou no sistema do terreiro</strong>.
+      Não precisa mandar comprovante nem avisar ninguém.
+    </div>
+    ${metodo ? `<div class="chip chip-ok">${metodo === 'pix' ? '⚡ pago no PIX' : '💳 pago no cartão'}</div>` : ''}
+    <div class="linha">
+      ${recibo ? `<a class="btn btn-neutro" href="${recibo}" target="_blank" rel="noopener">📄 Ver comprovante</a>` : ''}
+      ${btnWhats('Olá! Acabei de pagar pelo site.', 'Falar com o terreiro')}
+    </div>
+    <div class="aviso">Pode fechar esta página.</div>
+  `;
 }
 
-const recibo = q.get('receipt_url');
-if (recibo && /^https:\/\//.test(recibo)) {
-  const b = document.getElementById('btn-recibo');
-  b.href = recibo;
-  b.style.display = 'flex';
+function telaAguardando() {
+  $('#h-titulo').textContent = 'Confirmando pagamento';
+  $('#card').innerHTML = `
+    <svg class="ico ico-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+    <div class="titulo" style="color:var(--amber)">Ainda não confirmamos</div>
+    <div class="msg">
+      Não achamos o seu pagamento no sistema. Duas coisas podem estar acontecendo:<br><br>
+      <strong style="color:var(--text)">Você acabou de pagar</strong> — às vezes leva alguns segundos. Clica em verificar de novo.<br><br>
+      <strong style="color:var(--text)">O pagamento não foi concluído</strong> — dá pra tentar de novo, sua reserva continua guardada.
+    </div>
+    <div class="linha">
+      <button class="btn btn-neutro" id="b-verificar">↻ Verificar de novo</button>
+      <button class="btn btn-azul" id="b-tentar">💳 Tentar o pagamento de novo</button>
+      ${btnWhats('Olá! Paguei pelo site mas o pagamento não apareceu como confirmado. Podem verificar?', 'Falar com o terreiro')}
+    </div>
+    <div class="aviso">Se você já pagou e continua sem confirmar, chama no WhatsApp — a gente resolve na mão.</div>
+  `;
+  $('#b-verificar').onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Verificando...';
+    const st = await consultar();
+    if(st?.pago) return telaPago(st);
+    e.target.disabled = false; e.target.textContent = '↻ Verificar de novo';
+  };
+  $('#b-tentar').onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Abrindo o pagamento...';
+    try {
+      const resp = await fetch(CFG.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: TIPO, doc_id: ID })
+      });
+      const d = await resp.json().catch(() => ({}));
+      // 409 = o Worker recusa porque já está pago. É boa notícia.
+      if(resp.status === 409) return telaPago({});
+      if(d.url) { location.href = d.url; return; }
+      throw new Error(d.error || 'sem link');
+    } catch(err) {
+      e.target.disabled = false; e.target.textContent = '💳 Tentar o pagamento de novo';
+      alert('Não conseguimos abrir o pagamento agora. Chama no WhatsApp que a gente resolve.');
+    }
+  };
 }
 
-document.getElementById('btn-whats').href =
-  'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent('Olá! Acabei de pagar pelo site.');
+function telaDivergente() {
+  $('#h-titulo').textContent = 'Pagamento em análise';
+  $('#card').innerHTML = `
+    <svg class="ico ico-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <div class="titulo" style="color:var(--red)">Precisa de conferência</div>
+    <div class="msg">
+      Chegou um pagamento, mas o valor não bateu com o do pedido. Ninguém foi cobrado a mais —
+      só precisamos olhar isso na mão antes de confirmar.
+    </div>
+    <div class="linha">
+      ${btnWhats('Olá! Paguei pelo site e apareceu que o valor precisa de conferência.', 'Falar com o terreiro')}
+    </div>
+  `;
+}
+
+function telaSemDados() {
+  $('#h-titulo').textContent = 'Pagamento';
+  $('#card').innerHTML = `
+    <svg class="ico ico-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div class="titulo">Não conseguimos identificar</div>
+    <div class="msg">Este link não trouxe a informação do pedido, então não dá pra dizer se o pagamento entrou. Se você pagou, fala com a gente que verificamos na hora.</div>
+    <div class="linha">
+      ${btnWhats('Olá! Paguei pelo site e queria confirmar se entrou.', 'Falar com o terreiro')}
+    </div>
+  `;
+}
+
+// ── CONSULTA ─────────────────────────────────────────────────────────────
+
+async function consultar() {
+  if(!CFG.checkout_worker_url) return null;
+  try {
+    const resp = await fetch(CFG.checkout_worker_url.replace(/\/+$/,'') + '/status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: TIPO, doc_id: ID })
+    });
+    if(!resp.ok) return null;
+    return await resp.json();
+  } catch(e) { return null; }
+}
+
+(async function boot() {
+  try {
+    const snap = await getDoc(doc(db,'adm_config','agendamento'));
+    if(snap.exists()) CFG = snap.data();
+  } catch(e) { /* segue com o WhatsApp de fallback */ }
+
+  if(!TIPO || !ID || !CFG.checkout_worker_url) return telaSemDados();
+
+  // O webhook costuma chegar em segundos, mas nem sempre antes do redirect.
+  // Tenta algumas vezes antes de mostrar a tela de "não confirmamos".
+  while(tentativas < 4) {
+    const st = await consultar();
+    if(st?.divergente) return telaDivergente();
+    if(st?.pago) return telaPago(st);
+    tentativas++;
+    if(tentativas < 4) await new Promise(r => setTimeout(r, 2500));
+  }
+  telaAguardando();
+})();
 </script>
 
 </body>

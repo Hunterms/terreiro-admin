@@ -128,7 +128,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
-import { criarCheckout, caixaCheckout, caixaCheckoutCarregando } from "./checkout.js";
+import { criarCheckout, caixaCheckout, caixaCheckoutCarregando, armarCheckout } from "./checkout.js";
 
 const cfg = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -790,6 +790,7 @@ function mostrarSucesso(prod, nome, efetivo, pedidoId) {
       if(!box) return;
       if(res) {
         box.outerHTML = caixaCheckout(res.url, res.valor);
+        armarCheckout(res.url);
         // Pagou pelo checkout: não existe comprovante pra mandar.
         const txt = $('#txt-comprovante');
         if(txt) txt.innerHTML = 'Qualquer dúvida, fala com a gente:';

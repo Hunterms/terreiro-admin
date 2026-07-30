@@ -107,6 +107,7 @@ export default {
 
     try {
       if (rota === '/checkout') return await rotaCheckout(body, env, url.origin);
+      if (rota === '/status') return await rotaStatus(body, env);
       if (rota === '/webhook') return await rotaWebhook(body, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
@@ -256,24 +257,79 @@ async function rotaCheckout(body, env, origem) {
   return json({ url: data.url, valor_centavos: centavos });
 }
 
+// ── STATUS ─────────────────────────────────────────────────────────────────
+// Entra: { tipo, doc_id }. Sai: { pago: bool }.
+//
+// Existe pra tela de retorno (pago.html) poder dizer a verdade. Ela não
+// consegue ler o pedido no Firestore (as rules exigem auth, e é pra exigir), e
+// os parâmetros que a InfinitePay devolve na URL vêm do cliente — não provam
+// nada. Aqui a resposta sai do campo que só o webhook escreve.
+//
+// Público, sem segredo: precisa do id do pedido pra perguntar, e a resposta não
+// leva nome, telefone nem valor de ninguém. Nada é escrito.
+
+async function rotaStatus(body, env) {
+  const { tipo, doc_id } = body;
+  const t = TIPOS[tipo];
+  if (!t) return json({ error: 'tipo inválido' }, 400);
+  if (!doc_id || typeof doc_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(doc_id)) {
+    return json({ error: 'doc_id inválido' }, 400);
+  }
+
+  const token = await tokenGoogle(env);
+  const pedido = await fsGet(PROJETO_PVD, t.colecao, doc_id, { token });
+  if (!pedido) return json({ error: 'pedido não encontrado' }, 404);
+
+  return json({
+    pago: pedido.pago_automatico === true,
+    metodo: pedido.pago_automatico ? pedido.metodo_pagamento || null : null,
+    recibo_url: pedido.pagamento_recibo_url || null,
+    divergente: !!pedido.pagamento_suspeito,
+  });
+}
+
 // ── WEBHOOK ────────────────────────────────────────────────────────────────
 // A InfinitePay não assina o webhook, então o corpo dele não é prova de nada.
 // A prova vem do payment_check + da comparação de valor.
 
 async function rotaWebhook(body, env) {
   const { order_nsu, transaction_nsu, invoice_slug, capture_method, receipt_url, installments } = body;
-  if (!order_nsu) return json({ error: 'sem order_nsu' }, 400);
+
+  // Grava TODO webhook que chega, com o corpo cru e o desfecho, em
+  // adm_webhook_log. Sem isso, webhook que falha é invisível: a InfinitePay
+  // não mostra o erro e o log do Cloudflare expira. Dá pra ler no Firebase
+  // Console → Firestore → adm_webhook_log.
+  const token = await tokenGoogle(env);
+  const registrar = (resultado, detalhe) =>
+    fsCreate(PROJETO_PVD, 'adm_webhook_log', token, {
+      recebidoEm: new Date().toISOString(),
+      resultado,
+      detalhe: detalhe || null,
+      order_nsu: order_nsu || null,
+      transaction_nsu: transaction_nsu || null,
+      corpo_cru: JSON.stringify(body).slice(0, 4000),
+    }).catch((e) => console.error('log falhou', e));
+
+  if (!order_nsu) {
+    await registrar('recusado', 'sem order_nsu no corpo do webhook');
+    return json({ error: 'sem order_nsu' }, 400);
+  }
 
   const [tipo, doc_id] = String(order_nsu).split('_');
   const t = TIPOS[tipo];
-  if (!t || !doc_id) return json({ error: 'order_nsu desconhecido' }, 400);
-
-  const token = await tokenGoogle(env);
+  if (!t || !doc_id) {
+    await registrar('recusado', `order_nsu fora do formato esperado: ${order_nsu}`);
+    return json({ error: 'order_nsu desconhecido' }, 400);
+  }
   const pedido = await fsGet(PROJETO_PVD, t.colecao, doc_id, { token });
-  if (!pedido) return json({ error: 'pedido não existe' }, 400);
+  if (!pedido) {
+    await registrar('recusado', `pedido ${t.colecao}/${doc_id} não existe`);
+    return json({ error: 'pedido não existe' }, 400);
+  }
 
   // Já processado: responde ok sem escrever de novo (a InfinitePay reenvia).
   if (pedido.pagamento_transaction_nsu && pedido.pagamento_transaction_nsu === transaction_nsu) {
+    await registrar('repetido', 'mesmo transaction_nsu já processado');
     return json({ success: true, ja_processado: true });
   }
 
@@ -292,6 +348,7 @@ async function rotaWebhook(body, env) {
 
   if (!checkResp.ok || check.paid !== true) {
     console.warn('payment_check negou', order_nsu, checkResp.status, JSON.stringify(check));
+    await registrar('nao_confirmado', `payment_check HTTP ${checkResp.status}: ${JSON.stringify(check).slice(0, 500)}`);
     return json({ error: 'pagamento não confirmado' }, 400); // 400 = InfinitePay tenta de novo
   }
 
@@ -301,6 +358,7 @@ async function rotaWebhook(body, env) {
   const cobrado = Number(check.amount) || 0;
   if (erro || !esperado) {
     console.error('não consegui recalcular o valor', order_nsu, erro);
+    await registrar('recusado', `não consegui recalcular o valor: ${erro || 'sem valor'}`);
     return json({ error: erro || 'pedido sem valor esperado' }, 400);
   }
   if (cobrado < esperado) {
@@ -309,6 +367,7 @@ async function rotaWebhook(body, env) {
       pagamento_suspeito: `cobrado ${cobrado} < esperado ${esperado}`,
       pagamento_suspeitoEm: new Date().toISOString(),
     });
+    await registrar('valor_divergente', `cobrado ${cobrado} < esperado ${esperado}`);
     return json({ error: 'valor divergente' }, 422); // 422 não pede retry: não vai melhorar
   }
 
@@ -325,6 +384,7 @@ async function rotaWebhook(body, env) {
     comprovante_anexado: true, // pagou pelo checkout: não precisa mandar print
   });
 
+  await registrar('pago', `${t.colecao}/${doc_id} marcado pago, ${cobrado} centavos`);
   return json({ success: true });
 }
 
@@ -342,6 +402,17 @@ async function fsGet(projeto, colecao, id, { token, apiKey } = {}) {
   if (!resp.ok) throw new Error(`Firestore GET ${colecao}/${id}: ${resp.status} ${await resp.text()}`);
   const doc = await resp.json();
   return desembrulha({ mapValue: { fields: doc.fields || {} } });
+}
+
+// Cria doc com id automático. Usado só pelo log de webhook.
+async function fsCreate(projeto, colecao, token, campos) {
+  const url = `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents/${colecao}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: embrulha(campos).mapValue.fields }),
+  });
+  if (!resp.ok) console.error(`Firestore CREATE ${colecao}: ${resp.status} ${await resp.text()}`);
 }
 
 async function fsPatch(projeto, colecao, id, token, campos) {
