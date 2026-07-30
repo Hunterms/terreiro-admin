@@ -8,6 +8,7 @@ Sistema de gestão do Terreiro do Candieiro — Barão Geraldo, Campinas-SP.
 - **`agendar.html`** — Página pública pra cliente agendar consulta de Baralho Cigano. Sem login. Pedidos vão pra `adm_solicitacoes` no Firestore, admin aprova manualmente.
 - **`area-filho.html`** — Área pessoal pública do filho. Painel com tarefas, escalas, reembolso, disponibilidade do mês, afilhados + coluna comunidade (avisos, próximas atividades, rega). Trust-based (últimos 4 dígitos do tel). `disponibilidade.html` permanece como redirect.
 - **`SCHEMA.md`** — Schema do Firestore (2 projects: `terreiro-pvd` + `terreiro-candieiro`), security rules, índices, migrations.
+- **`MENSALIDADE.md`** — Desenho do pagamento recorrente (mensalidade do filho + produto recorrente): decisões, contrato de dados, regra do acréscimo, fases.
 - **`SITEMAP.md`** — Sitemap do admin com rotas, fluxos E2E, componentes.
 
 ## Stack
