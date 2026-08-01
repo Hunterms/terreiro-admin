@@ -160,6 +160,17 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   r=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$W/entrar" \
         -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","tel4":"0000"}')
   [[ "$r" == "404" || "$r" == "403" ]] && ok "entrar confere no servidor" || erro "entrar: HTTP $r"
+
+  # Sessão forjada não pode passar. Se um dia a assinatura deixar de ser
+  # conferida, TODA rota do filho vira porta aberta — e nada mais avisaria.
+  r=$(curl -s -X POST "$W/mensalidade" -H 'Content-Type: application/json' \
+        -d '{"sessao":"eyJmIjoiZmFsc28iLCJlIjo5OTk5OTk5OTk5fQ.assinaturaInventada"}')
+  echo "$r" | grep -qE 'inválido|não confere|não encontrado' \
+    && ok "sessão forjada é recusada" || erro "SESSÃO FORJADA ACEITA: $(head -c 120 <<< "$r")"
+
+  # Zerar PIN é do admin, e só. Sem segredo não pode nem tentar.
+  r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'X-Auth-Secret' && ok "zerar-pin (protegida)" || erro "zerar-pin: $r"
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
@@ -184,7 +195,8 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # da mensalidade, nascimento, email e observação dos 60 numa resposta só. E o
   # telefone É a credencial da área do filho: quem lia a collection entrava como
   # qualquer pessoa da casa. O elenco agora vem do Worker, sem esses campos.
-  for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas fin_filhos; do
+  for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas fin_filhos \
+           adm_notificacoes adm_avisos_lidos adm_tentativas; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
   # adm_config: o doc 'agendamento' abre por get, a collection não abre por list

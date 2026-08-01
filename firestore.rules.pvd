@@ -386,6 +386,25 @@ service cloud.firestore {
       allow write: if ehAdmin();
     }
 
+    // ── A CAIXA DE AVISOS, A TRAVA E O LIDO ───────────────────────────────
+    //
+    // Três collections que NINGUÉM lê direto, nem o filho. Elas existem pro
+    // Worker, que escreve por service account e ignora estas rules; a área do
+    // filho chega nelas por `POST /avisos`, que confere a sessão antes.
+    //
+    // Não têm regra pública aqui de propósito, e é isso que as fecha (a regra
+    // genérica lá em cima exige auth pra ler e admin pra escrever). Este bloco
+    // existe pra ser explícito: se um dia alguém for tentado a abrir, que leia
+    // o motivo antes.
+    //
+    //   adm_notificacoes  o recado. Tem nome e assunto de gente.
+    //   adm_avisos_lidos  até quando cada um leu.
+    //   adm_tentativas    quantos erros de PIN, e até quando está travado.
+    //                     Abrir esta seria entregar quem está sob ataque.
+    match /adm_notificacoes/{id}  { allow read, write: if ehAdmin(); }
+    match /adm_avisos_lidos/{id}  { allow read, write: if ehAdmin(); }
+    match /adm_tentativas/{id}    { allow read, write: if ehAdmin(); }
+
     // ── PUSH: o id do doc é o próprio token ───────────────────────────────
     // `adm_push_tokens/{token}` — e é essa escolha que segura a regra de pé.
     //
