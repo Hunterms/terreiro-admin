@@ -994,8 +994,16 @@ export function ehAtividadePublica(ev) {
  * só o que pode sair.
  */
 async function rotaAgenda(env) {
+  // ⚠️ A service account é do projeto `terreiro-pvd` e NÃO alcança o
+  // `terreiro-candieiro`, onde os eventos moram. Eu mandei o token daqui pra
+  // lá na primeira versão, tomei 403, e escondi atrás de um `.catch(() => [])`
+  // — que é justamente o padrão de falha calada que passamos o dia tirando
+  // deste sistema. A agenda do site zerou e nada reclamou.
+  //
+  // Agora o erro sobe. Site sem agenda é ruim; site sem agenda e sem ninguém
+  // saber por quê é pior.
   const token = await tokenGoogle(env);
-  const eventos = await fsList(PROJETO_CAND, 'eventos', token).catch(() => []);
+  const eventos = await fsList(PROJETO_CAND, 'eventos', token);
   const publicas = eventos.filter(ehAtividadePublica)
     .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
   return json({ eventos: publicas });
@@ -1021,7 +1029,9 @@ async function rotaMural(body, env) {
 
   const [avisos, eventos, inscricoes] = await Promise.all([
     fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
-    fsList(PROJETO_CAND, 'eventos', token).catch(() => []),
+    // Mesmo caso da /agenda: se a service account não alcançar o projeto do
+    // site, isto estoura em vez de devolver agenda vazia em silêncio.
+    fsList(PROJETO_CAND, 'eventos', token),
     fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
   ]);
 
