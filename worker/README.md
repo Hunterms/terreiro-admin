@@ -37,7 +37,7 @@ dele pra mensalidade, checkout e push; agora depende pra abrir.
 | `POST /mensalidade-ajuste` | `area-filho.html` | 4 últimos dígitos, e só até o dia 5 |
 | `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
 | `POST /papel` | você, na mão | `X-Auth-Secret` |
-| `POST /lembretes` | admin (Lembretes → Mensalidade) | `X-Auth-Secret` |
+| `POST /lembretes` | admin (Lembretes → Mensalidade) | `X-Auth-Secret` — hoje manda PUSH, não email |
 | `POST /push` | admin, na mão | `X-Auth-Secret` |
 | cron `*/15 * * * *` | Cloudflare | — o único; ver "O tick" |
 
