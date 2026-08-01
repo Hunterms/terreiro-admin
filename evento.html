@@ -469,7 +469,7 @@ async function confirmarInscricao() {
   // inscrever qualquer pessoa da casa num evento pago. O telefone também só
   // aparece depois disto: saiu do elenco público em 01/08 (ver filhos.js).
   if(!f._tel) {
-    const d4 = prompt(`Pra confirmar que é você, ${(f.nome||'').split(' ')[0]}, digite os 4 últimos dígitos do seu celular:`);
+    const d4 = prompt(`Pra confirmar que é você, ${(f.nome||'').split(' ')[0]}, digite seus 4 números de acesso:`);
     if(!d4) return;
     btn.disabled = true; btn.textContent = 'Conferindo...';
     const r = await Filhos.entrar(APP.cfg, f.id, d4.replace(/\D/g,'').slice(-4));

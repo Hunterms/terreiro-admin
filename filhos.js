@@ -36,6 +36,12 @@ function base(cfg) {
   return u ? String(u).replace(/\/+$/, '') : null;
 }
 
+// Chamado quando uma requisição que LEVAVA sessão volta 403. Sem isto, token
+// expirado deixa a tela com cara de logada e tudo falhando por baixo — a pior
+// forma de quebrar, porque parece bug aleatório em vez de "entra de novo".
+let aoExpirar = null;
+export function quandoExpirar(fn) { aoExpirar = fn; }
+
 async function chamar(cfg, rota, corpo) {
   const b = base(cfg);
   if (!b) throw new Error('sem_config');
@@ -46,6 +52,10 @@ async function chamar(cfg, rota, corpo) {
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
+    if (resp.status === 403 && corpo?.sessao && aoExpirar) {
+      esquecerSessao();
+      aoExpirar();
+    }
     const e = new Error(data?.error || `HTTP ${resp.status}`);
     e.status = resp.status;
     throw e;
@@ -83,9 +93,50 @@ export async function entrar(cfg, filhoId, quatroDigitos) {
   }
 }
 
-/** O filho grava a própria data de nascimento ou email. Só esses dois. */
-export async function salvarMeuCadastro(cfg, filhoId, quatroDigitos, campos) {
-  return chamar(cfg, '/meu-cadastro', { filho_id: filhoId, tel4: quatroDigitos, ...campos });
+/** O filho grava o que é conhecimento dele. Aceita sessão no lugar do PIN. */
+export async function salvarMeuCadastro(cfg, quem, campos) {
+  return chamar(cfg, '/meu-cadastro', { ...quem, ...campos });
+}
+
+/**
+ * Cria ou troca o PIN. `prova` é o que abre a porta AGORA: os 4 dígitos do
+ * telefone na primeira vez, o PIN atual quando for troca.
+ *
+ * A sessão sozinha não basta de propósito — sessão é "você entrou faz um
+ * tempo", e trocar senha é justamente o momento em que isso é pouco.
+ */
+export async function criarPin(cfg, filhoId, prova, novoPin) {
+  return chamar(cfg, '/criar-pin', { filho_id: filhoId, tel4: prova, pin: novoPin });
+}
+
+/** A caixa de avisos de quem está logado. */
+export async function avisos(cfg, quem) {
+  return chamar(cfg, '/avisos', quem);
+}
+
+/** Marca tudo até agora como lido. Chamado quando a aba de avisos abre. */
+export async function marcarAvisosLidos(cfg, quem) {
+  return chamar(cfg, '/avisos-lidos', quem);
+}
+
+// ── A SESSÃO NO NAVEGADOR ─────────────────────────────────────────────────
+//
+// O token fica em localStorage, não sessionStorage: fechar a aba não pode
+// significar digitar o PIN de novo. Vale 30 dias, e o Worker confere a
+// assinatura a cada chamada — expirado, ele recusa e a tela pede o PIN.
+//
+// O que NUNCA entra aqui é o PIN. Ele existe na memória da aba enquanto a
+// pessoa está usando, e some quando ela sai.
+const CHAVE_SESSAO = 'candieiro_sessao';
+
+export function guardarSessao(filhoId, sessao) {
+  try { localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ filho_id: filhoId, sessao })); } catch {}
+}
+export function sessaoGuardada() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_SESSAO) || 'null'); } catch { return null; }
+}
+export function esquecerSessao() {
+  try { localStorage.removeItem(CHAVE_SESSAO); } catch {}
 }
 
 /**
@@ -94,7 +145,10 @@ export async function salvarMeuCadastro(cfg, filhoId, quatroDigitos, campos) {
  * com quem só errou de dedo.
  */
 export function explicar(erro) {
-  if (erro === 'não confere') return 'Esses 4 dígitos não batem com o cadastro. Confere e tenta de novo.';
+  if (erro === 'não confere') return 'Não bateu. Confere os números e tenta de novo.';
+  if (erro === 'a prova atual não confere') return 'Não bateu. Confere e tenta de novo.';
+  if (String(erro || '').startsWith('Muitas tentativas')) return erro;
+  if (String(erro || '').startsWith('esse PIN')) return erro;
   if (erro === 'sem_config') return 'A configuração do sistema não carregou. Recarrega a página.';
   if (erro === 'filho não encontrado') return 'Não achei esse cadastro. Fala com a administração.';
   return erro || 'Não consegui agora. Tenta de novo em instantes.';
