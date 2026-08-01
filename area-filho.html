@@ -1250,26 +1250,28 @@ async function renderMensalidade() {
   }
 
   const atrasado = d.multa > 0;
-  cnt.textContent = atrasado ? 'em atraso' : 'em aberto';
+  // "em atraso" acusa a pessoa; "vencida" descreve a data. A diferença é quem
+  // está errado na frase — e ninguém aqui está devendo favor a ninguém.
+  cnt.textContent = atrasado ? 'vencida' : 'em aberto';
   cnt.className = 'dash-badge';
 
   cont.innerHTML = `
     <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Mensalidade de ${mes}</div>
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Sua contribuição de ${mes}</div>
       <div style="padding:16px">
         <div class="linha-valor">
           <span style="color:var(--text2)">Contribuição</span><span>${brl(d.base)}</span>
         </div>
         ${atrasado ? `
           <div class="linha-valor">
-            <span style="color:var(--red)">Acréscimo por atraso</span><span style="color:var(--red)">+ ${brl(d.multa)}</span>
+            <span style="color:var(--text2)">Acréscimo</span><span style="color:var(--text2)">+ ${brl(d.multa)}</span>
           </div>` : ''}
         <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:12px;display:flex;justify-content:space-between;align-items:baseline">
           <span style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Total</span>
           <span style="font-size:24px;font-weight:800;color:var(--gold);line-height:1">${brl(d.valor)}</span>
         </div>
-        ${d.vencimento ? `<div style="font-size:12px;color:${atrasado ? 'var(--red)' : 'var(--text3)'};text-align:right;margin-top:6px">${atrasado ? 'venceu' : 'vence'} em ${new Date(d.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</div>` : ''}
-        ${atrasado ? `<div class="t-nota">Combinou o atraso com a administração? Fala com eles pra tirar o acréscimo.</div>` : ''}
+        ${d.vencimento ? `<div style="font-size:12px;color:var(--text3);text-align:right;margin-top:6px">${atrasado ? 'venceu' : 'vence'} em ${new Date(d.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</div>` : ''}
+        ${atrasado ? `<div class="t-nota">Se você já tinha combinado outra data, o acréscimo sai. Avisa a administração que a gente acerta.</div>` : ''}
       </div>
       <div style="padding:0 16px 16px">
         <button id="mens-pagar" class="btn btn-primary" style="width:100%">💳 Pagar ${brl(d.valor)}</button>
