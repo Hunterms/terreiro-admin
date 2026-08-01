@@ -667,8 +667,16 @@ async function gerarLoteMensalidade(ciclo, env) {
 // dia 10, mas 8 vencem dia 15, 1 dia 20 e 1 no último dia do mês. Data fixa no
 // dia 9 lembraria os 45 e esqueceria os outros 10.
 //
-// Só manda pra quem tem email (medido em 30/07: 27 dos 48 pagantes). Quem não
-// tem aparece na lista com a flag `sem_email`, pra cobrar por WhatsApp.
+// Manda pra TODOS agora. Era só pra quem tem email — 29 dos 56 — e os outros
+// 27 ficavam de fora sem nada. Em 01/08 o Pai decidiu que toda notificação é
+// push, e o lembrete virou push + caixa de avisos.
+//
+// Quem instalou recebe o toque; quem não instalou encontra o recado ao abrir a
+// área. O `push` na resposta diz quantos aparelhos foram alcançados de fato,
+// pra tela não fingir que chegou em todo mundo.
+//
+// O `email` continua na lista, e agora é só informação: serve pra você decidir
+// cobrar por outro canal se quiser, não é mais o que decide quem recebe.
 //
 // `lembrete_enviadoEm` continua sendo gravado, mas agora ele AVISA em vez de
 // bloquear: a lista mostra "já avisado" e vem desmarcado. Se o admin marcar
@@ -706,6 +714,13 @@ async function listarLembretes(env, ciclo) {
   // Sem isto, quem pagou na mão entrava na lista pré-marcado e recebia email
   // cobrando — com acréscimo por atraso.
   const pagos = await pagosDoCiclo(ciclo, token);
+  // Quem tem aparelho registrado. UMA query pra todos, não uma por filho: com
+  // push virando o único canal, a tela precisa dizer quem vai ser alcançado de
+  // verdade — e "sem app instalado" agora importa mais que "sem email".
+  const comApp = new Set(
+    (await fsQuery(PROJETO_PVD, 'adm_push_tokens', token, { campo: 'papel', valor: 'filho' }))
+      .map((t) => t.filho_id).filter(Boolean)
+  );
 
   const lista = [];
   for (const f of filhos) {
@@ -723,6 +738,7 @@ async function listarLembretes(env, ciclo) {
       filho_id: f.id,
       nome: f.nome || '(sem nome)',
       email: email.includes('@') ? email : null,
+      push_ativo: comApp.has(f.id),
       tel: f.tel || f.telefone || null,
       base,
       valor,
@@ -757,13 +773,14 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
   const f = await fsGet(PROJETO_PVD, 'fin_filhos', filhoId, { token });
   if (!f) return { erro: 'filho não encontrado', filho_id: filhoId };
 
-  const email = String(f.auth_email || f.email || '').trim();
-  if (!email.includes('@')) return { erro: 'filho sem email', filho_id: filhoId };
+  // O email deixou de barrar. Em 01/08 o Pai decidiu: TODA notificação é push,
+  // e o lembrete de mensalidade é uma delas. Quem não tem email deixou de ser
+  // inalcançável — e eram 27 dos 56.
 
   const docId = `${filhoId}__${ciclo}`;
   let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
 
-  // Última porta antes do email sair. A lista já filtra, mas ela pode ter sido
+  // Última porta antes do aviso sair. A lista já filtra, mas ela pode ter sido
   // carregada meia hora antes de você clicar em enviar — e nesse meio tempo
   // alguém pode ter dado a baixa no financeiro.
   const como = estaPago(pedido, await pagosDoCiclo(ciclo, token), filhoId);
@@ -790,33 +807,25 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
   if (!(valor > 0)) return { erro: 'valor zero (isento?)', filho_id: filhoId };
 
   const venc = vencimentoMensalidade(f.prazo, ciclo, pedido.venc_combinado);
+  // O link continua sendo gerado, mesmo sem email pra carregar ele: é ele que
+  // FIXA `checkout_centavos` no pedido, e é contra esse valor que o webhook
+  // compara na hora de aceitar o pagamento. Sem isso, o filho abriria a área,
+  // pagaria, e a confirmação recalcularia — que é o bug da seção 4 do
+  // MENSALIDADE.md de volta.
   const link = await gerarLinkMensalidade(f, pedido, docId, valor, env, token);
   if (!link) return { erro: 'não consegui gerar o link de pagamento', filho_id: filhoId };
-
-  // 'combinado' não tem data: o email fala de mês, não de dia.
-  const assunto =
-    !venc ? `Sua contribuição de ${nomeDoMes(ciclo)}` :
-    hoje > venc ? `Sua contribuição de ${nomeDoMes(ciclo)} está em aberto` :
-    venc === maisDias(hoje, 1) ? `Sua contribuição de ${nomeDoMes(ciclo)} vence amanhã` :
-    `Sua contribuição de ${nomeDoMes(ciclo)} vence dia ${venc.slice(8, 10)}`;
-
-  const enviado = await enviarEmail(env, {
-    to: email, to_name: f.nome || '',
-    subject: assunto,
-    html: emailLembrete(f, ciclo, valor, venc, link, hoje),
-  });
-  if (!enviado) return { erro: 'o email não saiu (Resend)', filho_id: filhoId };
 
   await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
     lembrete_enviadoEm: new Date().toISOString(),
     lembrete_valor: valor,
   });
 
-  // O push VAI junto agora. Antes não ia porque o email era o canal e dois
-  // toques pelo mesmo assunto ensinam a ignorar os dois — mas em 01/08 o email
-  // deixou de ser canal de aviso, por decisão do Pai. Sobrou push pra quem
-  // instalou, e a caixa de avisos pra todo mundo, inclusive os 27 sem email.
-  await avisar(env, token, {
+  // O aviso É o lembrete agora. Push pra quem instalou, e a caixa de avisos
+  // pra todo mundo — inclusive quem nunca instalar, que abre a área e lê.
+  //
+  // O link de pagamento não vai no texto: push não é lugar de URL longa, e a
+  // área do filho já tem o botão. O `url` leva ela direto pra lá.
+  const r = await avisar(env, token, {
     para: 'filho', filho_id: filhoId,
     titulo: `Sua contribuição de ${nomeDoMes(ciclo)}`,
     corpo: venc
@@ -826,7 +835,12 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
     tag: `mensalidade-${ciclo}`,
   });
 
-  return { ok: true, filho_id: filhoId, nome: f.nome || '', email, valor };
+  return {
+    ok: true, filho_id: filhoId, nome: f.nome || '', valor,
+    // `push: 0` não é falha: quem não instalou fica com o registro na caixa de
+    // avisos, e a tela do admin mostra isso pra você saber o alcance real.
+    push: r?.enviados ?? 0,
+  };
 }
 
 /** Gera (ou reaproveita) o link de checkout da mensalidade e fixa o valor. */
@@ -868,67 +882,11 @@ async function gerarLinkMensalidade(filho, pedido, docId, valor, env, token) {
 function nomeDoMes(ciclo) {
   return new Date(ciclo + '-02T00:00:00Z').toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
 }
-
-function emailLembrete(filho, ciclo, valor, venc, link, hoje = hojeSP()) {
-  const primeiro = String(filho.nome || '').split(' ')[0];
-  const brl = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
-  const base = Number(filho.valor) || 0;
-  const multa = Math.max(0, valor - base);
-
-  // A frase muda com o caso: sem data ('combinado'), vencida, amanhã, ou um dia
-  // qualquer à frente. Antes o texto era sempre "vence amanhã" — agora o admin
-  // manda quando quer, e o email precisa dizer a verdade do dia em que sai.
-  const dia = venc ? venc.slice(8, 10) : null;
-  const quando =
-    !venc ? `de <strong>${nomeDoMes(ciclo)}</strong> está aberta` :
-    hoje > venc ? `de <strong>${nomeDoMes(ciclo)}</strong> venceu <strong>dia ${dia}</strong> e está em aberto` :
-    venc === maisDias(hoje, 1) ? `de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>amanhã, dia ${dia}</strong>` :
-    `de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>dia ${dia}</strong>`;
-
-  return `<div style="font-family:-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;color:#2b2b2b;line-height:1.6">
-  <div style="text-align:center;padding:24px 0 8px">
-    <img src="https://terreirodocandieiro.com.br/logocandieiro.png" alt="Terreiro do Candieiro" width="72" style="display:block;margin:0 auto"/>
-  </div>
-  <p>Olá, ${primeiro}.</p>
-  <p>Sua contribuição ${quando}.</p>
-  <div style="background:#faf7f0;border:1px solid #e8dfc8;border-radius:10px;padding:16px;margin:18px 0">
-    <div style="font-size:13px;color:#7a6a52">Valor</div>
-    <div style="font-size:26px;font-weight:700;color:#a8802a">${brl(valor)}</div>
-    ${multa > 0 ? `<div style="font-size:12.5px;color:#b0483a;margin-top:6px">Inclui ${brl(multa)} de acréscimo por atraso. Se você combinou o atraso com a administração, fala com a gente que a gente ajusta.</div>` : ''}
-  </div>
-  <p style="text-align:center;margin:24px 0">
-    <a href="${link}" style="display:inline-block;background:#3498db;color:#fff;text-decoration:none;padding:14px 28px;border-radius:9px;font-weight:700">Pagar agora</a>
-  </p>
-  <p style="font-size:13.5px;color:#6b6b6b">Cartão ou PIX. Cai na hora, e você não precisa mandar comprovante — o pagamento entra no sistema do terreiro sozinho.</p>
-  <p style="font-size:13.5px;color:#6b6b6b">Se preferir pagar de outro jeito, ou se algo não estiver certo, responde este email ou chama no WhatsApp.</p>
-  <p style="font-size:12.5px;color:#9a9a9a;border-top:1px solid #eee;padding-top:14px;margin-top:22px">
-    Terreiro do Candieiro · Barão Geraldo, Campinas-SP<br>
-    Você recebe isto porque tem contribuição mensal combinada com a casa.
-  </p>
-</div>`;
-}
-
-/** Manda email pelo Resend. Devolve true/false, sem derrubar quem chamou. */
-async function enviarEmail(env, { to, to_name, subject, html }) {
-  if (!env.RESEND_API_KEY) { console.error('RESEND_API_KEY não configurada'); return false; }
-  try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: env.DEFAULT_FROM,
-        to: [to_name ? `${to_name} <${to}>` : to],
-        subject,
-        html,
-      }),
-    });
-    if (!resp.ok) { console.error('Resend', resp.status, await resp.text()); return false; }
-    return true;
-  } catch (e) {
-    console.error('Resend falhou', e);
-    return false;
-  }
-}
+// O helper `enviarEmail` foi apagado em 01/08 junto com o lembrete por email:
+// ficou sem nenhum chamador. A rota `/email` continua viva e não é contradição
+// — ela manda CONFIRMAÇÃO DE COMPRA pra quem comprou pelo site, que muitas
+// vezes nem é da casa. Isso é recibo, não notificação, e recibo por push não
+// existe.
 
 // ── PUSH (notificação no celular) ──────────────────────────────────────────
 //
@@ -1041,8 +999,9 @@ async function avisar(env, token, { para, filho_id, titulo, corpo, url, tag, pus
   // estouram o teto de subrequests numa invocação só). Quem cuida disso é o
   // `drenarFilaDeAvisos`, um lote por batida do cron.
   if (push && alvo !== 'todos') {
-    await mandarPush(env, { titulo, corpo, url, tag, papel: alvo, filho_id });
+    return await mandarPush(env, { titulo, corpo, url, tag, papel: alvo, filho_id });
   }
+  return { enviados: 0 };
 }
 
 /** Os avisos de quem chamou, do mais novo pro mais velho. */
@@ -1374,7 +1333,9 @@ async function digestDoDia(env, token, hoje) {
   // Mensalidades vencendo amanhã. O push NÃO manda o email — ele chama o admin
   // pra revisar a lista e aprovar. A decisão continua sendo de gente.
   const { lista } = await listarLembretes(env, cicloAtual());
-  const revisar = lista.filter((f) => f.vence_amanha && !f.pago && !f.ja_avisado && f.email);
+  // Sem `&& f.email`: o lembrete virou push + caixa de avisos, e quem não tem
+  // email deixou de ser inalcançável. Eram 27 dos 56 fora da conta.
+  const revisar = lista.filter((f) => f.vence_amanha && !f.pago && !f.ja_avisado);
   if (revisar.length) {
     avisos.push({
       tag: 'mensalidade',

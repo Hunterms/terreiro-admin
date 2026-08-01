@@ -195,10 +195,26 @@ O que isso mudou:
   que alcança quem não instalou: 31 dos 56 não têm email, e o push depende de
   instalação (no iPhone, obrigatoriamente).
 
-**O que ficou pendente de decisão**: o `/lembretes`, que manda o email de
-cobrança aprovado por você, continua existindo e continua mandando email. Ele
-não é "aviso", é cobrança — mas se a ideia é aposentar o email de vez, é ali que
-o assunto continua vivo.
+**Decidido no mesmo dia**: o `/lembretes` também. Toda notificação é push, sem
+exceção. O lembrete de contribuição parou de mandar email e passou a empurrar
+push mais o registro na caixa de avisos.
+
+O que isso troca, dito sem maquiagem:
+
+| | antes | agora |
+|---|---|---|
+| alcance imediato | 29 por email | quem instalou o app |
+| alcance garantido | ninguém | os 56, ao abrir a área |
+| quem ficava de fora | 27 sem email | ninguém |
+
+O email chegava sozinho na caixa de quem tem; o push só chega em quem instalou.
+Então **no curto prazo o alcance imediato cai**, e sobe conforme a casa instala.
+A caixa de avisos é o que segura o piso: ela não depende de entrega nenhuma.
+
+Por isso a tela de Lembretes do admin passou a mostrar **"sem app instalado"** em
+vez de "sem email" — é essa a informação que decide se a pessoa vai ser tocada
+hoje. E a resposta de cada envio traz `push`, com quantos aparelhos foram
+alcançados de fato, pra tela não fingir que chegou em todo mundo.
 
 ---
 

@@ -4795,11 +4795,15 @@ function renderLembretesMensalidade(c) {
   const brl = v => `R$ ${(Number(v)||0).toFixed(2).replace('.',',')}`;
   const lista = lembMens?.lista || [];
 
-  // Padrão de marcação: vence amanhã, tem email, não pagou e não foi avisado.
+  // Padrão de marcação: vence amanhã, não pagou e não foi avisado.
+  //
+  // "tem email" saiu do critério em 01/08: o lembrete virou push + caixa de
+  // avisos, e quem não tem email deixou de ser inalcançável. Eram 27 dos 56
+  // que vinham desmarcados por um motivo que não existe mais.
   // É sugestão, não regra — o Set abaixo passa a mandar assim que você toca.
-  const padrao = f => f.vence_amanha && f.email && !f.pago && !f.ja_avisado;
+  const padrao = f => f.vence_amanha && !f.pago && !f.ja_avisado;
   const marcado = f => (lembMensSel ? lembMensSel.has(f.filho_id) : padrao(f));
-  const marcados = lista.filter(f => marcado(f) && f.email && !f.pago);
+  const marcados = lista.filter(f => marcado(f) && !f.pago);
 
   const cabe = (f) => {
     const tags = [];
@@ -4809,7 +4813,10 @@ function renderLembretesMensalidade(c) {
     if (f.atrasado && !f.pago) tags.push('<span class="chip" style="background:rgba(231,51,41,.12);color:var(--red);font-size:10px">atrasado</span>');
     if (f.vence_amanha) tags.push('<span class="chip" style="background:rgba(212,168,67,.16);color:var(--gold);font-size:10px">vence amanhã</span>');
     if (f.ja_avisado) tags.push('<span class="chip" style="font-size:10px">já avisado</span>');
-    if (!f.email) tags.push('<span class="chip" style="background:rgba(231,51,41,.12);color:var(--red);font-size:10px">sem email</span>');
+    // "sem email" deixou de ser alerta vermelho: não impede mais nada. Vira
+    // nota discreta, porque ainda diz que aquela pessoa não tem esse canal.
+    if (!f.email) tags.push('<span class="chip" style="font-size:10px;color:var(--text3)">sem email</span>');
+    if (!f.push_ativo) tags.push('<span class="chip" style="font-size:10px;color:var(--text3)">sem app instalado</span>');
     if (f.avisou_atraso) tags.push('<span class="chip" style="font-size:10px">avisou o atraso</span>');
     return tags.join(' ');
   };
