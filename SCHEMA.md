@@ -140,7 +140,8 @@ Funções/cargos da casa. CRUD restrito a `admin`.
   ts:               timestamp                           // legado — manter
 
   // novos
-  tipo:             'gira_aberta' | 'gira_fechada' | 'trabalho_interno' | 'ensaio_curimba' | 'reuniao' | 'mutirao' | 'obrigacao_coletiva' | 'festa' | 'apresentacao_cultural' | 'outro'
+  tipo:             'gira_aberta' | 'gira_fechada' | 'desenvolvimento' | 'trabalho_interno' | 'ensaio_curimba' | 'reuniao' | 'mutirao' | 'obrigacao_coletiva' | 'festa' | 'apresentacao_cultural' | 'outro'
+                    // 'desenvolvimento' = o trabalho de segunda, dos médiuns. INTERNO.
   // apresentacao_cultural: coco de roda (Bloco Quebra Coco), Samba do Candieiro, CineMakumba — manifestações culturais. Aparece no site público e na área do filho com label "Apresentação cultural" em laranja.
   publico:          boolean                             // true → aparece no site público; false → só admin
   hora_fim:         string|null
