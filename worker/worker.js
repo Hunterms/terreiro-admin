@@ -15,6 +15,8 @@
  *   POST /entrar     → confere PIN (ou telefone, na primeira vez) e devolve
  *                       uma sessão assinada. A conferência era no navegador,
  *                       contra dado que o navegador tinha baixado.
+ *   POST /mural      → quadro de avisos e próximas atividades. Interno: não
+ *                       existe mais área externa (decisão de 01/08).
  *   POST /avisar-filho → o admin responde alguém. Push + caixa de avisos.
  *                       É o único caminho de resposta desde que o email saiu.
  *   POST /avisos     → a caixa de avisos do filho. O push é entrega; ISTO é
@@ -183,6 +185,7 @@ export default {
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
+      if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
       if (rota === '/avisos-lidos') return await rotaAvisosLidos(body, env);
@@ -959,6 +962,40 @@ async function mandarPush(env, { titulo, corpo, url, papel, filho_id, tag }) {
     console.error('push falhou', e?.stack || e);
     return { enviados: 0, erro: String(e?.message || e) };
   }
+}
+
+// ── O MURAL: AVISOS E PRÓXIMAS ATIVIDADES ─────────────────────────────────
+//
+// Isto era leitura pública direta do Firestore, e a página mostrava tudo antes
+// mesmo de alguém entrar. Decisão do Pai em 01/08: não existe mais área
+// externa. Quadro de avisos e agenda da casa são de quem é da casa.
+//
+// O que estava aberto pra internet: o mural inteiro (`adm_avisos`), a agenda de
+// giras e festas (`eventos`, no projeto do site) e as inscrições nelas
+// (`evento_inscricoes`) — que dizem quem vai em quê.
+//
+// Agora vem daqui, atrás da mesma sessão assinada do resto. Uma chamada só, e
+// não três: são três coleções que a tela sempre pede juntas, e três viagens
+// numa abertura de app em 3G é a diferença entre abrir e parecer travado.
+async function rotaMural(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const [avisos, eventos, inscricoes] = await Promise.all([
+    fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
+    fsList(PROJETO_CAND, 'eventos', token).catch(() => []),
+    fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
+  ]);
+
+  return json({
+    avisos: avisos.filter((a) => !a.arquivado),
+    eventos: eventos.filter((e) => !e.arquivado),
+    // Só as inscrições de quem perguntou. As dos outros não são da conta dela,
+    // e mandar tudo aqui seria trocar uma collection pública por uma rota que
+    // devolve o mesmo excesso.
+    inscricoes: inscricoes.filter((i) => i.filho_id === quem.id),
+  });
 }
 
 // ── A CAIXA DE AVISOS ──────────────────────────────────────────────────────

@@ -2,7 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<!-- viewport-fit=cover NÃO é enfeite: sem ele o `env(safe-area-inset-bottom)`
+     devolve 0 no iOS, e a barra de abas fica embaixo do indicador de home. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Minha área · Terreiro do Candieiro</title>
 <meta name="robots" content="noindex"/>
 <link rel="manifest" href="manifest-filho.json"/>
@@ -35,7 +37,10 @@ body{
   background-image:
     radial-gradient(ellipse at 20% 0%,rgba(230,51,41,0.06) 0%,transparent 60%),
     radial-gradient(ellipse at 80% 100%,rgba(212,168,67,0.04) 0%,transparent 50%);
-  padding:24px 16px 60px;
+  /* Com viewport-fit=cover a página passa a ir até as bordas físicas, então o
+     topo precisa desviar do notch e as laterais da borda curva. Sem isto, o
+     conserto da barra de baixo empurraria o problema pro cabeçalho. */
+  padding:calc(24px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-left,0px)) 60px calc(16px + env(safe-area-inset-right,0px));
 }
 .container{max-width:1100px;margin:0 auto}
 .painel-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:22px;align-items:start}
@@ -235,7 +240,7 @@ a.dash-link:active{transform:scale(.99)}
    Fixa no rodapé, com respiro pro notch do iPhone (`safe-area-inset-bottom`).
    Sem isso, no iPhone X pra frente o último botão fica embaixo da barra de
    gestos e vira intocável. */
-.abas{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(13,13,13,.97);backdrop-filter:blur(14px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom,0)}
+.abas{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(13,13,13,.97);backdrop-filter:blur(14px);border-top:1px solid var(--border);padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
 .aba-btn{flex:1;padding:9px 2px 7px;background:none;border:none;font-family:var(--font);color:var(--text3);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;-webkit-tap-highlight-color:transparent}
 .aba-btn .ic{font-size:17px;line-height:1}
 .aba-btn .rot{font-size:10px;font-weight:650;letter-spacing:.01em}
@@ -254,7 +259,7 @@ a.dash-link:active{transform:scale(.99)}
 body.com-abas .painel-grid{grid-template-columns:1fr;gap:0;max-width:620px;margin:0 auto}
 body.com-abas .col-titulo{display:none}
 /* O corpo precisa caber acima da barra, senão o último card fica escondido. */
-body.com-abas{padding-bottom:calc(78px + env(safe-area-inset-bottom,0))}
+body.com-abas{padding-bottom:calc(88px + max(10px,env(safe-area-inset-bottom,0px)))}
 /* Com abas, as seções param de ser sanfona: a aba já é o recolher. */
 body.com-abas .dash-secao > summary{cursor:default}
 body.com-abas .dash-chevron{display:none}
