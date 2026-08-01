@@ -1702,30 +1702,30 @@ function blocoAjuste(d) {
   const dia = iso => new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
 
   if (a.isencao_status === 'pedida') {
-    return cx('Seu pedido de isenção deste mês foi enviado. A administração ainda vai responder — até lá o mês segue em aberto.');
+    return cx('Recebemos seu aviso. A gente vai te responder, e até lá o mês continua em aberto.');
   }
   if (a.isencao_status === 'recusada') {
-    return cx('O pedido de isenção deste mês não foi aceito. Fala com a administração se precisar.');
+    return cx('Sobre este mês, a gente não conseguiu liberar. Se ainda estiver difícil, me chama que a gente conversa.');
   }
 
   // Já remarcou. Dentro da janela ainda dá pra trocar; fora dela, só mostra.
   if (a.venc_combinado) {
     const base = `Você combinou pagar em <strong style="color:var(--text)">${dia(a.venc_combinado)}</strong>.`;
     return a.aberto
-      ? cx(`${base} Dá pra trocar até ${dia(a.prazo)}.<div style="margin-top:10px"><button id="aj-abrir" class="btn" style="width:100%">Mudar de novo</button></div>`)
+      ? cx(`${base} Dá pra mudar até ${dia(a.prazo)}.<div style="margin-top:10px"><button id="aj-abrir" class="btn" style="width:100%">Mudar de novo</button></div>`)
       : cx(base);
   }
 
   if (!a.aberto) {
-    return cx(`Precisa de outra data ou não vai conseguir pagar este mês? O prazo pra avisar por aqui era ${dia(a.prazo)}. Agora é falar com a administração.`);
+    return cx(`O prazo pra avisar por aqui era ${dia(a.prazo)}. Se o mês apertou, me chama assim mesmo que a gente dá um jeito.`);
   }
 
   return `
     <div id="aj-box" class="acao-box">
-      <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Aperta o mês e não fecha? Até ${dia(a.prazo)} você resolve por aqui.</div>
-      <button id="aj-data" class="btn" style="width:100%;margin-bottom:8px">Pagar em outro dia deste mês</button>
-      <button id="aj-isencao" class="btn" style="width:100%">Não vou conseguir pagar este mês</button>
-      <div style="font-size:11.5px;color:var(--text3);margin-top:10px;line-height:1.5">Vale só pra este mês. Mudar o prazo de todos os meses é conversa com o Pai.</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Mês apertado? Até ${dia(a.prazo)} dá pra remarcar o dia ou avisar que não vai dar.</div>
+      <button id="aj-data" class="btn" style="width:100%;margin-bottom:8px">Pagar em outro dia do mês</button>
+      <button id="aj-isencao" class="btn" style="width:100%">Não vou conseguir este mês</button>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:10px;line-height:1.5">Vale só pra este mês. Pra mudar o prazo de sempre, fala com o Pai.</div>
     </div>`;
 }
 
