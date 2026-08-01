@@ -497,6 +497,47 @@ Desligado, volta pro PIX manual + `infinity_link` fixo por serviço/produto
 
 ---
 
+### `adm_push_tokens/{token}` — celular registrado
+
+O id do doc **é o token do FCM**. Não é economia de campo: é o que dá dedupe por
+aparelho (re-registrar sobrescreve) e o que sustenta a regra de segurança — o
+token é secreto e só o aparelho que o gerou conhece, então "pode escrever quem
+souber o id" não abre nada. É isso que deixa o filho, que não tem login,
+registrar o celular dele.
+
+```
+papel:     'admin' | 'filho'
+filho_id:  string|null      // FK fin_filhos, quando papel='filho'
+nome:      string|null      // só pra você reconhecer o aparelho na lista
+uid:       string|null      // Firebase Auth, quando papel='admin'
+ua:        string           // user agent cortado em 200
+criadoEm:  timestamp
+```
+
+`list` é fechado pra quem não tem login (regra genérica), então ninguém varre a
+collection pra sair com a lista de aparelhos da casa. Token morto é apagado pelo
+Worker no primeiro envio que falha.
+
+### `fin_gastos.dia_venc` e `fin_gastos_pagos/{ciclo}` — conta fixa
+
+`fin_gastos` é do financeiro e sempre teve só `{nome, valor, tipo}`. Faltavam as
+duas coisas sem as quais não existe lembrete de conta:
+
+```
+fin_gastos.dia_venc:          number|null   // 1..31; vazio = não avisa nunca
+fin_gastos_pagos/{ciclo}:     { [gastoId]: true }
+```
+
+O segundo é o **mesmo formato do `fin_pagamentos`** da mensalidade, de propósito:
+um doc por mês, booleano por item. Quem entendeu um entende o outro, e o mês
+passado fica intacto quando o cadastro muda.
+
+`dia_venc: 31` em mês de 30 dias vence no último dia — mesma dobra do `'ultimo'`
+da mensalidade, e pelo mesmo motivo. A regra é uma função pura testada
+(`worker/test-contas.mjs`).
+
+---
+
 ## 6. Mapa completo de collections por project
 
 ### Project `terreiro-pvd` (PDV + financeiro)
@@ -519,6 +560,8 @@ Desligado, volta pro PIX manual + `infinity_link` fixo por serviço/produto
 | `adm_inventario_peji` | **admin (novo)** | sim | sim |
 | `adm_avisos` | **admin (novo)** | sim | sim |
 | `adm_visitantes` | **admin (novo)** | sim | sim |
+| `adm_push_tokens` | **admin (novo)** | sim | sim (e o público cria o dele) |
+| `fin_gastos_pagos` | **admin (novo)** | sim | sim |
 
 ### Project `terreiro-candieiro` (CMS do site)
 

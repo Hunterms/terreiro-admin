@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Minha área · Terreiro do Candieiro</title>
 <meta name="robots" content="noindex"/>
+<link rel="manifest" href="manifest-filho.json"/>
 <link rel="icon" type="image/png" href="logocandieiro.png"/>
 <link rel="apple-touch-icon" href="logocandieiro.png"/>
+<meta name="theme-color" content="#0d0d0d"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Minha área"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -317,6 +321,11 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             <button class="identity-trocar" onclick="trocarFilho()" title="Sair desta conta">trocar</button>
           </div>
 
+          <!-- Notificação: só aparece pra quem já entrou, e só se este aparelho
+               puder receber. Some sozinho no resto — botão que nunca vai
+               funcionar aqui é ruído. -->
+          <div id="push-card" style="display:none;margin-bottom:14px"></div>
+
           <!-- Card pedindo email — só pra quem não tem auth_email -->
           <div id="email-capture-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(52,152,219,.12),rgba(52,152,219,.02));border:1px solid rgba(52,152,219,.35);border-radius:12px;margin-bottom:14px">
             <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
@@ -494,6 +503,7 @@ import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 import { criarCheckout } from "./checkout.js";
+import * as Push from "./push.js";
 
 const cfgPvd = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -509,8 +519,14 @@ const cfgCand = {
   projectId: "terreiro-candieiro",
   appId: "1:100068133826:web:aa6bea82298a266737a45b"
 };
-const dbPvd = getFirestore(initializeApp(cfgPvd, 'pvd'));
+const appPvd = initializeApp(cfgPvd, 'pvd');
+const dbPvd = getFirestore(appPvd);
 const dbCand = getFirestore(initializeApp(cfgCand, 'cand'));
+
+// O service worker registra na carga porque é ele que faz o celular oferecer
+// "adicionar à tela de início". Falhar aqui não quebra nada: a página continua
+// igual, só não vira app.
+if ('serviceWorker' in navigator) Push.registrarSW().catch(e => console.warn('sw:', e.message));
 
 const $ = q => document.querySelector(q);
 const $$ = q => Array.from(document.querySelectorAll(q));
@@ -658,6 +674,7 @@ async function selecionarFilho(id) {
   APP.filhoAtual = filho;
   $('#filho-area').style.display = '';
   renderIdentityHero(filho);
+  renderPushCard(filho);
   renderEmailCapture(filho);
   renderNascCapture(filho);
   renderAniversariantes();
@@ -996,6 +1013,53 @@ function renderIdentityHero(f) {
   rl.style.display = roles.length ? '' : 'none';
 }
 
+// ── NOTIFICAÇÃO NO CELULAR ────────────────────────────────────────────────
+// Só depois de entrar: o token fica gravado com o `filho_id`, e sem a prova
+// dos 4 dígitos qualquer visitante registraria o celular dele como sendo de
+// outra pessoa e passaria a receber os avisos dela.
+//
+// O cartão some quando este aparelho não pode receber (navegador sem suporte),
+// e no iPhone vira instrução em vez de botão — lá o push só existe depois de
+// "Adicionar à Tela de Início", e botão que não pode funcionar só frustra.
+async function renderPushCard(filho) {
+  const card = document.getElementById('push-card');
+  if (!card) return;
+
+  const motivo = await Push.diagnostico();
+  if (motivo === 'sem_suporte' || motivo === 'sem_chave') { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  if (motivo === 'ios_precisa_instalar') {
+    card.innerHTML = `<div class="card" style="padding:14px;font-size:13px;line-height:1.6;color:var(--text2)">
+      📲 <strong>Receber avisos no iPhone</strong><br/>
+      Toque em <strong>Compartilhar</strong> e depois em <strong>Adicionar à Tela de Início</strong>.
+      Abra por lá e o botão de ativar aparece aqui.
+    </div>`;
+    return;
+  }
+
+  const ligado = Push.ativo();
+  card.innerHTML = `<div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:180px;font-size:13px;line-height:1.55;color:var(--text2)">
+      <strong style="color:var(--text)">${ligado ? 'Avisos ligados neste aparelho' : 'Receber avisos no celular'}</strong><br/>
+      <span style="font-size:12px">Escala, tarefa e contribuição do mês — direto na tela, sem precisar abrir o site.</span>
+    </div>
+    <button class="btn" id="push-btn">${ligado ? 'Desligar' : 'Ativar'}</button>
+  </div>`;
+
+  document.getElementById('push-btn').onclick = async () => {
+    const btn = document.getElementById('push-btn');
+    btn.disabled = true;
+    if (ligado) {
+      await Push.desativar(appPvd, dbPvd);
+    } else {
+      const r = await Push.ativar(appPvd, dbPvd, { papel: 'filho', filho_id: filho.id, nome: filho.nome || '' });
+      if (!r.ok) alert(Push.EXPLICACAO[r.motivo] || 'Não consegui ativar.');
+    }
+    renderPushCard(filho);
+  };
+}
+
 // ── MENSALIDADE ───────────────────────────────────────────────────────────
 // Esta página NÃO lê fin_mensalidade_pedidos: a collection é fechada de
 // propósito, senão qualquer visitante veria quem está atrasado na casa. Quem
@@ -1049,7 +1113,7 @@ async function renderMensalidade() {
     cont.innerHTML = `
       <div style="padding:18px;background:var(--green-bg,rgba(46,204,113,0.1));border:1px solid var(--green-bd,rgba(46,204,113,0.3));border-radius:12px;text-align:center">
         <div style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:6px">✓ ${mes} está pago</div>
-        <div style="font-size:13.5px;color:var(--text2)">${brl(d.valor)}${d.metodo ? ` · ${d.metodo === 'pix' ? 'PIX' : 'cartão'}` : ''}</div>
+        <div style="font-size:13.5px;color:var(--text2)">${brl(d.valor)}${d.metodo ? ` · ${({pix:'PIX', cartao:'cartão', manual:'registrado pela administração'})[d.metodo] || d.metodo}` : ''}</div>
         ${d.recibo_url ? `<a href="${d.recibo_url}" target="_blank" rel="noopener" style="display:inline-block;margin-top:12px;font-size:13px;color:var(--gold)">Ver comprovante ↗</a>` : ''}
       </div>`;
     return;

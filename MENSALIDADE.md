@@ -121,11 +121,42 @@ Isento não tem pedido: `fin_filhos.valor === 0` → o lote não gera. Se o filh
 virar isento no meio do mês, o pedido aberto para de pedir dinheiro sozinho,
 porque o valor é derivado.
 
-### `fin_pagamentos/{ciclo}` — continua
+### `fin_pagamentos/{ciclo}` — continua, e é fonte de verdade
 
 O booleano `{filhoId: true}` não morre: é o que o financeiro atual renderiza, e
 é o registro do lançamento manual. O Worker **flipa ele** ao confirmar, então o
 financeiro se marca sozinho mesmo antes de qualquer mudança lá.
+
+#### O caminho de volta (achado quebrado em 01/08/2026)
+
+A ida existia desde o começo; a volta não. Resultado medido: **filha com baixa
+manual ontem viu "mensalidade atrasada" na área dela, com acréscimo** — e
+entraria pré-marcada na lista de lembretes, recebendo email de cobrança.
+
+Falhava calado dos dois lados: quem pagou era cobrado, e nada no sistema
+reclamava.
+
+**Regra agora**: pago é `pedido pago` **ou** `fin_pagamentos/{ciclo}[filho] ===
+true`. Uma função pura, `estaPago()`, e todo mundo que decide passa por ela:
+
+| Onde | O que fazia errado antes |
+|---|---|
+| `rotaMensalidade` | mostrava atrasado e cobrava multa de quem pagou |
+| `listarLembretes` | pré-marcava pra cobrança por email |
+| `enviarLembreteDeUm` | mandava o email |
+| `rotaCheckout` (`men`) | deixava pagar o mês duas vezes |
+
+**Deriva, não copia.** Marcar `status: 'pago'` no pedido ao ver o booleano
+seria mais barato e estaria errado: desmarcar no financeiro deixaria o pedido
+pago pra sempre — a mesma divergência ao contrário. Mesma razão da seção 7.
+
+Se os dois estiverem marcados, **`checkout` ganha**: só ele tem recibo, método e
+valor congelado. E só `true` conta — o financeiro grava `false` ao desmarcar, e
+o campo fica no doc.
+
+Custa **um** `fsGet`: `fin_pagamentos/{ciclo}` é um doc só, com o mapa inteiro.
+
+Teste: `worker/test-pago.mjs`, 15 asserts.
 
 ### `vendas_pedidos` — ganha `ciclo`
 

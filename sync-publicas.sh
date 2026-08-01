@@ -37,6 +37,11 @@ SITE="$HOME/Desktop/Docs/claude/site-candieiro"
 #
 # As de "só no admin" dão 404 no domínio, e isso está certo — não são falta de
 # sync. Conferido em 30/07.
+#
+# `push.js` e `sw.js` não são páginas, mas entram pelo mesmo motivo: a
+# area-filho.html do domínio faz `import "./push.js"`, e um import que dá 404
+# derruba o módulo INTEIRO — a página fica em branco, não "sem notificação".
+# Foi o que quase aconteceu em 01/08.
 PAGINAS=(
   agendar.html
   vendas.html
@@ -46,6 +51,9 @@ PAGINAS=(
   reembolso.html
   pago.html
   checkout.js
+  push.js
+  sw.js
+  manifest-filho.json
 )
 
 CONFERIR=false
