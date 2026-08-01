@@ -147,6 +147,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         Perguntas
       </button>
+
+      <div class="section-label">Sistema</div>
+      <button data-route="links">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Links
+      </button>
     </nav>
 
     <nav class="sidebar-nav" id="nav-filho" style="display:none">
@@ -1028,6 +1034,7 @@ function renderRoute() {
   const c = $('#route-content');
   switch(S.route) {
     case 'dashboard':     return renderDashboard(c);
+    case 'links':         return renderLinks(c);
     case 'filhos':        return renderFilhos(c);
     case 'funcoes':       return renderFuncoes(c);
     case 'kanban':        return renderKanban(c);
@@ -1255,6 +1262,87 @@ async function limparKanbanAntigos() {
 }
 
 // ── DASHBOARD (admin) ──────────────────────────────────────────────────────
+// ── TODOS OS LINKS, NUM LUGAR SÓ ─────────────────────────────────────────
+//
+// São cinco superfícies em quatro domínios diferentes, e ninguém decora isso.
+// O admin mora no github.io, o site e a área do filho no domínio próprio, o
+// financeiro e o PDV em subdomínios, e o Worker no workers.dev.
+//
+// Cada link tem botão de copiar porque o uso real não é abrir: é colar no
+// WhatsApp pra mandar pra alguém.
+//
+// A lista é escrita à mão de propósito. Poderia sair de uma collection, mas
+// endereço de sistema não muda toda semana, e uma collection a mais é uma
+// collection a mais pra manter, proteger e migrar.
+const LINKS = [
+  { grupo: 'Pra mandar pros filhos', itens: [
+    { nome: 'Área do filho', url: 'https://terreirodocandieiro.com.br/area-filho.html',
+      nota: 'Escala, tarefas, contribuição. É o link do grupo do WhatsApp.' },
+    { nome: 'Despensa', url: 'https://hunterms.github.io/terreiro-admin/despensa.html',
+      nota: 'Só quem tem gerência de despensa entra.' },
+    { nome: 'Confirmar rega', url: 'https://hunterms.github.io/terreiro-admin/confirma-rega.html',
+      nota: 'É o QR impresso no terreiro.' },
+  ]},
+  { grupo: 'Pra mandar pra fora', itens: [
+    { nome: 'Site', url: 'https://terreirodocandieiro.com.br/', nota: null },
+    { nome: 'Agendar consulta', url: 'https://terreirodocandieiro.com.br/agendar.html', nota: null },
+    { nome: 'Vendas', url: 'https://terreirodocandieiro.com.br/vendas.html',
+      nota: 'O link de cada produto tem o slug dele no fim.' },
+    { nome: 'Pedir reembolso', url: 'https://terreirodocandieiro.com.br/reembolso.html', nota: null },
+  ]},
+  { grupo: 'Suas ferramentas', itens: [
+    { nome: 'Admin', url: 'https://hunterms.github.io/terreiro-admin/index.html', nota: 'Esta tela.' },
+    { nome: 'Financeiro', url: 'https://financeiro.terreirodocandieiro.com.br/', nota: null },
+    { nome: 'PDV', url: 'https://vendas.terreirodocandieiro.com.br/', nota: 'O tablet da lojinha.' },
+  ]},
+  { grupo: 'Onde as coisas moram', itens: [
+    { nome: 'Firebase — dados e regras', url: 'https://console.firebase.google.com/project/terreiro-pvd/firestore',
+      nota: 'Publicar rules é aqui. Foi o que derrubou a despensa em 01/08.' },
+    { nome: 'Cloudflare — o Worker', url: 'https://dash.cloudflare.com/?to=/:account/workers/services/view/terreiro-email/production/settings',
+      nota: 'Colar o worker.js e ver os logs do cron.' },
+    { nome: 'Google Cloud — APIs do push', url: 'https://console.cloud.google.com/apis/library?project=terreiro-pvd',
+      nota: 'Firebase Cloud Messaging API E FCM Registration API. As duas.' },
+  ]},
+];
+
+function renderLinks(c) {
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Links</div>
+        <div class="page-sub">Tudo que o terreiro tem endereço. Clica no link pra abrir, no botão pra copiar.</div>
+      </div>
+    </div>
+    ${LINKS.map(g => `
+      <div style="margin-bottom:24px">
+        <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:10px">${g.grupo}</div>
+        ${g.itens.map(i => `
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:13px 15px;background:var(--glass);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <a href="${i.url}" target="_blank" rel="noopener" style="font-size:14.5px;font-weight:650;color:var(--text);text-decoration:none">${i.nome} <span style="color:var(--text3);font-weight:400">↗</span></a>
+              <div style="font-size:11.5px;color:var(--text3);margin-top:3px;font-family:ui-monospace,monospace;word-break:break-all">${i.url.replace(/^https:\/\//,'')}</div>
+              ${i.nota ? `<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.45">${i.nota}</div>` : ''}
+            </div>
+            <button class="btn" onclick="copiarLink(this,'${i.url}')" style="width:auto;padding:8px 14px;font-size:12.5px;white-space:nowrap">Copiar</button>
+          </div>`).join('')}
+      </div>`).join('')}
+  `;
+}
+
+window.copiarLink = async function(btn, url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    const antes = btn.textContent;
+    btn.textContent = 'Copiado ✓';
+    setTimeout(() => { btn.textContent = antes; }, 1600);
+  } catch {
+    // clipboard falha em contexto sem HTTPS ou sem permissão. Mostrar o link
+    // selecionável é melhor que um erro que não resolve nada pra quem só
+    // queria mandar o endereço pra alguém.
+    prompt('Copia daqui:', url);
+  }
+};
+
 // ── O RESUMO DO DIA ───────────────────────────────────────────────────────
 //
 // A notificação das 8h chega dizendo "3 consultas hoje, 2 tarefas atrasadas".

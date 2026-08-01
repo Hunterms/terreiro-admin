@@ -60,6 +60,9 @@ if [[ "$alvo" == "tudo" || "$alvo" == "admin" ]]; then
   # O admin passou a importar email-textos.js. Import que dá 404 não deixa a
   # página "sem email": derruba o módulo inteiro e ela abre em branco.
   checa https://hunterms.github.io/terreiro-admin/email-textos.js "textos de email" "_buildEmailConfirmacaoHTML"
+  # A página de Links é a única lista de endereços do sistema. Se um link
+  # apodrecer, ninguém descobre até precisar dele.
+  checa https://hunterms.github.io/terreiro-admin/index.html "página de links" "renderLinks"
   checa https://hunterms.github.io/terreiro-admin/confirma-rega.html "QR da rega" ""
   checa https://hunterms.github.io/terreiro-admin/despensa.html "despensa" ""
   # PWA: sem service worker no ar não há instalação nem notificação, e a página
