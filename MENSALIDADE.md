@@ -103,6 +103,15 @@ avisou_atraso:   boolean       // toggle do admin: filho comunicou o atraso
 status:          'aberto' | 'pago' | 'cancelado'
 geradoEm:        timestamp
 
+// escritos pelo PRÓPRIO FILHO, até o dia 5, via /mensalidade-ajuste (seção 12)
+venc_combinado:        string|null   // ISO, só deste ciclo; vence o prazo do cadastro
+venc_combinado_em:     string|null
+venc_combinado_motivo: string        // texto livre do filho, até 500 chars
+isencao_status:        'pedida' | 'aprovada' | 'recusada' | null
+isencao_pedida_em:     string|null
+isencao_motivo:        string        // texto livre do filho, até 500 chars
+isencao_julgada_em:    string|null   // escrito pelo financeiro ao julgar
+
 // escritos SÓ ao pagar — aí sim congelam
 valor_cobrado:      number     // o que de fato foi cobrado
 multa_aplicada:     number     // 0 ou 10
@@ -168,18 +177,29 @@ pagamento é de junho ou julho, nem avisar "você já pagou este mês".
 ## 6. Regra do valor (uma só, espelhada e testada)
 
 ```
+valor = 0                                    se isento OU isencao_status === 'aprovada'
 valor = valor_base + (atrasado && !avisou_atraso ? 10 : 0)
 
 atrasado   = hoje > vencimento && status !== 'pago'
-vencimento = prazo 10|15|20 → dia do mês do ciclo
+vencimento = venc_combinado, se for deste ciclo   ← escolha do filho, seção 12
+             senão prazo 10|15|20 → dia do mês do ciclo
              prazo 'ultimo' → último dia do mês do ciclo
              prazo 'combinado' ou vazio → sem multa automática
 valor_base = fin_filhos.valor        (0 = isento, não gera pedido)
 ```
 
+Duas coisas que a regra **não** faz, e é decisão, não esquecimento:
+
+- `isencao_status: 'pedida'` não muda nada. Enquanto o pedido não é julgado, o
+  filho deve o mês inteiro. Número de financeiro muda por decisão, não por
+  pedido.
+- `venc_combinado` de outro ciclo é ignorado. O prefixo é conferido de
+  propósito: sem isso, uma data torta gravada no pedido adiaria a multa pra
+  sempre.
+
 Mesma situação de `precoEfetivo` × `precoCentavos`: a regra existe em dois
 lugares (Worker pra cobrar, tela pra mostrar) e por isso **tem teste**
-(`worker/test-mensalidade.mjs`, 30 asserts). Se as duas discordarem, o filho vê um preço e
+(`worker/test-mensalidade.mjs`, 67 asserts). Se as duas discordarem, o filho vê um preço e
 paga outro.
 
 ---
@@ -324,3 +344,76 @@ Dois remotes guardavam Personal Access Token na URL, legível em `.git/config`:
 Os dois apareceram em output de terminal em 30/07/2026. **Revogar ambos** em
 github.com/settings/tokens e deixar os remotes em SSH. O `terreiro-pdv` ainda
 está com token na URL.
+
+---
+
+## 12. "Não vou conseguir pagar este mês" — o filho avisa até o dia 5
+
+A conversa acontecia no WhatsApp e morria lá. O financeiro continuava contando
+com o dinheiro, o lembrete continuava saindo, e o acréscimo caía em cima de
+quem tinha avisado. Agora tem lugar.
+
+### O que o filho pode fazer, e o que não pode
+
+Na área dele, até o **dia 5** do mês corrente, duas escolhas:
+
+| Escolha | O que grava | Efeito imediato |
+|---|---|---|
+| pagar em outro dia deste mês | `venc_combinado` | o vencimento muda, o acréscimo espera |
+| não vou conseguir pagar este mês | `isencao_status: 'pedida'` | **nenhum** — vai pra fila do financeiro |
+
+**Regra permanente não passa por aqui.** Outro prazo todos os meses, isenção de
+vez: isso é conversa com o Pai, e a tela diz isso em vez de fingir que resolve.
+Esta rota mexe num mês, uma vez, e o mês é o corrente.
+
+### Por que a janela é do Worker, e não da tela
+
+`podeAjustar()` roda no `/mensalidade-ajuste`. Esconder o botão no HTML deixaria
+o pedido passar por `curl` no dia 28. A tela também esconde, mas isso é conforto,
+não trava.
+
+Ciclo passado não reabre (senão em dezembro dava pra pedir isenção de março, com
+o ano já fechado) e ciclo futuro também não.
+
+### A data escolhida
+
+Tem que ser deste ciclo e não pode ser pra trás — o piso é hoje, não o dia 1.
+Escolher data que já passou é escolher o acréscimo, e quando alguém faz isso é
+engano. O `<input type="date">` da tela já leva `min` e `max`; o Worker confere
+de novo, porque a tela é do usuário.
+
+### A isenção é julgada por gente
+
+`'pedida'` não muda número nenhum. No financeiro aparece o contador **"isenção a
+julgar"** e dois botões na linha do filho. Só `'aprovada'` zera a cobrança e tira
+o filho do esperado do mês.
+
+As rules deixam o financeiro escrever `isencao_status`, mas **só** `'aprovada'`
+ou `'recusada'` — pedir é do filho, e o filho passa pelo Worker, que confere os
+4 dígitos antes.
+
+### O motivo é o primeiro texto de filho nesta tela
+
+`isencao_motivo` e `venc_combinado_motivo` são texto livre escrito por um filho e
+renderizados no financeiro. Por isso o `esc()` em `candieiro-financeiro/js/app.js`:
+sem ele, um motivo com `<img onerror=...>` roda no navegador de quem tem sessão
+de admin. O Worker corta em 500 chars; a tela escapa na hora de desenhar.
+
+### Isento parou de entrar na fila de cobrança
+
+Achado ao fazer isto, e é bug antigo:
+
+- `calcProjecaoTipo2` somava o esperado com `f.valor||200`. Isento tem
+  `valor: 0`, que é falsy, então **cada isento contava como R$200** no ticket
+  médio — e o denominador logo abaixo já excluía os isentos. Ticket inflado,
+  "filhos necessários" menor que a realidade.
+- `pendentes` não olhava isento, então todo isento caía na fila de cobrança
+  todo mês, e o `X/Y` de "pagaram" nunca fechava.
+- o card do isento vinha com o check **marcado** sem existir em
+  `fin_pagamentos`. Parecia resolvido, e um clique distraído criava uma baixa
+  que ninguém pediu.
+
+Agora `ehCobravel(f, ped)` é uma função só, espelhando `mensalidadeReais()` do
+Worker: isento de cadastro e isenção do mês aprovada saem do esperado, saem de
+pendentes, e ganham filtro próprio. Isento **não** é marcado como pago — não
+existe cobrança pra pagar, e chamar isso de pago mentiria no arrecadado.

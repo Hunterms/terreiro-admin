@@ -147,12 +147,25 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   echo "RULES"
   K=AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4
   B="https://firestore.googleapis.com/v1/projects/terreiro-pvd/databases/(default)/documents"
-  for c in fin_filhos vendas_produtos adm_servicos; do
+  # As páginas trust-based (4 dígitos, sem Firebase Auth) LEEM estas. Se uma
+  # fechar, a página não dá erro: mostra VAZIO, e parece dado em vez de defeito.
+  #
+  # A lista nasceu em 01/08, depois de publicar rules sem a leitura de
+  # adm_despensa. O filho relatou "a despensa está vazia" e nada no sistema
+  # tinha reclamado. Toda collection que uma página sem login lê entra aqui.
+  for c in fin_filhos vendas_produtos adm_servicos adm_despensa adm_perguntas \
+           adm_avisos adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"
   done
-  for c in fin_pagamentos sales fin_mensalidade_pedidos; do
+  # E estas NÃO podem abrir. fin_reembolsos e adm_respostas carregam dado de
+  # pessoa (chave PIX, telefone, acerto/erro com nome) — list público aqui é
+  # vazamento, não conveniência.
+  for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
+  # adm_config: o doc 'agendamento' abre por get, a collection não abre por list
+  [[ "$(http "$B/adm_config/agendamento?key=$K")" == "200" ]] && ok "adm_config/agendamento por get" || erro "adm_config/agendamento fechou — checkout quebra"
+  [[ "$(http "$B/adm_config?pageSize=1&key=$K")" == "403" ]] && ok "adm_config sem list" || erro "adm_config FICOU LISTÁVEL"
 fi
 
 echo

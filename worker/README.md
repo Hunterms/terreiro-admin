@@ -9,6 +9,7 @@ Um Worker, cinco assuntos: email, checkout, mensalidade, papéis e push.
 | `POST /status` | `pago.html` | nada — só responde pago/não, e confirma no `payment_check` |
 | `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
 | `POST /mensalidade` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
+| `POST /mensalidade-ajuste` | `area-filho.html` | 4 últimos dígitos, e só até o dia 5 |
 | `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
 | `POST /papel` | você, na mão | `X-Auth-Secret` |
 | `POST /lembretes` | admin (Lembretes → Mensalidade) | `X-Auth-Secret` |
@@ -195,8 +196,9 @@ cliente vê um preço e paga outro. Os testes existem pra pegar essa divergênci
 - **Cloudflare Workers**: 100.000 requests/dia. O tick de 15 em 15 min gasta 96.
 - **Subrequests por invocação**: é o teto que molda o desenho aqui. É por causa
   dele que a lista de lembretes vem numa query só (e não num `get` por filho),
-  que o envio é um filho por chamada, e que não existe push em massa pros 48.
-  Fan-out grande não dá erro bonito — falha calado no meio.
+  que o email é um filho por chamada, e que o push de aviso pros filhos é
+  **fila** e não laço — 15 aparelhos por batida. Fan-out grande não dá erro
+  bonito: falha calado no meio, e você não sabe qual metade recebeu.
 - **Resend**: 100 emails/dia, 3.000/mês
 - **FCM**: sem cobrança por notificação
 - **InfinitePay**: sem mensalidade; a taxa sai por transação, conforme o plano
@@ -365,11 +367,40 @@ Brasília, dentro do `tick()`:
 | Quando | O quê |
 |---|---|
 | toda batida | novidade desde o último olhar → push pro admin |
-| 9h | digest: tarefas atrasadas, contas de amanhã, contribuições de amanhã |
+| toda batida | consulta que começa em ~1h → push pro admin |
+| toda batida | um lote da fila de push de aviso pros filhos |
+| 9h | digest: consultas de hoje, tarefas atrasadas, contas e contribuições de amanhã |
 | dia 1, das 6h em diante | gera o lote de mensalidade do ciclo |
 
 O estado mora em `adm_config/push_estado` (`ultimo_olhar`, `digest_em`,
 `lote_ciclo`), e é ele que impede repetição com 96 batidas por dia.
+
+Duas coisas **não** guardam estado ali, de propósito:
+
+- o lembrete de 1h marca `push_1h_em` no próprio `adm_atendimentos`. Remarcar o
+  horário tem que poder reabrir o lembrete, e uma flag no estado global ficaria
+  valendo pro dia inteiro.
+- a fila de aviso mora no próprio `adm_avisos` (`push_status`,
+  `push_restantes`, `push_enviados`). Aviso apagado leva a fila junto, sem
+  deixar órfão no estado.
+
+### A janela do lembrete de 1h
+
+A janela é `[45, 75]` minutos à frente, não "exatamente 60". Com batidas de 15
+em 15, um alvo pontual seria perdido na maioria das vezes. A largura de 31
+minutos garante que **nenhuma consulta escapa entre duas batidas** — e como duas
+ou três batidas caem dentro, quem garante um push só é a flag `push_1h_em`.
+
+### A fila de aviso pros filhos
+
+`adm_avisos` é a única coisa aqui que fala com dezenas de aparelhos de uma vez.
+O admin marca "avisar no celular" ao publicar, o que grava `push_status:
+'pendente'`. Cada batida manda **15 aparelhos** e devolve o resto pra fila; a
+casa inteira leva uns 30 minutos.
+
+A fila é de **aparelhos**, não de filhos: é o aparelho que custa uma subrequest,
+e um filho com celular e tablet custa dois. Quem registrar o celular depois do
+aviso sair não recebe aquele aviso — senão a fila nunca fecharia.
 
 **A primeira execução não avisa nada do passado**: sem `ultimo_olhar` gravado, o
 corte é agora. Senão o primeiro tick despejaria o histórico inteiro na tela de

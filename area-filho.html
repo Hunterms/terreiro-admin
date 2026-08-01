@@ -708,12 +708,18 @@ async function selecionarFilho(id) {
   } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
 
   // Perguntas: carrega ativas + respostas desse filho pra calcular pendentes
+  //
+  // A resposta é lida UMA A UMA, por `get` no id determinístico
+  // `{pergunta}__{filho}`, e não por query. A collection não tem `list`
+  // público de propósito: a resposta tem nome e acerto de uma pessoa, e uma
+  // query aberta entregaria o boletim da casa inteira a qualquer visitante.
   try {
     const pSnap = await getDocs(collection(dbPvd,'adm_perguntas'));
     APP.perguntas = pSnap.docs.map(d => ({ id:d.id, ...d.data() }))
       .filter(p => p.ativa !== false && !p.arquivada);
-    const rSnap = await getDocs(query(collection(dbPvd,'adm_respostas'), where('filho_id','==',id)));
-    APP.minhasRespostas = rSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const lidas = await Promise.all(APP.perguntas.map(p =>
+      getDoc(doc(dbPvd,'adm_respostas', `${p.id}__${id}`)).catch(() => null)));
+    APP.minhasRespostas = lidas.filter(s => s?.exists()).map(s => ({ id:s.id, ...s.data() }));
   } catch(e) { console.warn('Erro perguntas', e); APP.perguntas = []; APP.minhasRespostas = []; }
 
   // Lojinha gerentes: carregam TODAS escalas de gira (mesmo padrão da aba "escala"
@@ -1119,6 +1125,15 @@ async function renderMensalidade() {
     return;
   }
 
+  // Isenção aprovada zera o valor no Worker. Sem esta porta o cartão de baixo
+  // desenharia um botão "Pagar R$ 0,00", que é pior que não desenhar nada.
+  if (d.ajuste?.isencao_status === 'aprovada') {
+    cnt.textContent = 'isento este mês';
+    cnt.className = 'dash-badge muted';
+    cont.innerHTML = `<div style="padding:16px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text2);line-height:1.55">A isenção de <strong style="color:var(--text)">${mes}</strong> foi aprovada. Nada a pagar neste mês.</div>`;
+    return;
+  }
+
   const atrasado = d.multa > 0;
   cnt.textContent = atrasado ? 'em atraso' : 'em aberto';
   cnt.className = 'dash-badge';
@@ -1155,6 +1170,105 @@ async function renderMensalidade() {
     b.disabled = false; b.textContent = `💳 Pagar ${brl(d.valor)}`;
     alert('Não consegui abrir o pagamento agora. Tenta de novo em instantes, ou fala com a administração.');
   };
+
+  cont.insertAdjacentHTML('beforeend', blocoAjuste(d));
+  ligarAjuste(d, f, worker, tel4);
+}
+
+// ── "NÃO VOU CONSEGUIR PAGAR ESTE MÊS" ─────────────────────────────────────
+// Até o dia 5 o filho remarca a data DESTE mês, ou pede isenção DESTE mês. As
+// duas coisas antes moravam no WhatsApp e sumiam: a administração continuava
+// contando com o dinheiro e a multa caía em quem tinha avisado.
+//
+// Regra permanente — outro prazo todo mês, isenção de vez — não passa por aqui.
+// Isso é conversa com o Pai, e a tela diz isso em vez de fingir que resolve.
+
+function blocoAjuste(d) {
+  const a = d.ajuste || {};
+  const cx = (txt, cor) => `<div id="aj-box" style="margin-top:12px;padding:12px 14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13px;color:${cor||'var(--text2)'};line-height:1.55">${txt}</div>`;
+  const dia = iso => new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
+
+  if (a.isencao_status === 'pedida') {
+    return cx('Seu pedido de isenção deste mês foi enviado. A administração ainda vai responder — até lá o mês segue em aberto.');
+  }
+  if (a.isencao_status === 'recusada') {
+    return cx('O pedido de isenção deste mês não foi aceito. Fala com a administração se precisar.');
+  }
+
+  // Já remarcou. Dentro da janela ainda dá pra trocar; fora dela, só mostra.
+  if (a.venc_combinado) {
+    const base = `Você combinou pagar em <strong style="color:var(--text)">${dia(a.venc_combinado)}</strong>.`;
+    return a.aberto
+      ? cx(`${base} Dá pra trocar até ${dia(a.prazo)}.<div style="margin-top:10px"><button id="aj-abrir" class="btn" style="width:100%">Mudar de novo</button></div>`)
+      : cx(base);
+  }
+
+  if (!a.aberto) {
+    return cx(`Precisa de outra data ou não vai conseguir pagar este mês? O prazo pra avisar por aqui era ${dia(a.prazo)}. Agora é falar com a administração.`);
+  }
+
+  return `
+    <div id="aj-box" style="margin-top:12px;padding:14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
+      <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Aperta o mês e não fecha? Até ${dia(a.prazo)} você resolve por aqui.</div>
+      <button id="aj-data" class="btn" style="width:100%;margin-bottom:8px">Pagar em outro dia deste mês</button>
+      <button id="aj-isencao" class="btn" style="width:100%">Não vou conseguir pagar este mês</button>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:10px;line-height:1.5">Vale só pra este mês. Mudar o prazo de todos os meses é conversa com o Pai.</div>
+    </div>`;
+}
+
+function ligarAjuste(d, f, worker, tel4) {
+  const a = d.ajuste || {};
+  if (!a.aberto) return;
+
+  const painel = () => {
+    const ultimo = new Date(Number(d.ciclo.slice(0,4)), Number(d.ciclo.slice(5,7)), 0).getDate();
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    // Native date input: o min/max já barra o dedo torto antes do Worker ver.
+    return `
+      <div id="aj-box" style="margin-top:12px;padding:14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
+        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:6px">Que dia você consegue pagar?</label>
+        <input type="date" id="aj-dt" class="fi" style="width:100%" min="${hoje}" max="${d.ciclo}-${String(ultimo).padStart(2,'0')}" value="${a.venc_combinado || ''}"/>
+        <label style="font-size:12px;color:var(--text3);display:block;margin:12px 0 6px">Quer contar o motivo? (opcional)</label>
+        <textarea id="aj-motivo" class="fi" style="width:100%;min-height:64px"></textarea>
+        <button id="aj-enviar" class="btn btn-primary" style="width:100%;margin-top:12px">Enviar</button>
+        <button id="aj-cancelar" class="btn" style="width:100%;margin-top:8px">Deixa pra lá</button>
+      </div>`;
+  };
+
+  const mandar = async (tipo, corpo) => {
+    const resp = await fetch(worker.replace(/\/+$/, '') + '/mensalidade-ajuste', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filho_id: f.id, tel4, tipo, ...corpo })
+    });
+    const r = await resp.json().catch(() => ({}));
+    if (!resp.ok) { alert(r?.error || 'Não consegui enviar agora. Tenta de novo em instantes.'); return false; }
+    return true;
+  };
+
+  const abrirData = () => {
+    const alvo = document.getElementById('aj-box');
+    if (!alvo) return;
+    alvo.outerHTML = painel();
+    document.getElementById('aj-cancelar').onclick = () => renderMensalidade();
+    document.getElementById('aj-enviar').onclick = async (ev) => {
+      const data = document.getElementById('aj-dt').value;
+      if (!data) { alert('Escolhe o dia primeiro.'); return; }
+      ev.currentTarget.disabled = true;
+      if (await mandar('data', { data, motivo: document.getElementById('aj-motivo').value })) renderMensalidade();
+      else ev.currentTarget.disabled = false;
+    };
+  };
+
+  document.getElementById('aj-data')?.addEventListener('click', abrirData);
+  document.getElementById('aj-abrir')?.addEventListener('click', abrirData);
+
+  document.getElementById('aj-isencao')?.addEventListener('click', async () => {
+    const motivo = prompt('Conta pra administração o que aconteceu (opcional):', '');
+    if (motivo === null) return;   // cancelou
+    if (!confirm('Confirmar que você não vai conseguir pagar este mês? A administração precisa aprovar.')) return;
+    if (await mandar('isencao', { motivo })) renderMensalidade();
+  });
 }
 
 function renderActionItems() {
@@ -2607,7 +2721,15 @@ async function carregarHistoricoReemb() {
     `;
   } catch(e) {
     console.warn('Erro hist reemb', e);
-    histC.innerHTML = '';
+    // `fin_reembolsos` não tem leitura pública, e não vai ter: o doc carrega
+    // chave PIX, telefone e email de quem pediu, e as rules não conseguem
+    // limitar uma query por filho sem login de verdade. Até existir uma rota no
+    // Worker (com a prova dos 4 dígitos, igual à mensalidade), o histórico não
+    // carrega — e dizer isso é melhor que mostrar lista vazia, que o filho lê
+    // como "meu pedido sumiu".
+    histC.innerHTML = e.code === 'permission-denied'
+      ? `<div style="font-size:12px;color:var(--text3);padding:10px 0;line-height:1.5">O histórico dos seus pedidos ainda não abre por aqui. O pedido que você enviou <strong style="color:var(--text2)">foi recebido</strong> — a administração acompanha por dentro.</div>`
+      : '';
   }
 }
 

@@ -108,9 +108,14 @@ registros, e desligar num não desliga no outro.
 | Nova venda de produto | até 15 min depois | admin |
 | Pedido de reembolso | até 15 min depois | admin |
 | Pagamento confirmado | na hora (o webhook avisa) | admin |
+| Filho remarcou a contribuição | na hora | admin |
+| Filho pediu isenção do mês | na hora | admin |
+| **Consulta começa em ~1h** | 45 a 75 min antes | admin |
+| Consultas de hoje | 9h | admin |
 | Tarefas atrasadas | 9h | admin |
 | Conta fixa vence amanhã | 9h | admin |
 | Contribuições vencem amanhã | 9h | admin |
+| **Aviso novo no mural** | quando você marca a caixa ao publicar | filhos |
 
 O último **não manda email pra ninguém**: ele chama você pra abrir *Lembretes →
 Mensalidade*, conferir a lista e aprovar. Ver `README.md`.
@@ -121,10 +126,17 @@ até 01/08 — o Worker só olhava `fin_mensalidade_pedidos` e ignorava o toggle
 `fin_pagamentos/{ciclo}`, então quem já tinha pago aparecia como devendo. O
 conserto está em `MENSALIDADE.md` §5, "O caminho de volta".
 
-**Não existe disparo em massa pros filhos.** O filho recebe notificação de coisa
-que é dele, e o gatilho é sempre uma ação sua — não um cron varrendo 48 pessoas.
-Motivo técnico honesto: cada envio é uma subrequest, e o Worker tem teto por
-invocação. Fan-out pra 48 estouraria e falharia calado.
+**O único disparo pra casa inteira é o aviso do mural, e ele é fila.** Você marca
+"avisar no celular dos filhos" ao publicar em Avisos. O cron manda **15
+aparelhos por batida** e devolve o resto pra fila, então a casa inteira leva uns
+30 minutos. O modal de edição mostra quantos já saíram e quantos faltam.
+
+Fila, e não laço, pelo motivo de sempre aqui: cada envio é uma subrequest e o
+Worker tem teto **por invocação**. Um laço em 48 estouraria no meio e falharia
+calado — metade recebe, metade não, e ninguém sabe qual metade.
+
+Fora esse, o filho só recebe notificação de coisa que é dele, e o gatilho é
+sempre uma ação sua.
 
 ---
 
