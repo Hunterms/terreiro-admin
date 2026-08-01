@@ -169,8 +169,13 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
     && ok "sessão forjada é recusada" || erro "SESSÃO FORJADA ACEITA: $(head -c 120 <<< "$r")"
 
   # Zerar PIN é do admin, e só. Sem segredo não pode nem tentar.
+  # ⚠️ Rota que NÃO EXISTE cai no /email, que pede o mesmo header — então este
+  # teste sozinho dá verde num Worker velho. A checagem de existência é a de
+  # baixo: /criar-pin sem PIN responde uma mensagem que só ela sabe dizer.
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "zerar-pin (protegida)" || erro "zerar-pin: $r"
+  r=$(curl -s -X POST "$W/criar-pin" -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","pin":"12"}')
+  echo "$r" | grep -q 'PIN tem 4' && ok "criar-pin no ar" || erro "criar-pin: Worker velho? $(head -c 100 <<< "$r")"
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
