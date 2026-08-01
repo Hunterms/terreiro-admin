@@ -1637,13 +1637,19 @@ async function renderMensalidade() {
     // repartição, no exato momento em que a casa está dizendo "a gente te
     // segura". E a frase não respondia o que a pessoa realmente quer saber:
     // se aquilo vira dívida depois.
-    cnt.textContent = 'resolvido';
+    // "Resolvido" é vocabulário de chamado de suporte. Quem chega nesta tela
+    // pediu ajuda pra casa e recebeu sim — a frase tem que soar como a casa
+    // falando, não como um sistema fechando um ticket.
+    //
+    // Sem flexão de gênero: o cadastro não guarda isso, e "tranquilo(a)" numa
+    // tela é pior que uma frase que não precisa escolher.
+    cnt.textContent = 'tranquilo';
     cnt.className = 'dash-badge muted';
     cont.innerHTML = `
       <div class="aviso-box" style="border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.07)">
-        <strong style="color:var(--green)">Este mês tá resolvido.</strong>
-        Você não precisa pagar a contribuição de ${mes}.
-        Não fica pendente e não acumula. No mês que vem segue normal.
+        <strong style="color:var(--green)">Deixa ${mes} com a gente.</strong>
+        Você não precisa pagar esse mês, e isso não vira dívida nem acumula pro mês que vem.
+        Qualquer coisa, a gente tá aqui.
       </div>`;
     return;
   }
@@ -1714,7 +1720,7 @@ function blocoAjuste(d) {
     return cx('Recebemos seu aviso. A gente vai te responder, e até lá o mês continua em aberto.');
   }
   if (a.isencao_status === 'recusada') {
-    return cx('Sobre este mês, a gente não conseguiu liberar. Se ainda estiver difícil, me chama que a gente conversa.');
+    return cx('Esse mês a gente não conseguiu segurar pra você. Se tiver apertado mesmo, me chama que a gente pensa junto.');
   }
 
   // Já remarcou. Dentro da janela ainda dá pra trocar; fora dela, só mostra.
