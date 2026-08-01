@@ -52,6 +52,7 @@ PAGINAS=(
   pago.html
   checkout.js
   push.js
+  filhos.js
   sw.js
   manifest-filho.json
 )

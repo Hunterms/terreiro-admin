@@ -221,11 +221,28 @@ service cloud.firestore {
     // adm_atendimentos NÃO precisa de regra pública — coberto pela regra
     // genérica de auth no topo. Slots ocupados estão em pub_slots_ocupados.
 
-    // ── PÚBLICO: dados pro area-filho.html ───────────────────────────
-    // ⚠️ Expõe nome + tel dos filhos. Trust-based (auth via últimos 4 dígitos).
-    match /fin_filhos/{id} {
-      allow read: if true;
-    }
+    // ── fin_filhos NÃO é mais público ─────────────────────────────────────
+    //
+    // Era `allow read: if true`, com o aviso "⚠️ Expõe nome + tel dos filhos"
+    // escrito bem aqui. O aviso subestimava: saíam também valor da mensalidade,
+    // data de nascimento, email e a observação interna, dos 60 de uma vez.
+    //
+    // E o telefone É a credencial. A área do filho entra com os 4 últimos
+    // dígitos dele, e eles vinham na mesma resposta que a lista de nomes: quem
+    // lesse a collection entrava como qualquer pessoa da casa. A prova era
+    // conferida no navegador, contra dado que o próprio navegador tinha
+    // baixado.
+    //
+    // Agora as páginas sem login não leem daqui. O elenco vem do Worker
+    // (`POST /filhos`), sem os cinco campos; a prova é conferida no Worker
+    // (`POST /entrar`), onde o telefone não é público; e os dois campos que o
+    // filho edita passam pelo `POST /meu-cadastro`, que também confere antes.
+    //
+    // Não há regra pública nenhuma aqui embaixo de propósito. A leitura
+    // autenticada e a escrita do admin vêm da regra genérica lá em cima, e o
+    // Worker escreve por service account, que ignora estas rules.
+    //
+    // Achado em 01/08/2026, medindo a própria página.
     match /adm_funcoes/{id} {
       allow read: if true;
     }

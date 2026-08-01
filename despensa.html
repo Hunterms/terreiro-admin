@@ -237,6 +237,7 @@ import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
   query, where, orderBy, serverTimestamp, onSnapshot
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import * as Filhos from "./filhos.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -280,12 +281,12 @@ function toast(msg, kind='ok') {
 // ── BOOT ─────────────────────────────────────────────────────────────────
 async function boot() {
   try {
-    // Carrega filhos com gerencia_despensa=true
-    const snap = await getDocs(collection(db, 'fin_filhos'));
-    APP.filhos = snap.docs
-      .map(d => ({ id:d.id, ...d.data() }))
-      .filter(f => f.gerencia_despensa && (!f.status || f.status === 'ativo'))
-      .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+    // A config traz a URL do Worker; o elenco vem de lá, sem telefone.
+    // `fin_filhos` deixou de ser leitura pública em 01/08 — ver filhos.js.
+    const cSnap = await getDoc(doc(db,'adm_config','agendamento'));
+    APP.cfg = cSnap.exists() ? cSnap.data() : null;
+    APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(APP.cfg))
+      .filter(f => f.gerencia_despensa);
 
     if (APP.filhos.length === 0) {
       $('#estado-loading').style.display = 'none';
@@ -410,15 +411,17 @@ $('#login-pin').oninput = e => {
 };
 $('#login-pin').onkeydown = e => { if (e.key === 'Enter' && e.target.value.length === 4) $('#login-btn').click(); };
 
-$('#login-btn').onclick = () => {
+$('#login-btn').onclick = async () => {
   const f = APP.filhoSel;
   if (!f) return;
   const pin = $('#login-pin').value.trim();
   if (pin.length !== 4) { $('#login-err').textContent = 'Digite os 4 dígitos.'; $('#login-err').style.display = 'block'; return; }
-  const digits = (f.tel || '').replace(/\D/g, '');
-  const expected = (f.pin || (digits.length >= 4 ? digits.slice(-4) : ''));
-  if (!expected) { $('#login-err').textContent = 'Sem telefone cadastrado e sem PIN. Peça pro admin atualizar seu cadastro.'; $('#login-err').style.display = 'block'; return; }
-  if (pin !== expected) { $('#login-err').textContent = 'PIN incorreto. Tenta de novo.'; $('#login-err').style.display = 'block'; return; }
+  // Confere no Worker. Era aqui, contra o telefone que esta página tinha
+  // baixado junto com a lista de nomes — teatro, pra qualquer devtools.
+  const btn = $('#login-btn'); btn.disabled = true;
+  const r = await Filhos.entrar(APP.cfg, f.id, pin);
+  btn.disabled = false;
+  if (!r.ok) { $('#login-err').textContent = Filhos.explicar(r.erro); $('#login-err').style.display = 'block'; return; }
   // Auth ok
   const sess = { filho_id: f.id, nome: f.nome, categorias: f.despensa_categorias || [], ts: Date.now() };
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}

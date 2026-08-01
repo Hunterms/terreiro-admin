@@ -504,6 +504,7 @@ import {
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 import { criarCheckout } from "./checkout.js";
 import * as Push from "./push.js";
+import * as Filhos from "./filhos.js";
 
 const cfgPvd = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -546,6 +547,10 @@ let APP = {
   filhos: [],
   funcoes: [],
   filhoAtual: null,
+  // Os 4 dígitos de quem já provou, nesta aba, em memória. Não vai pro
+  // sessionStorage: as rotas do Worker pedem a prova a cada chamada, e gravar
+  // no disco devolveria ao navegador o segredo que acabou de sair de lá.
+  provaPorFilho: {},
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
@@ -574,9 +579,11 @@ function dataEfetivaAloc(es, aloc, funcoes) {
 
 (async function boot() {
   try {
-    const fSnap = await getDocs(query(collection(dbPvd,'fin_filhos'), orderBy('nome')));
-    APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-      .filter(f => !f.status || f.status === 'ativo');
+    // A config vem primeiro: é dela que sai a URL do Worker, e sem Worker não
+    // há elenco. `fin_filhos` não é mais leitura pública (ver filhos.js).
+    const cSnapBoot = await getDoc(doc(dbPvd,'adm_config','agendamento'));
+    APP.cfgAgendamento = cSnapBoot.exists() ? cSnapBoot.data() : null;
+    APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(APP.cfgAgendamento));
 
     const funSnap = await getDocs(collection(dbPvd,'adm_funcoes'));
     APP.funcoes = funSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(fn => !fn.arquivada);
@@ -644,31 +651,30 @@ async function selecionarFilho(id) {
   const filho = APP.filhos.find(f => f.id === id);
   if(!filho) return;
 
-  // Autenticação: últimos 4 dígitos do tel cadastrado, ou PIN manual (fallback)
-  const telLimpo = (filho.tel||'').replace(/\D/g,'');
-  const ultimos4 = telLimpo.length >= 4 ? telLimpo.slice(-4) : null;
-  const auth = ultimos4 || filho.pin; // tel tem prioridade
-
-  if(auth) {
-    const cached = sessionStorage.getItem(`auth_${id}`);
-    if(cached !== '1') {
-      const msg = ultimos4
-        ? `Olá ${filho.nome.split(' ')[0]}! Pra acessar sua área, digite os 4 últimos dígitos do seu celular cadastrado:`
-        : `Olá ${filho.nome.split(' ')[0]}! Digite seu PIN de 4 dígitos:`;
-      const entrada = prompt(msg);
-      if(!entrada) { resetSearchSelect(); return; }
-      const limpa = entrada.replace(/\D/g,'').slice(-4);
-      if(limpa !== auth) {
-        alert('Não bate. Verifica os números e tenta de novo. Se não souber, fala com a administração pra confirmar seu telefone cadastrado.');
-        resetSearchSelect();
-        return;
-      }
-      sessionStorage.setItem(`auth_${id}`, '1');
+  // Autenticação: 4 últimos dígitos do telefone, conferidos NO WORKER.
+  //
+  // A conferência era aqui, contra `filho.tel`, que esta página tinha baixado
+  // do Firestore junto com a lista de nomes. Quem abrisse o devtools lia o
+  // telefone de todo mundo e entrava como qualquer um. Agora o telefone não sai
+  // do servidor, e é lá que os dígitos batem ou não.
+  const cached = sessionStorage.getItem(`auth_${id}`) === '1' && APP.provaPorFilho[id];
+  if(!cached) {
+    const entrada = prompt(`Olá ${filho.nome.split(' ')[0]}! Pra acessar sua área, digite os 4 últimos dígitos do seu celular cadastrado:`);
+    if(!entrada) { resetSearchSelect(); return; }
+    const limpa = entrada.replace(/\D/g,'').slice(-4);
+    const r = await Filhos.entrar(APP.cfgAgendamento, id, limpa);
+    if(!r.ok) {
+      alert(Filhos.explicar(r.erro));
+      resetSearchSelect();
+      return;
     }
-  } else {
-    alert(`Não há telefone nem PIN cadastrado pra ${filho.nome}. Fala com o admin pra atualizar seu cadastro antes de acessar.`);
-    resetSearchSelect();
-    return;
+    // A prova fica em memória, não em disco: as rotas do Worker pedem os 4
+    // dígitos a cada chamada, e gravar isso no navegador seria devolver ao
+    // disco justamente o que acabou de sair de lá.
+    APP.provaPorFilho[id] = limpa;
+    filho.tel = r.tel || '';
+    filho.auth_email = r.auth_email || null;
+    sessionStorage.setItem(`auth_${id}`, '1');
   }
 
   APP.filhoAtual = filho;
@@ -897,10 +903,9 @@ function renderNascCapture(f) {
       }
       btn.disabled = true; btn.textContent = 'Salvando…';
       try {
-        await updateDoc(doc(dbPvd, 'fin_filhos', f.id), {
-          data_nascimento: data,
-          atualizadoEm: serverTimestamp()
-        });
+        // Pelo Worker: as rules de fin_filhos nunca deixaram o público
+        // escrever, então este Salvar dava "Erro ao salvar" desde sempre.
+        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, f.id, APP.provaPorFilho[f.id], { data_nascimento: data });
         f.data_nascimento = data;
         const idx = APP.filhos.findIndex(x => x.id === f.id);
         if (idx >= 0) APP.filhos[idx].data_nascimento = data;
@@ -974,10 +979,9 @@ function renderEmailCapture(f) {
       }
       btn.disabled = true; btn.textContent = 'Salvando…';
       try {
-        await updateDoc(doc(dbPvd, 'fin_filhos', f.id), {
-          auth_email: email,
-          atualizadoEm: serverTimestamp()
-        });
+        // Mesmo motivo do card de nascimento: escrita pública em fin_filhos
+        // sempre foi negada, e este botão nunca salvou nada.
+        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, f.id, APP.provaPorFilho[f.id], { auth_email: email });
         // Atualiza estado local pra esconder o card
         f.auth_email = email;
         const idx = APP.filhos.findIndex(x => x.id === f.id);
@@ -1082,7 +1086,10 @@ async function renderMensalidade() {
   const ativo = APP.cfgAgendamento?.checkout_ativo;
   if (!worker || !ativo) { sec.style.display = 'none'; return; }
 
-  const tel4 = (f.tel || '').replace(/\D/g, '').slice(-4) || f.pin || '';
+  // A prova é a que a pessoa digitou no /entrar, guardada em memória. Não
+  // recalcula de `f.tel`: o telefone só existe aqui porque o Worker devolveu
+  // depois da prova, e depender dele seria depender de um efeito colateral.
+  const tel4 = APP.provaPorFilho[f.id] || '';
   if (!tel4) { sec.style.display = 'none'; return; }
 
   let d;
@@ -2478,25 +2485,28 @@ async function liberarDiaRega(d) {
   const nomePrim = (reserva.filho_nome||'').split(' ')[0] || 'a pessoa que reservou';
   const dataFmt = new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
 
-  // Cache de auth: se a pessoa já se autenticou nessa sessão, pula o prompt
-  const cached = filho ? sessionStorage.getItem(`auth_${filho.id}`) === '1' : false;
+  // Quem já provou ser o dono da reserva nesta aba não prova de novo.
+  const cached = filho ? !!APP.provaPorFilho[filho.id] : false;
 
   if(!cached) {
-    const telLimpo = (filho?.tel||'').replace(/\D/g,'');
-    const ultimos4 = telLimpo.length >= 4 ? telLimpo.slice(-4) : null;
-    const auth = ultimos4 || filho?.pin;
-    if(!auth) {
-      alert(`Pra liberar o dia ${dataFmt} (${reserva.filho_nome}), seria preciso confirmar o telefone — mas o cadastro de ${nomePrim} não tem telefone nem PIN. Fala com o admin.`);
-      return;
-    }
-    const entrada = prompt(`Vai liberar o dia ${dataFmt}, que está com ${reserva.filho_nome}.\n\nPra confirmar, digite os 4 últimos dígitos do telefone de ${nomePrim}:`);
+    // Pedia os 4 dígitos do telefone DO OUTRO, e conferia contra o telefone que
+    // esta página tinha baixado. Duas coisas erradas numa: a tela ensinava a
+    // tratar o telefone alheio como senha, e a conferência era no cliente.
+    //
+    // Agora quem libera é o próprio dono, provando pelo Worker. Trocar o dia
+    // com outra pessoa passou a ser: ela libera, você reserva. É um passo a
+    // mais, e é o passo que faz "meu dia" significar alguma coisa.
+    if(!filho) { toast('Não achei o cadastro de quem reservou.','err'); return; }
+    const entrada = prompt(`O dia ${dataFmt} está reservado por ${reserva.filho_nome}.\n\nSe for você, digite os 4 últimos dígitos do SEU celular pra liberar:`);
     if(!entrada) return;
-    const limpa = entrada.replace(/\D/g,'').slice(-4);
-    if(limpa !== auth) {
-      toast('Telefone não bate. Operação cancelada.','err');
+    const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, entrada.replace(/\D/g,'').slice(-4));
+    if(!r.ok) {
+      toast(r.erro === 'não confere'
+        ? `Só ${nomePrim} pode liberar este dia. Peça pra ela abrir a área dela e liberar.`
+        : Filhos.explicar(r.erro), 'err');
       return;
     }
-    if(filho) sessionStorage.setItem(`auth_${filho.id}`, '1');
+    APP.provaPorFilho[filho.id] = entrada.replace(/\D/g,'').slice(-4);
   } else {
     // Já autenticado — confirma textualmente pra evitar liberar sem querer
     if(!confirm(`Liberar o dia ${dataFmt} (atualmente com ${reserva.filho_nome})?`)) return;

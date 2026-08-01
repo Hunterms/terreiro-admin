@@ -141,6 +141,25 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   echo "$r" | grep -q 'X-Auth-Secret' && ok "lembretes (protegida)" || erro "lembretes: $r"
   r=$(curl -s -X POST "$W/push" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "push (protegida)" || erro "push: $r"
+
+  # O elenco é público de propósito (é o seletor de nomes), mas NÃO pode levar
+  # os campos privados junto. Esta é a checagem que segura a correção de 01/08
+  # de pé: se alguém tirar um campo da lista negra do Worker, o telefone volta a
+  # sair pra internet inteira, e nada mais reclamaria.
+  r=$(curl -s -X POST "$W/filhos" -H 'Content-Type: application/json' -d '{}')
+  if ! grep -q '"filhos"' <<< "$r"; then
+    erro "filhos: $(head -c 120 <<< "$r")"
+  elif grep -qE '"(tel|pin|auth_email|obs|valor)"' <<< "$r"; then
+    erro "VAZAMENTO: /filhos devolveu campo privado — ver CAMPOS_PRIVADOS no worker.js"
+  else
+    ok "elenco público sem telefone, valor, email nem obs"
+  fi
+
+  # E a prova tem que ser conferida do lado de lá. 403 num palpite errado prova
+  # que a rota existe e que ela nega — antes isto era um `if` no navegador.
+  r=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$W/entrar" \
+        -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","tel4":"0000"}')
+  [[ "$r" == "404" || "$r" == "403" ]] && ok "entrar confere no servidor" || erro "entrar: HTTP $r"
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
@@ -153,14 +172,19 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # A lista nasceu em 01/08, depois de publicar rules sem a leitura de
   # adm_despensa. O filho relatou "a despensa está vazia" e nada no sistema
   # tinha reclamado. Toda collection que uma página sem login lê entra aqui.
-  for c in fin_filhos vendas_produtos adm_servicos adm_despensa adm_perguntas \
+  for c in vendas_produtos adm_servicos adm_despensa adm_perguntas \
            adm_avisos adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"
   done
   # E estas NÃO podem abrir. fin_reembolsos e adm_respostas carregam dado de
   # pessoa (chave PIX, telefone, acerto/erro com nome) — list público aqui é
   # vazamento, não conveniência.
-  for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas; do
+  #
+  # fin_filhos entrou nesta lista em 01/08. Era pública e levava telefone, valor
+  # da mensalidade, nascimento, email e observação dos 60 numa resposta só. E o
+  # telefone É a credencial da área do filho: quem lia a collection entrava como
+  # qualquer pessoa da casa. O elenco agora vem do Worker, sem esses campos.
+  for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas fin_filhos; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
   # adm_config: o doc 'agendamento' abre por get, a collection não abre por list

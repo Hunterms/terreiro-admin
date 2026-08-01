@@ -10,6 +10,12 @@
  *   POST /status      → a tela de retorno pergunta se pagou. Confirma no payment_check.
  *   POST /webhook     → InfinitePay avisa que pagou. Confere no payment_check,
  *                       compara o valor, e só então marca pago no Firestore.
+ *   POST /filhos     → o elenco pro seletor, SEM telefone/valor/email/obs.
+ *                       Público: é o que as páginas sem login mostram.
+ *   POST /entrar     → confere os 4 dígitos. A conferência era no navegador,
+ *                       contra dado que o navegador tinha baixado.
+ *   POST /meu-cadastro → o filho grava a própria data de nascimento e email.
+ *                       Só esses dois; o resto do cadastro é da administração.
  *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
  *   POST /mensalidade-ajuste → o filho remarca a data OU pede isenção do mês.
  *                       Só até o dia 5, só o mês corrente, mesma prova.
@@ -166,6 +172,9 @@ export default {
       if (rota === '/status') return await rotaStatus(body, env);
       if (rota === '/webhook') return await rotaWebhook(body, env);
       if (rota === '/lote') return await rotaLote(body, request, env);
+      if (rota === '/filhos') return await rotaFilhos(env);
+      if (rota === '/entrar') return await rotaEntrar(body, env);
+      if (rota === '/meu-cadastro') return await rotaMeuCadastro(body, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/mensalidade-ajuste') return await rotaMensalidadeAjuste(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
@@ -1415,6 +1424,130 @@ async function rotaMensalidade(body, env) {
  */
 export function podeAjustar(ciclo, hoje = hojeSP()) {
   return hoje.slice(0, 7) === ciclo && Number(hoje.slice(8, 10)) <= 5;
+}
+
+// ── O ELENCO, SEM O QUE NÃO É DE NINGUÉM ───────────────────────────────────
+//
+// `fin_filhos` era leitura pública. Toda página sem login lia a collection
+// inteira pra montar o seletor de nomes — e junto vinham telefone, valor da
+// mensalidade, data de nascimento, email e a observação interna dos 60.
+//
+// Pior que o vazamento: o telefone É a credencial. A área do filho entra com os
+// 4 últimos dígitos, e eles estavam na mesma resposta que a lista de nomes.
+// Quem lesse a collection entrava como qualquer pessoa da casa.
+//
+// Agora a collection é fechada e o elenco vem por aqui, sem os cinco campos.
+// O custo honesto: se o Worker cair, o seletor não carrega. A área do filho já
+// dependia dele pra mensalidade, checkout e push — agora depende pra abrir.
+const CAMPOS_PRIVADOS = ['tel', 'pin', 'auth_email', 'obs', 'valor'];
+
+async function rotaFilhos(env) {
+  const token = await tokenGoogle(env);
+  const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
+
+  // Lista negra e não branca, de propósito: campo novo no cadastro aparece
+  // sozinho nas telas, como sempre apareceu. O que precisa de decisão é
+  // esconder, não mostrar — e esconder está escrito ali em cima, num lugar só.
+  const limpos = filhos.map((f) => {
+    const out = {};
+    for (const [k, v] of Object.entries(f)) if (!CAMPOS_PRIVADOS.includes(k)) out[k] = v;
+    return out;
+  });
+
+  limpos.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  return json({ filhos: limpos });
+}
+
+// ── ENTRAR: A PROVA DOS 4 DÍGITOS, AGORA DO LADO DE CÁ ─────────────────────
+//
+// A conferência acontecia no navegador, comparando com o telefone que a própria
+// página tinha baixado. Era teatro: quem abrisse o devtools pulava.
+//
+// Continua sendo prova fraca — 4 dígitos, sem limite de tentativa por enquanto.
+// A diferença é que agora eles são SEGREDO: não saem mais na lista de nomes. É
+// o degrau que faltava pra palavra "prova" significar alguma coisa.
+//
+// Devolve tel e auth_email de volta: são dados da própria pessoa, e as telas de
+// evento e venda usam pra preencher o formulário de quem acabou de se
+// identificar.
+async function rotaEntrar(body, env) {
+  const { filho_id, tel4 } = body || {};
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+
+  const token = await tokenGoogle(env);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', String(filho_id), { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
+  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
+  if (!esperado) {
+    return json({ error: 'seu cadastro não tem telefone nem PIN. Fala com a administração.' }, 409);
+  }
+
+  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  if (recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+
+  return json({
+    ok: true,
+    filho_id: String(filho_id),
+    nome: filho.nome || '',
+    tel: filho.tel || '',
+    auth_email: filho.auth_email || null,
+  });
+}
+
+// ── O FILHO EDITANDO O PRÓPRIO CADASTRO ────────────────────────────────────
+//
+// Dois campos, e os dois a página pedia direto ao Firestore: data de nascimento
+// (pra entrar na lista de aniversariantes) e email (pra receber lembrete).
+//
+// Nenhum dos dois funcionava. As rules de `fin_filhos` liberam escrita pro
+// admin e, por campo, pro financeiro — nunca pro público. O filho apertava
+// Salvar e via "Erro ao salvar. Tenta de novo." todas as vezes. Não era calado,
+// mas era indistinguível de instabilidade, então virou paisagem.
+//
+// Agora passa por aqui, com a mesma prova do /entrar, e são só estes dois
+// campos: o resto do cadastro continua sendo da administração.
+async function rotaMeuCadastro(body, env) {
+  const { filho_id, tel4, data_nascimento, auth_email } = body || {};
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+
+  const token = await tokenGoogle(env);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', String(filho_id), { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
+  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
+  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+
+  const patch = {};
+  if (data_nascimento !== undefined) {
+    const d = String(data_nascimento);
+    // Data de verdade, e no passado. `new Date` sozinho aceita '2026-02-31' e
+    // rola pra março calado, então o round-trip é a checagem.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || new Date(d + 'T12:00:00Z').toISOString().slice(0, 10) !== d) {
+      return json({ error: 'data de nascimento inválida' }, 400);
+    }
+    if (d >= hojeSP()) return json({ error: 'data de nascimento no futuro' }, 400);
+    patch.data_nascimento = d;
+  }
+  if (auth_email !== undefined) {
+    const e = String(auth_email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) || e.length > 200) {
+      return json({ error: 'email inválido' }, 400);
+    }
+    patch.auth_email = e;
+  }
+  if (!Object.keys(patch).length) return json({ error: 'nada pra salvar' }, 400);
+
+  patch.atualizadoEm = new Date().toISOString();
+  await fsPatch(PROJETO_PVD, 'fin_filhos', String(filho_id), token, patch);
+  return json({ ok: true, ...patch });
 }
 
 // ── AJUSTE DA MENSALIDADE PELO FILHO ───────────────────────────────────────

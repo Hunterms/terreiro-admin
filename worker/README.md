@@ -1,6 +1,28 @@
 # Worker do Candieiro — email + checkout automático
 
-Um Worker, cinco assuntos: email, checkout, mensalidade, papéis e push.
+Um Worker, seis assuntos: email, checkout, mensalidade, papéis, push e a
+identidade do filho.
+
+## O elenco, e por que ele passou a vir daqui
+
+`fin_filhos` era `allow read: if true`. Toda página sem login lia a collection
+inteira pra montar o seletor de nomes, e junto vinham telefone, valor da
+mensalidade, data de nascimento, email e a observação interna dos 60.
+
+O telefone **é** a credencial: a área do filho entra com os 4 últimos dígitos
+dele. Eles chegavam na mesma resposta que a lista de nomes, e a conferência
+acontecia no navegador, contra o dado que o próprio navegador tinha baixado.
+Quem abrisse o devtools entrava como qualquer pessoa da casa.
+
+Agora a collection é fechada. `/filhos` devolve o elenco sem os cinco campos de
+`CAMPOS_PRIVADOS`, e `/entrar` confere a prova aqui dentro.
+
+Continua sendo prova fraca. Quem conhece o telefone de alguém da casa entra
+como essa pessoa, e não há limite de tentativa ainda. O que mudou é que
+conhecer virou pré-requisito, em vez de vir junto com a lista.
+
+O custo: Worker fora do ar = seletor não carrega. A área do filho já dependia
+dele pra mensalidade, checkout e push; agora depende pra abrir.
 
 | Rota | Quem chama | Protegida por |
 |---|---|---|
@@ -8,6 +30,9 @@ Um Worker, cinco assuntos: email, checkout, mensalidade, papéis e push.
 | `POST /checkout` | páginas públicas | nada — só aceita id de pedido, nunca valor |
 | `POST /status` | `pago.html` | nada — só responde pago/não, e confirma no `payment_check` |
 | `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
+| `POST /filhos` | toda página sem login | nada — é o seletor de nomes, sem os campos privados |
+| `POST /entrar` | toda página sem login | é ELA que confere os 4 dígitos |
+| `POST /meu-cadastro` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /mensalidade` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /mensalidade-ajuste` | `area-filho.html` | 4 últimos dígitos, e só até o dia 5 |
 | `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
