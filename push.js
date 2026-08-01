@@ -44,9 +44,81 @@ export function instalado() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
-function ehIOS() {
+export function ehIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/** Safari, e não Chrome dentro do iPhone. Só o Safari instala lá. */
+export function ehSafari() {
+  const ua = navigator.userAgent;
+  return /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Chromium/.test(ua);
+}
+
+// ── INSTALAR NA TELA DE INÍCIO ─────────────────────────────────────────────
+//
+// Android e desktop deixam a página INSTALAR de verdade: o Chrome dispara
+// `beforeinstallprompt`, e quem chamar `preventDefault()` fica com o convite na
+// mão pra usar quando quiser. É o que transforma "toque no menu, depois em
+// adicionar à tela inicial" num botão só.
+//
+// O iPhone não tem isso. A Apple não expõe nenhuma API de instalação, então lá
+// é instrução, e por isso ela precisa ser boa: passo numerado, com o ícone que
+// a pessoa vai procurar na tela.
+//
+// O evento chega UMA vez e cedo, às vezes antes da página montar o cartão. Por
+// isso ele é capturado na carga do módulo e guardado aqui.
+let convite = null;
+let aoMudar = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    convite = e;
+    if (aoMudar) aoMudar();
+  });
+  // Instalou por fora do nosso botão (menu do navegador). O convite morre, e a
+  // tela precisa saber pra parar de oferecer.
+  window.addEventListener('appinstalled', () => {
+    convite = null;
+    if (aoMudar) aoMudar();
+  });
+}
+
+/** Chame com uma função pra redesenhar quando o convite chegar ou morrer. */
+export function aoMudarInstalacao(fn) { aoMudar = fn; }
+
+/**
+ * Em que passo da instalação este aparelho está.
+ *
+ *   'instalado'      já está na tela de início
+ *   'pode_instalar'  temos o convite do navegador: um botão resolve
+ *   'ios_safari'     iPhone no Safari: instrução, que é tudo que a Apple deixa
+ *   'ios_outro'      iPhone em Chrome/Firefox: nem instrução adianta, tem que
+ *                    abrir no Safari primeiro
+ *   'sem_instalacao' navegador que não instala (Safari de Mac, Firefox desktop)
+ */
+export function passoInstalacao() {
+  if (instalado()) return 'instalado';
+  if (convite) return 'pode_instalar';
+  if (ehIOS()) return ehSafari() ? 'ios_safari' : 'ios_outro';
+  return 'sem_instalacao';
+}
+
+/**
+ * Dispara o convite nativo. Devolve 'aceito' | 'recusado' | 'sem_convite'.
+ *
+ * O convite é de uso único: depois de mostrado, o navegador não devolve o mesmo
+ * evento. Se a pessoa recusar, some o botão até ela recarregar — e é o certo,
+ * insistir com quem disse não é o caminho pra ela nunca mais voltar.
+ */
+export async function instalar() {
+  if (!convite) return 'sem_convite';
+  const e = convite;
+  convite = null;
+  e.prompt();
+  const escolha = await e.userChoice.catch(() => ({ outcome: 'dismissed' }));
+  return escolha.outcome === 'accepted' ? 'aceito' : 'recusado';
 }
 
 /**

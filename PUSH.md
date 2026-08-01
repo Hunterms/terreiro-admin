@@ -74,15 +74,33 @@ E publique as rules novas (`firestore.rules.pvd`), senão o registro do aparelho
 
 ## 2. Instalar no celular
 
-**Android (Chrome)** — abre o site, menu ⋮ → *Adicionar à tela inicial*. O
-Chrome costuma oferecer sozinho depois da segunda visita.
+**A área do filho conduz isso sozinha.** O cartão se desenha conforme o
+aparelho, e instalar vem sempre antes de avisos:
 
-**iPhone (Safari)** — botão *Compartilhar* → *Adicionar à Tela de Início*.
-**Tem que ser o Safari**: Chrome no iOS não instala.
+| Situação | O que a pessoa vê |
+|---|---|
+| Android/desktop, com convite do navegador | um botão **Instalar** que abre o diálogo nativo |
+| iPhone no Safari | 3 passos numerados, com o ícone de Compartilhar desenhado |
+| iPhone em Chrome/Firefox | "abra no Safari" + botão que copia o endereço |
+| já instalado | o botão de **Ativar** avisos |
+| notificação bloqueada | como desfazer, em vez de um `alert` genérico |
 
-No iPhone a notificação **só existe depois de instalar**. Não é escolha nossa, é
-da Apple. A tela sabe disso: no Safari solto ela mostra a instrução em vez de um
-botão que não ia funcionar.
+No Android o push funcionaria **sem** instalar. Pedimos instalar mesmo assim: uma
+história só pros dois sistemas é o que faz uma pessoa conseguir ajudar a outra
+por telefone.
+
+O botão de instalar do Android sai de `beforeinstallprompt`. O navegador dispara
+esse evento uma vez e cedo, então `push.js` captura na carga do módulo e guarda;
+o cartão se redesenha quando ele chega. O convite é de **uso único**: se a pessoa
+recusar, o botão some até ela recarregar. Insistir com quem disse não é o
+caminho pra ela não voltar.
+
+No iPhone **não existe API de instalação**. Não é limitação nossa nem falta de
+vontade: a Apple não expõe. Por isso ali é instrução, e por isso ela é numerada
+e desenha o ícone que a pessoa vai procurar na barra.
+
+E no iPhone a notificação **só existe depois de instalar**. Chrome no iOS é o
+Safari por dentro, mas sem o menu de instalar — daí o estado próprio pra ele.
 
 ---
 
