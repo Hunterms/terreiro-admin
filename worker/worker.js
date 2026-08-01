@@ -209,14 +209,21 @@ export default {
   // aqui dentro, com marca no Firestore pra não repetir (ver `tick`).
   //
   // A cada 15 minutos:  novidade desde o último olhar → push pro admin
-  // 9h de Brasília:     digest do dia (atrasos, contas, quem vence amanhã)
+  // 8h de Brasília:     resumo do dia (agenda, atrasos, contas, quem vence amanhã)
   // dia 1, a partir das 6h: gera o lote de mensalidade do ciclo
   //
   // O que o cron NÃO faz mais: mandar email de mensalidade pro filho. Isso
   // agora é ato do admin — ele revisa a lista, tira quem não deve receber, e
   // aprova. O cron só cutuca ("10 vencem amanhã") e a decisão continua humana.
   async scheduled(event, env, ctx) {
-    console.log('cron', JSON.stringify(await tick(env)));
+    // O try aqui é a última rede. `tick` já isola cada passo, mas se ele
+    // morrer antes disso (token do Google, por exemplo), o log é a única
+    // testemunha — e sem o try o erro sobe sem nome de tick nenhum.
+    try {
+      console.log('cron', JSON.stringify(await tick(env)));
+    } catch (e) {
+      console.error('cron morreu antes de começar', e?.stack || e);
+    }
   },
 };
 
@@ -1167,68 +1174,107 @@ async function tick(env) {
   const hoje = hojeSP();
   const hora = horaSP();
   const minutos = minutosSP();
-  const agora = new Date().toISOString();
   const estado = (await fsGet(PROJETO_PVD, 'adm_config', 'push_estado', { token })) || {};
   const feito = [];
+  const falhas = [];
+
+  // ── POR QUE CADA PASSO É ISOLADO E GRAVA NA HORA ─────────────────────────
+  //
+  // A versão anterior juntava tudo num `patch` e gravava no FIM. Qualquer erro
+  // depois do digest — uma query numa collection vazia, um push que estourou —
+  // matava o tick antes da gravação. Aí `digest_em` nunca era salvo, e o digest
+  // saía DE NOVO na batida seguinte. E na seguinte. 96 vezes por dia.
+  //
+  // Foi exatamente o que aconteceu: resumo do dia chegando de 15 em 15 minutos.
+  //
+  // Agora cada passo tem seu try/catch e grava a própria marca imediatamente.
+  // Um passo que falha não leva os outros junto, e a marca de quem já rodou
+  // sobrevive ao vizinho quebrado.
+  const marcar = (campos) =>
+    fsPatch(PROJETO_PVD, 'adm_config', 'push_estado', token, campos)
+      .catch((e) => { falhas.push(`marcar:${e.message}`); });
+
+  const passo = async (nome, fn) => {
+    try { await fn(); }
+    catch (e) {
+      console.error(`tick/${nome}`, e?.stack || e);
+      falhas.push(`${nome}:${String(e?.message || e).slice(0, 120)}`);
+    }
+  };
 
   // 1) Novidade desde o último olhar.
   //
   // Na primeira execução não avisa nada: sem marca gravada, o corte é agora.
   // Senão o primeiro tick despejaria o histórico inteiro na tela de quem acabou
   // de instalar — a estreia do recurso seria 40 notificações de coisa velha.
-  if (estado.ultimo_olhar) {
-    for (const aviso of await novidades(token, estado.ultimo_olhar)) {
+  //
+  // A marca é gravada ANTES de mandar. Se um push falhar no meio, o pior caso é
+  // perder um aviso; gravando depois, o pior caso é repetir todos pra sempre —
+  // e repetir é o que ensina a pessoa a desligar a notificação.
+  const agora = new Date().toISOString();
+  await passo('novidades', async () => {
+    const desde = estado.ultimo_olhar;
+    await marcar({ ultimo_olhar: agora });
+    if (!desde) return;
+    for (const aviso of await novidades(token, desde)) {
       await mandarPush(env, aviso);
       feito.push(aviso.tag);
     }
-  }
-  const patch = { ultimo_olhar: agora };
+  });
 
-  // 2) Digest das 9h — o que precisa de olho hoje.
-  if (hora >= 9 && estado.digest_em !== hoje) {
-    for (const aviso of await digestDoDia(env, token, hoje)) {
-      await mandarPush(env, aviso);
-      feito.push(aviso.tag);
-    }
-    patch.digest_em = hoje;
+  // 2) O resumo do dia, às 8h.
+  if (hora >= HORA_DIGEST && estado.digest_em !== hoje) {
+    await passo('digest', async () => {
+      await marcar({ digest_em: hoje });
+      for (const aviso of await digestDoDia(env, token, hoje)) {
+        await mandarPush(env, aviso);
+        feito.push(aviso.tag);
+      }
+    });
   }
 
   // 3) Lote de mensalidade, dia 1 a partir das 6h.
   const ciclo = cicloAtual();
   if (hoje.endsWith('-01') && hora >= 6 && estado.lote_ciclo !== ciclo) {
-    const r = await gerarLoteMensalidade(ciclo, env);
-    patch.lote_ciclo = ciclo;
-    feito.push(`lote:${r.criados}`);
+    await passo('lote', async () => {
+      await marcar({ lote_ciclo: ciclo });
+      const r = await gerarLoteMensalidade(ciclo, env);
+      feito.push(`lote:${r.criados}`);
+    });
   }
 
   // 4) Consulta que começa em ~1h.
   //
-  // A marca vive no próprio atendimento (`push_1h_em`), não aqui no estado: o
+  // A marca vive no próprio atendimento (`push_1h_em`), não no estado global: o
   // remarcar de horário tem que poder reabrir o lembrete, e uma flag no estado
-  // global ficaria valendo pro dia inteiro.
-  for (const a of await consultasDoDia(token, hoje)) {
-    const min = minutosDoDia(a.hora);
-    if (min === null || a.push_1h_em === hoje) continue;
-    if (!naJanelaDeUmaHora(minutos, min)) continue;
+  // ficaria valendo pro dia inteiro.
+  await passo('consulta1h', async () => {
+    for (const a of await consultasDoDia(token, hoje)) {
+      const min = minutosDoDia(a.hora);
+      if (min === null || a.push_1h_em === hoje) continue;
+      if (!naJanelaDeUmaHora(minutos, min)) continue;
 
-    await mandarPush(env, {
-      tag: `consulta-${a.id}`,
-      titulo: `Consulta às ${a.hora}`,
-      corpo: `${a.consulente_nome || 'sem nome'}${a.tipo_oraculo === 'buzios' ? ' · búzios' : ''}`,
-      url: 'index.html#agenda',
-    });
-    await fsPatch(PROJETO_PVD, 'adm_atendimentos', a.id, token, { push_1h_em: hoje });
-    feito.push(`consulta1h:${a.id}`);
-  }
+      await fsPatch(PROJETO_PVD, 'adm_atendimentos', a.id, token, { push_1h_em: hoje });
+      await mandarPush(env, {
+        tag: `consulta-${a.id}`,
+        titulo: `Consulta às ${a.hora}`,
+        corpo: `${a.consulente_nome || 'sem nome'}${a.tipo_oraculo === 'buzios' ? ' · búzios' : ''}`,
+        url: 'index.html#agenda',
+      });
+      feito.push(`consulta1h:${a.id}`);
+    }
+  });
 
   // 5) Um lote da fila de push de avisos. A fila mora no próprio aviso, não
   // aqui: um aviso apagado leva a fila dele junto, sem deixar órfão no estado.
-  const fila = await drenarFilaDeAvisos(env, token);
-  if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
+  await passo('fila', async () => {
+    const fila = await drenarFilaDeAvisos(env, token);
+    if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
+  });
 
-  await fsPatch(PROJETO_PVD, 'adm_config', 'push_estado', token, patch);
-  return { hoje, hora, feito };
+  return { hoje, hora, feito, ...(falhas.length && { falhas }) };
 }
+
 
 /**
  * O que apareceu desde a última batida. Três queries, todas por data.
@@ -1619,6 +1665,9 @@ export async function lerSessao(env, token) {
 // O contador mora num doc por filho (`adm_tentativas/{filho_id}`), e não em
 // memória: o Worker é distribuído, e uma variável de módulo contaria errado —
 // cada região com a própria conta, o que na prática multiplica o limite.
+// A hora do resumo do dia, no relógio de Brasília. Era 9; o Pai pediu 8.
+const HORA_DIGEST = 8;
+
 const ERROS_ATE_TRAVAR = 5;
 const TRAVA_MINUTOS = 10;
 

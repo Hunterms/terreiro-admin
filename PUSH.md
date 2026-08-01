@@ -63,7 +63,7 @@ Cloudflare → o Worker → *Settings* → *Triggers* → **Cron Triggers**.
 | `0 9 1 * *` · `0 12 * * *` | **`*/15 * * * *`** e mais nenhum |
 
 Apague os dois antigos. O de 15 em 15 minutos faz os três trabalhos e decide
-pelo relógio de Brasília: novidade a cada batida, digest às 9h, lote no dia 1.
+pelo relógio de Brasília: novidade a cada batida, resumo do dia às 8h, lote no dia 1.
 Um cron só porque o teto de subrequests do Worker é *por invocação* — gatilho
 separado por assunto multiplica chamada sem multiplicar teto.
 
@@ -129,10 +129,10 @@ registros, e desligar num não desliga no outro.
 | Filho remarcou a contribuição | na hora | admin |
 | Filho pediu isenção do mês | na hora | admin |
 | **Consulta começa em ~1h** | 45 a 75 min antes | admin |
-| Consultas de hoje | 9h | admin |
-| Tarefas atrasadas | 9h | admin |
-| Conta fixa vence amanhã | 9h | admin |
-| Contribuições vencem amanhã | 9h | admin |
+| Consultas de hoje | 8h | admin |
+| Tarefas atrasadas | 8h | admin |
+| Conta fixa vence amanhã | 8h | admin |
+| Contribuições vencem amanhã | 8h | admin |
 | **Aviso novo no mural** | quando você marca a caixa ao publicar | filhos |
 
 O último **não manda email pra ninguém**: ele chama você pra abrir *Lembretes →
