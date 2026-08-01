@@ -182,7 +182,9 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # escapar daqui, ele vai parar na home do site.
   r=$(curl -s -X POST "$W/agenda" -H 'Content-Type: application/json' -d '{}')
   if ! grep -q '"eventos"' <<< "$r"; then
-    erro "agenda: $(head -c 100 <<< "$r")"
+    erro "agenda: $(head -c 120 <<< "$r")"
+  elif grep -q '"eventos":\[\]' <<< "$r"; then
+    erro "agenda VAZIA — o site perdeu o calendário. Service account alcança o terreiro-candieiro?"
   elif grep -qE '"tipo":"(desenvolvimento|gira_fechada|trabalho_interno|obrigacao_coletiva|reuniao|mutirao|ensaio_curimba)"' <<< "$r"; then
     erro "VAZAMENTO: a agenda pública devolveu atividade interna"
   else

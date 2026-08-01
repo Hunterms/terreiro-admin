@@ -106,6 +106,29 @@ Cloudflare → o Worker → **Settings → Variables and Secrets**:
 | `GCP_SA_KEY` | **Encrypt** | `-----BEGIN PRIVATE KEY-----\n...` |
 | `CAND_API_KEY` | Texto | `AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM` |
 
+### ⚠️ A service account precisa alcançar os DOIS projetos
+
+`GCP_SA_EMAIL` é uma conta do `terreiro-pvd`. Por padrão ela não enxerga o
+`terreiro-candieiro`, onde moram os eventos, os slides e a galeria do site.
+
+Enquanto os eventos eram leitura pública, o Worker se virava com a
+`CAND_API_KEY` — chave de API não autentica ninguém, só identifica o projeto, e
+funcionava porque a regra era `allow read: if true`.
+
+Em 01/08 a listagem de eventos fechou (os trabalhos internos não podem sair no
+ar público). A chave de API parou de bastar, e a agenda do site zerou.
+
+**O que fazer, uma vez:**
+
+1. Firebase Console → projeto **terreiro-candieiro** → ⚙️ → *Usuários e
+   permissões* (ou Google Cloud → IAM)
+2. **Adicionar membro** → cola o valor de `GCP_SA_EMAIL`
+   (`xxx@terreiro-pvd.iam.gserviceaccount.com`)
+3. Papel: **Usuário do Cloud Datastore** (`roles/datastore.user`)
+
+Confere com `./smoke.sh worker`: a linha da agenda pública falha enquanto a
+permissão não existir, e passa a listar os eventos quando existir.
+
 `CAND_API_KEY` é a chave web do projeto `terreiro-candieiro`, usada só pra **ler**
 o preço dos eventos (leitura que já é pública). É a mesma que está no HTML.
 
