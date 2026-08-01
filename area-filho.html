@@ -226,6 +226,29 @@ a.dash-link:active{transform:scale(.99)}
 
 .help{font-size:13px;color:var(--text3);line-height:1.5;padding:12px 14px;background:var(--glass2);border-radius:8px;margin-bottom:14px}
 
+/* ── TELA DE PIN ──────────────────────────────────────────────────────────
+   Substitui o prompt() do navegador. O prompt não mascara o que se digita,
+   alguns navegadores bloqueiam, e ele não sabe dizer "erraram 4 vezes, faltam
+   3". Isto é a porta de entrada de 56 pessoas: merece ser uma tela. */
+.pin-tela{position:fixed;inset:0;z-index:3000;background:rgba(8,8,8,.92);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:22px;animation:pinIn .16s ease-out}
+@keyframes pinIn{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.pin-tela{animation:none}}
+.pin-caixa{width:100%;max-width:330px;text-align:center}
+.pin-av{width:56px;height:56px;border-radius:50%;background:var(--gold-bg);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;margin:0 auto 16px}
+.pin-tit{font-size:18px;font-weight:750;letter-spacing:-.01em;line-height:1.25}
+.pin-sub{font-size:13px;color:var(--text2);margin-top:9px;line-height:1.55}
+/* Um campo só, e não quatro caixas: quatro caixas exigem malabarismo de foco,
+   quebram colar e quebram o apagar. O que importa é ser grande, numérico e
+   óbvio — e isso um campo entrega. */
+.pin-campo{width:100%;margin-top:20px;padding:16px 12px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:800;letter-spacing:.42em;text-indent:.42em;background:rgba(255,255,255,.05);border:1.5px solid var(--border2);border-radius:12px;color:var(--text);outline:none}
+.pin-campo:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,.16)}
+.pin-campo.erro{border-color:var(--red);animation:tremer .3s}
+@keyframes tremer{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+@media (prefers-reduced-motion:reduce){.pin-campo.erro{animation:none}}
+.pin-erro{font-size:12.5px;color:var(--red);margin-top:10px;line-height:1.45;min-height:18px}
+.pin-dica{font-size:12px;color:var(--text3);margin-top:16px;line-height:1.55}
+.pin-dica b{color:var(--text2);font-weight:600}
+
 .toast{position:fixed;top:24px;right:24px;background:#181412;border:1px solid var(--border2);border-left:3px solid var(--green);border-radius:var(--rad);padding:14px 18px;font-size:14px;z-index:2000;animation:slideIn .2s;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 .toast.err{border-left-color:var(--red)}
 @keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
@@ -574,10 +597,9 @@ let APP = {
   filhos: [],
   funcoes: [],
   filhoAtual: null,
-  // Os 4 dígitos de quem já provou, nesta aba, em memória. Não vai pro
-  // sessionStorage: as rotas do Worker pedem a prova a cada chamada, e gravar
-  // no disco devolveria ao navegador o segredo que acabou de sair de lá.
-  provaPorFilho: {},
+  // Quem está logado, e com que token. O PIN NUNCA entra aqui nem no disco:
+  // ele vira uma sessão assinada no primeiro acerto, e é ela que viaja depois.
+  sessao: null,
   disp: {}, // {YYYY-MM: {datas:[], funcoes:[], obs:''}}
   escalas: [],
   tarefas: [], // kanban: cards onde o filho atual é responsável (filtrado em selecionarFilho)
@@ -612,6 +634,15 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     APP.cfgAgendamento = cSnapBoot.exists() ? cSnapBoot.data() : null;
     APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(APP.cfgAgendamento));
 
+    // Sessão de 30 dias: quem já entrou não digita PIN de novo a cada visita.
+    // Se o token tiver expirado, a primeira chamada ao Worker devolve 403 e a
+    // tela pede o PIN — não precisa conferir aqui, e conferir custaria uma
+    // viagem a mais na abertura.
+    const guardada = Filhos.sessaoGuardada();
+    if (guardada && APP.filhos.some(f => f.id === guardada.filho_id)) {
+      APP.sessao = guardada;
+    }
+
     const funSnap = await getDocs(collection(dbPvd,'adm_funcoes'));
     APP.funcoes = funSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(fn => !fn.arquivada);
 
@@ -632,6 +663,23 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     renderEventosFilho();
     renderGiras();
     renderRega();
+
+    // Quem tem sessão válida entra direto, sem passar pelo seletor de nomes.
+    // É o que faz a área parecer um app instalado e não um formulário: abre já
+    // aberta. Se o token expirou, selecionarFilho pede o PIN.
+    // Sessão expirada volta 403 na primeira chamada. O filhos.js já apagou o
+    // token do disco; aqui a tela volta pro seletor e diz por quê, em vez de
+    // ficar bonita e quebrada.
+    Filhos.quandoExpirar(() => {
+      if (!APP.sessao) return;
+      APP.sessao = null;
+      APP.filhoAtual = null;
+      $('#filho-area').style.display = 'none';
+      $('#filho-sel-card').style.display = '';
+      toast('Sua sessão expirou. Entra de novo com o seu PIN.','err');
+    });
+
+    if (APP.sessao) selecionarFilho(APP.sessao.filho_id);
   } catch(e) {
     console.error(e);
     $('#loading').innerHTML = `<div style="color:var(--red)">Erro ao carregar. Recarregue a página.</div>`;
@@ -678,30 +726,26 @@ async function selecionarFilho(id) {
   const filho = APP.filhos.find(f => f.id === id);
   if(!filho) return;
 
-  // Autenticação: 4 últimos dígitos do telefone, conferidos NO WORKER.
+  // Autenticação: PIN de 4 números, conferido NO WORKER.
   //
   // A conferência era aqui, contra `filho.tel`, que esta página tinha baixado
   // do Firestore junto com a lista de nomes. Quem abrisse o devtools lia o
-  // telefone de todo mundo e entrava como qualquer um. Agora o telefone não sai
-  // do servidor, e é lá que os dígitos batem ou não.
-  const cached = sessionStorage.getItem(`auth_${id}`) === '1' && APP.provaPorFilho[id];
-  if(!cached) {
-    const entrada = prompt(`Olá ${filho.nome.split(' ')[0]}! Pra acessar sua área, digite os 4 últimos dígitos do seu celular cadastrado:`);
-    if(!entrada) { resetSearchSelect(); return; }
-    const limpa = entrada.replace(/\D/g,'').slice(-4);
-    const r = await Filhos.entrar(APP.cfgAgendamento, id, limpa);
-    if(!r.ok) {
-      alert(Filhos.explicar(r.erro));
-      resetSearchSelect();
-      return;
-    }
-    // A prova fica em memória, não em disco: as rotas do Worker pedem os 4
-    // dígitos a cada chamada, e gravar isso no navegador seria devolver ao
-    // disco justamente o que acabou de sair de lá.
-    APP.provaPorFilho[id] = limpa;
+  // telefone de todo mundo e entrava como qualquer um.
+  //
+  // Hoje o telefone não sai do servidor, e ele nem é mais a chave: quem já tem
+  // PIN entra só por ele. Quem não tem entra pelo telefone UMA vez e cria o PIN
+  // ali mesmo, sem escapatória — ver criarPinObrigatorio.
+  if (!APP.sessao || APP.sessao.filho_id !== id) {
+    const r = await autenticar(filho);
+    if (!r) { resetSearchSelect(); return; }
+
+    let sessao = r.sessao;
+    if (r.precisa_pin) sessao = await criarPinObrigatorio(filho, r.prova);
+
+    APP.sessao = { filho_id: id, sessao };
+    Filhos.guardarSessao(id, sessao);
     filho.tel = r.tel || '';
     filho.auth_email = r.auth_email || null;
-    sessionStorage.setItem(`auth_${id}`, '1');
   }
 
   APP.filhoAtual = filho;
@@ -886,6 +930,118 @@ function _pickSearch(id){
   $('#filho-results')?.classList.remove('open');
   selecionarFilho(id);
 }
+// ── A TELA DE PIN ─────────────────────────────────────────────────────────
+//
+// Era um `prompt()`. Ele não mascara o que se digita, alguns navegadores
+// bloqueiam sem avisar, e ele não consegue dizer "erraram 4 vezes, falta 1".
+// Esta é a porta de 56 pessoas — merece ser uma tela.
+//
+// Devolve o que foi digitado, ou null se a pessoa desistiu. Quem chama decide
+// o que fazer com o valor; esta função não sabe o que é certo nem errado.
+function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = true }) {
+  return new Promise((resolve) => {
+    const tela = document.createElement('div');
+    tela.className = 'pin-tela';
+    tela.innerHTML = `
+      <div class="pin-caixa">
+        ${iniciais ? `<div class="pin-av">${iniciais}</div>` : ''}
+        <div class="pin-tit">${titulo}</div>
+        <div class="pin-sub">${sub}</div>
+        <input class="pin-campo" id="pin-campo" type="tel" inputmode="numeric" maxlength="4"
+               autocomplete="off" autocorrect="off" spellcheck="false" aria-label="${titulo}"/>
+        <div class="pin-erro" id="pin-erro" role="alert"></div>
+        <button class="btn btn-primary" id="pin-ok" style="width:100%" disabled>${botao}</button>
+        ${cancelavel ? '<button class="btn" id="pin-nao" style="width:100%;margin-top:9px">Voltar</button>' : ''}
+        ${dica ? `<div class="pin-dica">${dica}</div>` : ''}
+      </div>`;
+    document.body.appendChild(tela);
+
+    const campo = tela.querySelector('#pin-campo');
+    const ok = tela.querySelector('#pin-ok');
+    const fechar = (v) => { tela.remove(); resolve(v); };
+
+    campo.oninput = () => {
+      campo.value = campo.value.replace(/\D/g, '').slice(0, 4);
+      campo.classList.remove('erro');
+      tela.querySelector('#pin-erro').textContent = '';
+      ok.disabled = campo.value.length !== 4;
+    };
+    campo.onkeydown = (e) => { if (e.key === 'Enter' && campo.value.length === 4) ok.click(); };
+    ok.onclick = () => fechar(campo.value);
+    tela.querySelector('#pin-nao')?.addEventListener('click', () => fechar(null));
+    // Escape só fecha o que pode ser fechado. A criação de PIN não pode.
+    if (cancelavel) {
+      tela.tabIndex = -1;
+      tela.onkeydown = (e) => { if (e.key === 'Escape') fechar(null); };
+    }
+    setTimeout(() => campo.focus(), 60);
+  });
+}
+
+const iniciaisDe = (nome) => (nome || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+
+// ── ENTRAR ────────────────────────────────────────────────────────────────
+//
+// Laço, e não uma tentativa: errar o PIN é comum e normal, e mandar a pessoa
+// recomeçar do seletor de nomes por causa de um dedo torto é castigo.
+// A trava de 5 erros mora no Worker; aqui só se mostra o que ele responde.
+async function autenticar(filho) {
+  const primeiro = (filho.nome || '').split(' ')[0];
+  let tela = null, resolver = null;
+
+  for (;;) {
+    const p = pedirPin({
+      iniciais: iniciaisDe(filho.nome),
+      titulo: tela ? `Oi de novo, ${primeiro}` : `Oi, ${primeiro}`,
+      sub: filho._temPin === false
+        ? 'Só nesta primeira vez: os <b>4 últimos dígitos</b> do celular que a casa tem no seu cadastro.'
+        : 'Seu PIN de 4 números.',
+      dica: 'Não lembra? Fala com a administração que ela destrava.',
+    });
+    tela = true;
+    const digitado = await p;
+    if (digitado === null) return null;
+
+    const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, digitado);
+    if (r.ok) return { ...r, prova: digitado };
+
+    // 403 com "usando: telefone" quer dizer que ela ainda não tem PIN — a
+    // próxima volta do laço já pede do jeito certo.
+    if (r.usando === 'telefone') filho._temPin = false;
+    alert(Filhos.explicar(r.erro));
+    if (r.status === 429) return null;   // travado: insistir só piora
+  }
+}
+
+// ── CRIAR O PIN, QUE É OBRIGATÓRIO ────────────────────────────────────────
+//
+// Ninguém tem PIN hoje. Então é uma vez só, pra todo mundo, e a partir dali o
+// telefone não abre mais porta. Enquanto existir "agora não", metade da casa
+// fica no modelo velho e o buraco continua aberto pra essa metade.
+//
+// Por isso `cancelavel: false`: esta é a única tela do sistema sem saída. E é
+// por isso que o admin ganhou o botão de zerar no mesmo dia.
+async function criarPinObrigatorio(filho, prova) {
+  for (;;) {
+    const escolhido = await pedirPin({
+      iniciais: '🔒',
+      titulo: 'Agora crie o seu PIN',
+      sub: 'Quatro números que só você sabe. É com ele que você entra daqui pra frente, e o telefone deixa de valer.',
+      botao: 'Guardar e entrar',
+      cancelavel: false,
+      dica: 'Evita 1234 e datas de aniversário. Esqueceu? A administração destrava.',
+    });
+    if (escolhido === null) continue;   // não há como desistir, e é de propósito
+
+    try {
+      const r = await Filhos.criarPin(APP.cfgAgendamento, filho.id, prova, escolhido);
+      if (r?.sessao) return r.sessao;
+    } catch (e) {
+      alert(Filhos.explicar(e.message));
+    }
+  }
+}
+
 function resetSearchSelect(){
   const inp = $('#filho-input');
   if(inp) inp.value = '';
@@ -932,7 +1088,7 @@ function renderNascCapture(f) {
       try {
         // Pelo Worker: as rules de fin_filhos nunca deixaram o público
         // escrever, então este Salvar dava "Erro ao salvar" desde sempre.
-        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, f.id, APP.provaPorFilho[f.id], { data_nascimento: data });
+        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { data_nascimento: data });
         f.data_nascimento = data;
         const idx = APP.filhos.findIndex(x => x.id === f.id);
         if (idx >= 0) APP.filhos[idx].data_nascimento = data;
@@ -1008,7 +1164,7 @@ function renderEmailCapture(f) {
       try {
         // Mesmo motivo do card de nascimento: escrita pública em fin_filhos
         // sempre foi negada, e este botão nunca salvou nada.
-        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, f.id, APP.provaPorFilho[f.id], { auth_email: email });
+        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { auth_email: email });
         // Atualiza estado local pra esconder o card
         f.auth_email = email;
         const idx = APP.filhos.findIndex(x => x.id === f.id);
@@ -1194,18 +1350,16 @@ async function renderMensalidade() {
   const ativo = APP.cfgAgendamento?.checkout_ativo;
   if (!worker || !ativo) { sec.style.display = 'none'; return; }
 
-  // A prova é a que a pessoa digitou no /entrar, guardada em memória. Não
-  // recalcula de `f.tel`: o telefone só existe aqui porque o Worker devolveu
-  // depois da prova, e depender dele seria depender de um efeito colateral.
-  const tel4 = APP.provaPorFilho[f.id] || '';
-  if (!tel4) { sec.style.display = 'none'; return; }
+  // Quem prova agora é a sessão assinada, não o PIN. Ela vale 30 dias e o
+  // Worker confere a assinatura a cada chamada.
+  if (!APP.sessao) { sec.style.display = 'none'; return; }
 
   let d;
   try {
     const resp = await fetch(worker.replace(/\/+$/, '') + '/mensalidade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filho_id: f.id, tel4 })
+      body: JSON.stringify(APP.sessao)
     });
     d = await resp.json();
     if (!resp.ok) throw new Error(d?.error || resp.status);
@@ -1289,7 +1443,7 @@ async function renderMensalidade() {
   };
 
   cont.insertAdjacentHTML('beforeend', blocoAjuste(d));
-  ligarAjuste(d, f, worker, tel4);
+  ligarAjuste(d, f, worker);
 }
 
 // ── "NÃO VOU CONSEGUIR PAGAR ESTE MÊS" ─────────────────────────────────────
@@ -1333,7 +1487,7 @@ function blocoAjuste(d) {
     </div>`;
 }
 
-function ligarAjuste(d, f, worker, tel4) {
+function ligarAjuste(d, f, worker) {
   const a = d.ajuste || {};
   if (!a.aberto) return;
 
@@ -1356,7 +1510,7 @@ function ligarAjuste(d, f, worker, tel4) {
     const resp = await fetch(worker.replace(/\/+$/, '') + '/mensalidade-ajuste', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filho_id: f.id, tel4, tipo, ...corpo })
+      body: JSON.stringify({ ...APP.sessao, tipo, ...corpo })
     });
     const r = await resp.json().catch(() => ({}));
     if (!resp.ok) { alert(r?.error || 'Não consegui enviar agora. Tenta de novo em instantes.'); return false; }
@@ -2586,8 +2740,9 @@ function toggleDiaRega(d) {
   renderRega();
 }
 
-// Libera um dia já reservado. Exige confirmação dos 4 últimos dígitos do
-// telefone do dono da reserva (mesma régua de auth da área pessoal).
+// Libera um dia já reservado. Só o DONO libera, provando com o PIN dele —
+// antes pedia os 4 dígitos do telefone da outra pessoa, o que ensinava a tela
+// a tratar telefone alheio como senha.
 async function liberarDiaRega(d) {
   const reserva = APP.regasDiarias[d];
   if(!reserva) { renderRega(); return; }
@@ -2596,7 +2751,7 @@ async function liberarDiaRega(d) {
   const dataFmt = new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
 
   // Quem já provou ser o dono da reserva nesta aba não prova de novo.
-  const cached = filho ? !!APP.provaPorFilho[filho.id] : false;
+  const cached = !!(filho && APP.sessao && APP.sessao.filho_id === filho.id);
 
   if(!cached) {
     // Pedia os 4 dígitos do telefone DO OUTRO, e conferia contra o telefone que
@@ -2607,16 +2762,22 @@ async function liberarDiaRega(d) {
     // com outra pessoa passou a ser: ela libera, você reserva. É um passo a
     // mais, e é o passo que faz "meu dia" significar alguma coisa.
     if(!filho) { toast('Não achei o cadastro de quem reservou.','err'); return; }
-    const entrada = prompt(`O dia ${dataFmt} está reservado por ${reserva.filho_nome}.\n\nSe for você, digite os 4 últimos dígitos do SEU celular pra liberar:`);
-    if(!entrada) return;
-    const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, entrada.replace(/\D/g,'').slice(-4));
+    const digitado = await pedirPin({
+      iniciais: iniciaisDe(filho.nome),
+      titulo: 'Liberar este dia',
+      sub: `O dia ${dataFmt} está com <b>${reserva.filho_nome}</b>. Se for você, confirme com o seu PIN.`,
+      botao: 'Liberar o dia',
+    });
+    if(!digitado) return;
+    const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, digitado);
     if(!r.ok) {
       toast(r.erro === 'não confere'
         ? `Só ${nomePrim} pode liberar este dia. Peça pra ela abrir a área dela e liberar.`
         : Filhos.explicar(r.erro), 'err');
       return;
     }
-    APP.provaPorFilho[filho.id] = entrada.replace(/\D/g,'').slice(-4);
+    APP.sessao = { filho_id: filho.id, sessao: r.sessao };
+    Filhos.guardarSessao(filho.id, r.sessao);
   } else {
     // Já autenticado — confirma textualmente pra evitar liberar sem querer
     if(!confirm(`Liberar o dia ${dataFmt} (atualmente com ${reserva.filho_nome})?`)) return;
@@ -2854,7 +3015,10 @@ async function carregarHistoricoReemb() {
 }
 
 function trocarFilho() {
-  // Limpa auth do filho atual + reset UI pro seletor
+  // Sair apaga a sessão do disco. Sem isto, "sair" só escondia a tela e o
+  // próximo a pegar o celular entrava como a pessoa anterior.
+  APP.sessao = null;
+  Filhos.esquecerSessao();
   if(APP.filhoAtual) {
     try { sessionStorage.removeItem(`auth_${APP.filhoAtual.id}`); } catch(e) {}
   }
