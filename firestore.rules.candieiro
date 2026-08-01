@@ -23,7 +23,22 @@ service cloud.firestore {
     // Conteúdo já é pra ser público (slides, fotos, eventos, etc.)
     match /slides/{id}    { allow read: if true; }
     match /galeria/{id}   { allow read: if true; }
-    match /eventos/{id}   { allow read: if true; }
+    // ── eventos: GET aberto, LIST fechado ─────────────────────────────────
+    //
+    // A agenda tem gira aberta (que é convite pra qualquer um) e tem
+    // desenvolvimento de segunda, obrigação e reunião — que são de dentro.
+    //
+    // O site filtrava os internos no NAVEGADOR de quem visita. Escondia na
+    // tela e deixava o dado aberto: bastava consultar a collection pela API
+    // pra ver a casa inteira. Decisão do Pai em 01/08: isso não é público.
+    //
+    // `get` continua aberto porque o link de um evento circula por aí (é ele
+    // que a pessoa recebe pra se inscrever), e pra ler um doc é preciso JÁ
+    // SABER o id. `list` fecha, então ninguém varre a agenda.
+    //
+    // Quem lista pro site é o Worker, por service account, e ele devolve só o
+    // que `ehAtividadePublica()` deixa passar. Mesmo desenho do vendas_alunos.
+    match /eventos/{id}   { allow get: if true; allow list: if request.auth != null; }
     match /paideanto/{id} { allow read: if true; }
     match /config/{id}    { allow read: if true; }
   }

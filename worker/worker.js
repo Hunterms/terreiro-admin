@@ -15,6 +15,8 @@
  *   POST /entrar     → confere PIN (ou telefone, na primeira vez) e devolve
  *                       uma sessão assinada. A conferência era no navegador,
  *                       contra dado que o navegador tinha baixado.
+ *   POST /agenda     → a agenda que o SITE mostra. Pública, e já filtrada:
+ *                       gira aberta é convite, desenvolvimento não é.
  *   POST /mural      → quadro de avisos e próximas atividades. Interno: não
  *                       existe mais área externa (decisão de 01/08).
  *   POST /avisar-filho → o admin responde alguém. Push + caixa de avisos.
@@ -185,6 +187,7 @@ export default {
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
+      if (rota === '/agenda') return await rotaAgenda(env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -962,6 +965,40 @@ async function mandarPush(env, { titulo, corpo, url, papel, filho_id, tag }) {
     console.error('push falhou', e?.stack || e);
     return { enviados: 0, erro: String(e?.message || e) };
   }
+}
+
+// ── QUAIS ATIVIDADES SÃO DE DENTRO ────────────────────────────────────────
+//
+// Lista única, e é ela que decide o que o site mostra. Ficava só no cliente do
+// site, num `Set` dentro do index.html: quem consultasse a collection direto
+// via API via TUDO, inclusive o desenvolvimento de segunda e as obrigações.
+//
+// `desenvolvimento` entrou em 01/08: é o trabalho de segunda, dos médiuns, e
+// não tinha tipo próprio — caía em `trabalho_interno` ou em `outro`.
+const TIPOS_INTERNOS = new Set([
+  'gira_fechada', 'desenvolvimento', 'trabalho_interno',
+  'mutirao', 'reuniao', 'obrigacao_coletiva', 'ensaio_curimba',
+]);
+
+export function ehAtividadePublica(ev) {
+  if (!ev || ev.arquivado === true) return false;
+  if (ev.publico === false) return false;                 // marca manual do admin
+  return !TIPOS_INTERNOS.has(ev.tipo);
+}
+
+/**
+ * A agenda que o site mostra. Pública de propósito: gira aberta é convite.
+ *
+ * O filtro acontece AQUI e não no navegador de quem visita. A diferença é que
+ * antes o site escondia e o dado continuava aberto; agora o dado que sai já é
+ * só o que pode sair.
+ */
+async function rotaAgenda(env) {
+  const token = await tokenGoogle(env);
+  const eventos = await fsList(PROJETO_CAND, 'eventos', token).catch(() => []);
+  const publicas = eventos.filter(ehAtividadePublica)
+    .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+  return json({ eventos: publicas });
 }
 
 // ── O MURAL: AVISOS E PRÓXIMAS ATIVIDADES ─────────────────────────────────

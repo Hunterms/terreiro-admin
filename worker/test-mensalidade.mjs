@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   mensalidadeReais, vencimentoMensalidade, ultimoDiaDoCiclo, precoCentavos, MULTA_ATRASO,
-  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora,
+  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora, ehAtividadePublica,
 } from './worker.js';
 
 // ── vencimento por prazo ───────────────────────────────────────────────────
@@ -152,4 +152,28 @@ assert.equal(precoCentavos('men', { ...jul, valor_cobrado: 1 }, f200, '2026-07-0
 
 assert.equal(MULTA_ATRASO, 10);
 
-console.log('ok — 67 asserts de mensalidade passaram');
+console.log('ok — 81 asserts de mensalidade passaram');
+
+// ── o que é de dentro não sai na agenda pública ────────────────────────────
+// Esta lista decide o que a internet vê da casa. Ela morava num Set dentro do
+// index.html do site, e o dado continuava aberto por trás.
+assert.equal(ehAtividadePublica({ tipo: 'gira_aberta' }), true);
+assert.equal(ehAtividadePublica({ tipo: 'festa' }), true);
+assert.equal(ehAtividadePublica({ tipo: 'apresentacao_cultural' }), true);
+
+assert.equal(ehAtividadePublica({ tipo: 'desenvolvimento' }), false);   // segunda, dos médiuns
+assert.equal(ehAtividadePublica({ tipo: 'gira_fechada' }), false);
+assert.equal(ehAtividadePublica({ tipo: 'trabalho_interno' }), false);
+assert.equal(ehAtividadePublica({ tipo: 'obrigacao_coletiva' }), false);
+assert.equal(ehAtividadePublica({ tipo: 'reuniao' }), false);
+assert.equal(ehAtividadePublica({ tipo: 'mutirao' }), false);
+assert.equal(ehAtividadePublica({ tipo: 'ensaio_curimba' }), false);
+
+// a marca manual do admin vence o tipo
+assert.equal(ehAtividadePublica({ tipo: 'gira_aberta', publico: false }), false);
+assert.equal(ehAtividadePublica({ tipo: 'gira_aberta', arquivado: true }), false);
+
+// sem tipo NÃO some. Os docs antigos não têm o campo, e sumir com a agenda
+// inteira do site num deploy é pior que mostrar um evento a mais.
+assert.equal(ehAtividadePublica({ data: '2026-09-01' }), true);
+assert.equal(ehAtividadePublica(null), false);

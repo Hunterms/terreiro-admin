@@ -178,6 +178,16 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # ⚠️ Rota que NÃO EXISTE cai no /email, que pede o mesmo header — então este
   # teste sozinho dá verde num Worker velho. A checagem de existência é a de
   # baixo: /criar-pin sem PIN responde uma mensagem que só ela sabe dizer.
+  # A agenda pública não pode devolver o que é de dentro. Se um tipo interno
+  # escapar daqui, ele vai parar na home do site.
+  r=$(curl -s -X POST "$W/agenda" -H 'Content-Type: application/json' -d '{}')
+  if ! grep -q '"eventos"' <<< "$r"; then
+    erro "agenda: $(head -c 100 <<< "$r")"
+  elif grep -qE '"tipo":"(desenvolvimento|gira_fechada|trabalho_interno|obrigacao_coletiva|reuniao|mutirao|ensaio_curimba)"' <<< "$r"; then
+    erro "VAZAMENTO: a agenda pública devolveu atividade interna"
+  else
+    ok "agenda pública sem os trabalhos de dentro"
+  fi
   r=$(curl -s -X POST "$W/avisar-filho" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
