@@ -1486,6 +1486,19 @@ function openFilhoForm(id=null) {
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Use o <strong>mesmo nome de grupo</strong> pros filhos que moram juntos (ex: "casa-rose-elis"). A auto-geração tenta colocá-los na mesma gira pra economizar passagem.</div>
       </div>
       <div class="fi-group"><label>Observações</label><textarea class="fi" id="ff-obs">${f?.obs||''}</textarea></div>
+      ${isEdit ? `
+      <div class="fi-group">
+        <label>Acesso à área do filho</label>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
+          <div style="flex:1;min-width:180px;font-size:13px;color:var(--text2);line-height:1.5" id="ff-pin-estado">
+            ${f?.pin_hash
+              ? `Entra com o <strong style="color:var(--text)">PIN que ${(f.nome||'').split(' ')[0]} criou</strong>.`
+              : `Ainda sem PIN. Entra com os 4 últimos dígitos do telefone e cria um na próxima vez.`}
+          </div>
+          ${f?.pin_hash ? `<button class="btn" id="ff-zerar-pin" style="width:auto">Esqueceu o PIN</button>` : ''}
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Não existe recuperação automática: 31 dos 56 não têm email e não temos SMS. Quem esquece o PIN procura você, e este botão é o chaveiro — ele devolve a pessoa pro modo telefone, e ela cria um PIN novo ao entrar.</div>
+      </div>` : ''}
     </div>
     <div class="modal-f">
       ${isEdit?`<button class="btn btn-danger" id="ff-del">Excluir</button>`:''}
@@ -1493,6 +1506,36 @@ function openFilhoForm(id=null) {
       <button class="btn btn-primary" id="ff-save">${isEdit?'Salvar':'Cadastrar'}</button>
     </div>
   `, { lg: true });
+
+  // O chaveiro. Vive aqui e não numa tela própria porque o momento em que você
+  // precisa dele é exatamente quando está olhando a ficha da pessoa que ligou.
+  const btnZerar = $('#ff-zerar-pin');
+  if (btnZerar) btnZerar.onclick = async () => {
+    const primeiro = (f?.nome || '').split(' ')[0] || 'essa pessoa';
+    if (!confirm(`Zerar o PIN de ${primeiro}?\n\nEla volta a entrar com os 4 últimos dígitos do telefone cadastrado, e cria um PIN novo na hora seguinte. Confirme por outro canal que é ela mesma pedindo.`)) return;
+    btnZerar.disabled = true; btnZerar.textContent = 'Zerando...';
+    const cfg = await _carregarEmailCfg();
+    if (!cfg?.worker_url || !cfg?.worker_secret) {
+      toast('Config do Worker incompleta (adm_config/email)','err');
+      btnZerar.disabled = false; btnZerar.textContent = 'Esqueceu o PIN';
+      return;
+    }
+    try {
+      const resp = await fetch(cfg.worker_url.replace(/\/+$/,'') + '/zerar-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+        body: JSON.stringify({ filho_id: id })
+      });
+      const r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r?.error || resp.status);
+      toast(`PIN zerado. ${primeiro} entra com os 4 dígitos do telefone.`,'ok');
+      $('#ff-pin-estado').innerHTML = 'Ainda sem PIN. Entra com os 4 últimos dígitos do telefone e cria um na próxima vez.';
+      btnZerar.remove();
+    } catch(e) {
+      toast('Erro ao zerar: ' + e.message,'err');
+      btnZerar.disabled = false; btnZerar.textContent = 'Esqueceu o PIN';
+    }
+  };
 
   $('#ff-save').onclick = async () => {
     const nome = $('#ff-nome').value.trim();
