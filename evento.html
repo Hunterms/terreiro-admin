@@ -224,6 +224,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import * as Filhos from "./filhos.js";
 import { criarCheckout } from "./checkout.js";
 
 const cfgPvd = {
@@ -295,8 +296,8 @@ function _highlight(nome, q){
     } catch(e) { /* segue sem pix se não tiver config */ }
 
     // 3) Carrega filhos ativos
-    const fSnap = await getDocs(query(collection(dbPvd,'fin_filhos'), orderBy('nome')));
-    APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(f => !f.status || f.status === 'ativo');
+    // Pelo Worker, sem telefone. A config já veio no passo 2, logo acima.
+    APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(APP.cfg));
 
     // 4) Carrega inscrições existentes pra checar status do filho que escolher
     try {
@@ -463,6 +464,20 @@ async function confirmarInscricao() {
   const f = APP.filhoSel; const ev = APP.evento;
   if(!f || !ev) return;
   const btn = $('#btn-confirmar');
+
+  // Prova de que é você. Antes bastava escolher o nome numa lista, e dava pra
+  // inscrever qualquer pessoa da casa num evento pago. O telefone também só
+  // aparece depois disto: saiu do elenco público em 01/08 (ver filhos.js).
+  if(!f._tel) {
+    const d4 = prompt(`Pra confirmar que é você, ${(f.nome||'').split(' ')[0]}, digite os 4 últimos dígitos do seu celular:`);
+    if(!d4) return;
+    btn.disabled = true; btn.textContent = 'Conferindo...';
+    const r = await Filhos.entrar(APP.cfg, f.id, d4.replace(/\D/g,'').slice(-4));
+    btn.disabled = false; btn.textContent = 'Confirmar inscrição';
+    if(!r.ok) { alert(Filhos.explicar(r.erro)); return; }
+    f._tel = r.tel || '';
+  }
+
   btn.disabled = true; btn.textContent = 'Registrando...';
   try {
     const valor = Number(ev.valor) || 0;
@@ -472,7 +487,7 @@ async function confirmarInscricao() {
       evento_data: ev.data || null,
       filho_id: f.id,
       nome: f.nome,
-      tel: f.tel || '',
+      tel: f._tel || '',
       valor,
       status: 'aguardando',
       origem: 'evento_publico',

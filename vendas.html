@@ -128,6 +128,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import * as Filhos from "./filhos.js";
 import { criarCheckout, caixaCheckout, caixaCheckoutCarregando, armarCheckout } from "./checkout.js";
 
 const cfg = {
@@ -197,10 +198,9 @@ function mostrarErro(titulo, msg) {
     // Evento pros filhos: carrega lista de filhos pro autocomplete
     if(prod.evento_filho) {
       try {
-        const fSnap = await getDocs(collection(db,'fin_filhos'));
-        APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-          .filter(f => !f.status || f.status === 'ativo')
-          .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+        // Pelo Worker, sem telefone nem email. Quem se identificar recebe os
+        // próprios dados de volta pelo /entrar. Ver filhos.js.
+        APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(CFG_AGENDAMENTO));
       } catch(e) { APP.filhos = []; }
     }
     if(prod.publico === false) {
@@ -474,9 +474,20 @@ function renderProduto(prod) {
     let nome, tel, email, filhoId = null;
     if(prod.evento_filho) {
       if(!APP.filhoSel) { err.textContent='Selecione seu nome no campo acima'; err.style.display='block'; return; }
+      // Prova de que é você mesmo. Antes bastava escolher o nome numa lista, e
+      // qualquer pessoa inscrevia qualquer filho. O telefone também só vem
+      // depois disto: ele saiu do elenco público em 01/08 (ver filhos.js).
+      if(!APP.filhoSel._tel) {
+        const d4 = prompt(`Pra confirmar que é você, ${APP.filhoSel.nome.split(' ')[0]}, digite os 4 últimos dígitos do seu celular:`);
+        if(!d4) return;
+        const r = await Filhos.entrar(CFG_AGENDAMENTO, APP.filhoSel.id, d4.replace(/\D/g,'').slice(-4));
+        if(!r.ok) { err.textContent = Filhos.explicar(r.erro); err.style.display='block'; return; }
+        APP.filhoSel._tel = r.tel || '';
+        APP.filhoSel._email = r.auth_email || null;
+      }
       nome = APP.filhoSel.nome;
-      tel = (APP.filhoSel.tel||'').replace(/\D/g,'');
-      email = APP.filhoSel.auth_email || null;
+      tel = (APP.filhoSel._tel||'').replace(/\D/g,'');
+      email = APP.filhoSel._email || null;
       filhoId = APP.filhoSel.id;
     } else {
       nome = $('#b-nome').value.trim();

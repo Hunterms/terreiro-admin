@@ -141,6 +141,7 @@ import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, query, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import * as Filhos from "./filhos.js";
 
 const cfg = {
   apiKey: "AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4",
@@ -160,9 +161,11 @@ let APP = { filhos: [], regaHoje: null };
 
 (async function boot() {
   try {
-    const fSnap = await getDocs(query(collection(db,'fin_filhos'), orderBy('nome')));
-    APP.filhos = fSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-      .filter(f => !f.status || f.status === 'ativo');
+    // Elenco pelo Worker: fin_filhos deixou de ser pública em 01/08, porque
+    // levava telefone junto — e o telefone é a credencial. Ver filhos.js.
+    const cSnap = await getDoc(doc(db,'adm_config','agendamento'));
+    APP.cfg = cSnap.exists() ? cSnap.data() : null;
+    APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(APP.cfg));
 
     // Doc da rega de hoje (se existir)
     try {
