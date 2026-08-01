@@ -812,12 +812,12 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
     lembrete_valor: valor,
   });
 
-  // O email alcança 29 dos 56. Os outros 27 só ficam sabendo se estiver escrito
-  // na área deles — e agora está, mesmo pra quem não tem email nem celular
-  // registrado. Sem push aqui: o email já foi, dois toques pelo mesmo assunto
-  // é o caminho pra pessoa desligar os dois.
+  // O push VAI junto agora. Antes não ia porque o email era o canal e dois
+  // toques pelo mesmo assunto ensinam a ignorar os dois — mas em 01/08 o email
+  // deixou de ser canal de aviso, por decisão do Pai. Sobrou push pra quem
+  // instalou, e a caixa de avisos pra todo mundo, inclusive os 27 sem email.
   await avisar(env, token, {
-    para: 'filho', filho_id: filhoId, push: false,
+    para: 'filho', filho_id: filhoId,
     titulo: `Sua contribuição de ${nomeDoMes(ciclo)}`,
     corpo: venc
       ? `${brl(valor)}, até ${venc.slice(8, 10)}/${venc.slice(5, 7)}. Dá pra pagar pela sua área.`

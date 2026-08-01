@@ -339,6 +339,15 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
   </div>
 
   <div id="content" style="display:none">
+    <!-- O que falta pra sua área funcionar vem ANTES de tudo.
+         Cadastro primeiro (pedido do Pai), avisos logo depois — e a ordem entre
+         os dois é discutível: com o email fora do jogo, o push virou o ÚNICO
+         canal, então não ter avisos ligados é o buraco mais caro dos dois. -->
+    <div id="topo-pendencias" style="max-width:620px;margin:0 auto">
+      <div id="cadastro-card" style="display:none"></div>
+      <div id="push-card" style="display:none;margin-bottom:14px"></div>
+    </div>
+
     <div class="painel-grid">
 
       <!-- COLUNA ESQUERDA (desktop): Área da comunidade — vira segunda em mobile -->
@@ -350,7 +359,6 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 
         <!-- Card pedindo data de nascimento — só pra quem não tem -->
         <!-- Cadastro que se completa. Um card, uma pergunta por vez. -->
-        <div id="cadastro-card" style="display:none"></div>
 
         <!-- Aniversariantes do mês -->
         <div id="aniversariantes-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.10),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.3);border-radius:12px;margin-bottom:14px">
@@ -409,9 +417,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <!-- Notificação: só aparece pra quem já entrou, e só se este aparelho
                puder receber. Some sozinho no resto — botão que nunca vai
                funcionar aqui é ruído. -->
-          <div id="push-card" style="display:none;margin-bottom:14px"></div>
 
-          <!-- Card pedindo email — só pra quem não tem auth_email -->
           <!-- Action items: o que precisa da atenção agora -->
           <div id="actions-wrap" style="display:none">
             <div class="actions-label">Pra você agora</div>
@@ -1107,18 +1113,19 @@ function resetSearchSelect(){
 //
 // Pular sempre existe e nunca é definitivo: volta a perguntar depois de uma
 // semana. Nada aqui bloqueia a área.
+// O EMAIL SAIU desta lista em 01/08. Ele não é mais canal de aviso — tudo vai
+// por push, e o registro que garante a entrega é a caixa de avisos. Instalar o
+// app e receber notificação não pede email nenhum.
+//
+// Então parar de pedir não é abrir mão de alcance: é parar de coletar um dado
+// que não usamos mais. Quem já cadastrou continua com ele no cadastro, e o
+// admin continua podendo escrever — só não perguntamos mais.
 const PERGUNTAS_CADASTRO = [
   {
     campo: 'data_nascimento', emoji: '🎂', tipo: 'data',
     falta: (f) => !f.data_nascimento,
     titulo: 'Quando você nasceu?',
     porque: 'A casa comemora aniversário da galera. Sem a data, você fica de fora da lista do mês.',
-  },
-  {
-    campo: 'auth_email', emoji: '📧', tipo: 'email',
-    falta: (f) => !f.auth_email,
-    titulo: 'Qual é o seu email?',
-    porque: 'É por ele que chega o aviso da contribuição antes de vencer, e o lembrete da sua escala na véspera.',
   },
   {
     campo: 'trabalha_clt', emoji: '🕗', tipo: 'sim_nao',
@@ -1448,7 +1455,7 @@ function mostrarAba(nome) {
   // Início não tem seção própria: é o mural, os eventos e o cartão de cadastro,
   // que vivem fora do sistema de abas.
   ['avisos-container', 'eventos-filho-container', 'giras-container',
-   'aniversariantes-card', 'cadastro-card', 'push-card', 'actions-wrap'].forEach((id) => {
+   'aniversariantes-card', 'topo-pendencias', 'actions-wrap'].forEach((id) => {
     document.getElementById(id)?.classList.toggle('fora-da-aba', nome !== 'inicio');
   });
   window.scrollTo({ top: 0, behavior: 'instant' });
