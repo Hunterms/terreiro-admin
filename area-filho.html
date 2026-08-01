@@ -1807,10 +1807,19 @@ function renderActionItems() {
     const diff = Math.round((dt - hoje)/86400000);
     const dataLabel = diff===0 ? 'HOJE' : diff===1 ? 'AMANHÃ' : dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'}).toUpperCase().replace(/\./g,'');
     const tone = diff<=1 ? 'urgent' : diff<=7 ? 'info' : 'info';
+    // Quem mais está nessa noite entra já no resumo do topo. Saber que a
+    // Jacque e a Lais estarão lá muda a disposição de ir muito mais do que
+    // saber o horário — e essa informação já estava no mesmo documento.
+    const companhia = (prox.alocacoes||[])
+      .filter(a => a.filho_id && a.filho_id !== f.id)
+      .map(a => (APP.filhos.find(x => x.id === a.filho_id)?.nome || '').split(' ')[0])
+      .filter(Boolean);
+
     itens.push({
       icon:'🗓️', tone, sort: diff<=1 ? 1 : 5,
       title: `Próxima escala · ${dataLabel}`,
-      meta: `${nomeEv}${fn?` · ${fn.nome}`:''}${ev?.hora && diff>0 ?` · ${ev.hora}`:''}`,
+      meta: `${nomeEv}${fn?` · ${fn.nome}`:''}${ev?.hora && diff>0 ?` · ${ev.hora}`:''}`
+          + (companhia.length ? ` · com ${companhia.slice(0,3).join(', ')}${companhia.length>3?` e mais ${companhia.length-3}`:''}` : ''),
       target: 'dash-sec-escalas'
     });
   }
@@ -2114,6 +2123,21 @@ function renderEsc() {
     const dataReal = es.tipo === 'lojinha' ? es.data : dataEfetivaAloc(es, aloc, APP.funcoes);
     const ehDepois = dataReal !== es.data && es.tipo !== 'lojinha';
     const dataLabel = es.tipo === 'lojinha' ? `${fmtCurto(es.data)} – ${fmtCurto(es.data_fim)}` : fmtData(dataReal);
+
+    // Quem mais está nesta noite. O dado sempre esteve aqui — cada escala é uma
+    // lista de alocações — e ninguém tinha feito a pergunta. Sem isto a tela
+    // devolve uma tarefa; com isto, devolve uma noite com gente.
+    //
+    // Nome curto: numa casa de 56, "Márcia" resolve, e a lista cabe na linha.
+    const juntos = (es.alocacoes || [])
+      .filter(a => a.filho_id && a.filho_id !== f.id)
+      .map(a => {
+        const p = APP.filhos.find(x => x.id === a.filho_id);
+        const fnA = APP.funcoes.find(fn => fn.id === a.funcao_id);
+        return p ? { nome: (p.nome || '').split(' ')[0], funcao: fnA?.nome || null } : null;
+      })
+      .filter(Boolean);
+
     return `
       <div class="list-item">
         <div class="li-date">
@@ -2127,6 +2151,12 @@ function renderEsc() {
             ${ev?.hora && !ehDepois?`<span>${ev.hora}</span>`:''}
             ${ehDepois?`<span style="color:var(--gold);font-weight:600">dia seguinte à gira</span>`:''}
           </div>
+          ${juntos.length ? `
+            <div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5">
+              <span style="color:var(--text3)">com você:</span>
+              ${juntos.slice(0,6).map(j => `<span title="${j.funcao||''}">${escapaHtml(j.nome)}</span>`).join(', ')}${juntos.length>6?` e mais ${juntos.length-6}`:''}
+            </div>` : `
+            <div style="font-size:12px;color:var(--text3);margin-top:6px">você é a única pessoa escalada</div>`}
         </div>
       </div>
     `;
