@@ -226,6 +226,20 @@ a.dash-link:active{transform:scale(.99)}
 
 .help{font-size:13px;color:var(--text3);line-height:1.5;padding:12px 14px;background:var(--glass2);border-radius:8px;margin-bottom:14px}
 
+/* ── CAIXA DE AVISOS ─────────────────────────────────────────────────────
+   O não lido é marcado por fundo e por um ponto, não só por peso da fonte:
+   negrito sozinho some pra quem enxerga pouco, e some de vez em tela pequena
+   sob sol. */
+.av-item{display:flex;gap:11px;padding:12px 13px;border-radius:11px;background:var(--glass2);border:1px solid var(--border);align-items:flex-start;margin-bottom:8px}
+.av-item.novo{background:rgba(212,168,67,.07);border-color:rgba(212,168,67,.26)}
+.av-ponto{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:6px}
+.av-item:not(.novo) .av-ponto{background:transparent}
+.av-corpo{flex:1;min-width:0}
+.av-tit{font-size:13.5px;font-weight:650;line-height:1.35;color:var(--text)}
+.av-txt{font-size:12.5px;color:var(--text2);margin-top:3px;line-height:1.5}
+.av-quando{font-size:11px;color:var(--text3);margin-top:5px}
+.av-divisor{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);font-weight:700;margin:14px 0 8px}
+
 /* ── TELA DE PIN ──────────────────────────────────────────────────────────
    Substitui o prompt() do navegador. O prompt não mascara o que se digita,
    alguns navegadores bloqueiam, e ele não sabe dizer "erraram 4 vezes, faltam
@@ -302,20 +316,8 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         </div>
 
         <!-- Card pedindo data de nascimento — só pra quem não tem -->
-        <div id="nasc-capture-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(231,51,41,.12),rgba(231,51,41,.02));border:1px solid rgba(231,51,41,.35);border-radius:12px;margin-bottom:14px">
-          <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
-            <span style="font-size:22px;line-height:1">🎂</span>
-            <div style="flex:1;min-width:0">
-              <div class="t-titulo">Quando você nasceu?</div>
-              <div class="t-corpo">A casa gosta de comemorar aniversário da galera. Cadastra sua data pra entrar na lista de aniversariantes do mês.</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <input class="fi" id="nc-data" type="date" max="2025-12-31" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
-            <button class="btn btn-primary" id="nc-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
-          </div>
-          <div id="nc-err" class="erro-campo"></div>
-        </div>
+        <!-- Cadastro que se completa. Um card, uma pergunta por vez. -->
+        <div id="cadastro-card" style="display:none"></div>
 
         <!-- Aniversariantes do mês -->
         <div id="aniversariantes-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.10),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.3);border-radius:12px;margin-bottom:14px">
@@ -377,21 +379,6 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <div id="push-card" style="display:none;margin-bottom:14px"></div>
 
           <!-- Card pedindo email — só pra quem não tem auth_email -->
-          <div id="email-capture-card" style="display:none;padding:14px 16px;background:linear-gradient(135deg,rgba(52,152,219,.12),rgba(52,152,219,.02));border:1px solid rgba(52,152,219,.35);border-radius:12px;margin-bottom:14px">
-            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
-              <span style="font-size:22px;line-height:1">📧</span>
-              <div style="flex:1;min-width:0">
-                <div class="t-titulo">Cadastra seu email pra receber lembretes</div>
-                <div class="t-corpo">Manda a véspera pra você não esquecer da rega, escala da gira ou tarefa que tá com você. Você pode parar quando quiser.</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <input class="fi" id="ec-email" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
-              <button class="btn btn-primary" id="ec-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
-            </div>
-            <div id="ec-err" class="erro-campo"></div>
-          </div>
-
           <!-- Action items: o que precisa da atenção agora -->
           <div id="actions-wrap" style="display:none">
             <div class="actions-label">Pra você agora</div>
@@ -402,6 +389,19 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <!-- Ordem: Tarefas → Escalas → Reembolso → Disponibilidade → Afilhados -->
 
           <!-- Mensalidade do mês (escondida até o Worker responder) -->
+          <details class="dash-secao" id="dash-sec-avisos" style="display:none" open>
+            <summary>
+              <div class="dash-head-text">
+                <h2>🔔 Seus avisos <span class="dash-badge" id="dash-cnt-avisos"></span></h2>
+                <p class="dash-sub">Tudo que a casa te contou, mesmo o que não chegou no celular.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body">
+              <div id="avisos-inbox"></div>
+            </div>
+          </details>
+
           <details class="dash-secao" id="dash-sec-mensalidade" style="display:none">
             <summary>
               <div class="dash-head-text">
@@ -752,8 +752,7 @@ async function selecionarFilho(id) {
   $('#filho-area').style.display = '';
   renderIdentityHero(filho);
   renderPushCard(filho);
-  renderEmailCapture(filho);
-  renderNascCapture(filho);
+  renderCadastro(filho);
   renderAniversariantes();
   const selectorCard = $('#filho-sel-card');
   if(selectorCard) selectorCard.style.display = 'none';
@@ -823,6 +822,7 @@ async function selecionarFilho(id) {
   }
 
   renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
+  renderAvisosInbox(); // idem — e é a única coisa que alcança quem não tem email
   renderDisp();
   renderEsc();
   renderTarefas();
@@ -1050,61 +1050,146 @@ function resetSearchSelect(){
   _search.results = [];
 }
 
-function renderNascCapture(f) {
-  const card = $('#nasc-capture-card');
-  if (!card) return;
-  if (f.data_nascimento) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
-  const inp = $('#nc-data');
-  const btn = $('#nc-save');
-  const err = $('#nc-err');
-  // Max = hoje (não faz sentido data futura)
-  const hoje = new Date(); const hojeISO = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
-  if (inp) { inp.value = ''; inp.max = hojeISO; }
-  if (err) err.style.display = 'none';
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = 'Salvar';
-    btn.onclick = async () => {
-      const data = (inp.value || '').trim();
-      err.style.display = 'none';
-      if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
-        err.textContent = 'Selecione uma data válida.';
-        err.style.display = 'block';
-        return;
-      }
-      if (data > hojeISO) {
-        err.textContent = 'Data não pode ser no futuro.';
-        err.style.display = 'block';
-        return;
-      }
-      const ano = Number(data.slice(0,4));
-      if (ano < 1900) {
-        err.textContent = 'Confere o ano.';
-        err.style.display = 'block';
-        return;
-      }
-      btn.disabled = true; btn.textContent = 'Salvando…';
-      try {
-        // Pelo Worker: as rules de fin_filhos nunca deixaram o público
-        // escrever, então este Salvar dava "Erro ao salvar" desde sempre.
-        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { data_nascimento: data });
-        f.data_nascimento = data;
-        const idx = APP.filhos.findIndex(x => x.id === f.id);
-        if (idx >= 0) APP.filhos[idx].data_nascimento = data;
-        toast('Data de nascimento salva 🎂','ok');
-        card.style.display = 'none';
-        renderAniversariantes(); // pode entrar na lista do mês
-      } catch(e) {
-        console.error(e);
-        err.textContent = 'Erro ao salvar. Tenta de novo.';
-        err.style.display = 'block';
-        btn.disabled = false; btn.textContent = 'Salvar';
-      }
-    };
-  }
-  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') btn.click(); };
+// ── O CADASTRO QUE SE COMPLETA ────────────────────────────────────────────
+//
+// Eram dois cards fixos: data de nascimento e email. Viraram uma lista, porque
+// o buraco não é só esses dois. Medido em 01/08, nos 56 ativos: 31 sem email,
+// 21 sem nascimento, 19 sem dizer se trabalham CLT.
+//
+// ── A LINHA QUE NÃO SE CRUZA ──────────────────────────────────────────────
+// Só entra aqui o que o FILHO é dono da resposta. Faltam `postos` em 11 e
+// `padrinho_id` em 22, e esses NÃO entram: deixar alguém declarar o próprio
+// posto é deixar a pessoa se dar uma função na casa. Valor e prazo, idem —
+// são combinados com o Pai.
+//
+// ── AS TRÊS REGRAS ────────────────────────────────────────────────────────
+// Uma pergunta por vez, nunca um formulário. Sete campos numa tela é um muro;
+// um campo com um botão é uma pergunta.
+//
+// Toda pergunta diz PRA QUE serve. "Qual seu email" é burocracia; "pra te
+// avisar antes de vencer" é motivo. Sem isso, as 31 pessoas sem email
+// continuam sem.
+//
+// Pular sempre existe e nunca é definitivo: volta a perguntar depois de uma
+// semana. Nada aqui bloqueia a área.
+const PERGUNTAS_CADASTRO = [
+  {
+    campo: 'data_nascimento', emoji: '🎂', tipo: 'data',
+    falta: (f) => !f.data_nascimento,
+    titulo: 'Quando você nasceu?',
+    porque: 'A casa comemora aniversário da galera. Sem a data, você fica de fora da lista do mês.',
+  },
+  {
+    campo: 'auth_email', emoji: '📧', tipo: 'email',
+    falta: (f) => !f.auth_email,
+    titulo: 'Qual é o seu email?',
+    porque: 'É por ele que chega o aviso da contribuição antes de vencer, e o lembrete da sua escala na véspera.',
+  },
+  {
+    campo: 'trabalha_clt', emoji: '🕗', tipo: 'sim_nao',
+    falta: (f) => f.trabalha_clt === undefined || f.trabalha_clt === null,
+    titulo: 'Você trabalha de carteira assinada?',
+    porque: 'Serve pra montar escala sem te colocar em limpeza de dia útil de manhã.',
+  },
+  {
+    campo: 'mora_perto', emoji: '🚌', tipo: 'sim_nao',
+    falta: (f) => f.mora_perto === undefined || f.mora_perto === null,
+    titulo: 'Você mora perto do terreiro?',
+    porque: 'Ajuda a casa a pensar carona e a não te escalar em dia impossível.',
+  },
+];
+
+const PULOU = 'candieiro_pulou';
+const UMA_SEMANA = 7 * 86400000;
+
+function pulados() {
+  try { return JSON.parse(localStorage.getItem(PULOU) || '{}'); } catch { return {}; }
 }
+function pular(campo) {
+  const p = pulados(); p[campo] = Date.now();
+  try { localStorage.setItem(PULOU, JSON.stringify(p)); } catch {}
+}
+function foiPuladoAgora(campo) {
+  const q = pulados()[campo];
+  return !!q && (Date.now() - q) < UMA_SEMANA;
+}
+
+function renderCadastro(f) {
+  const card = $('#cadastro-card');
+  if (!card || !f) return;
+
+  const faltando = PERGUNTAS_CADASTRO.filter((p) => p.falta(f));
+  const agora = faltando.find((p) => !foiPuladoAgora(p.campo));
+  if (!agora) { card.style.display = 'none'; return; }
+
+  const quantas = faltando.length;
+  const feitas = PERGUNTAS_CADASTRO.length - quantas;
+  const volta = Math.round((feitas / PERGUNTAS_CADASTRO.length) * 360);
+
+  const campoHtml = {
+    data: `<input class="fi" id="cad-val" type="date" max="${hojeISO()}" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>`,
+    email: `<input class="fi" id="cad-val" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>`,
+    sim_nao: `<button class="btn" id="cad-sim" style="flex:1;padding:10px">Sim</button><button class="btn" id="cad-nao" style="flex:1;padding:10px">Não</button>`,
+  }[agora.tipo];
+
+  card.style.display = '';
+  card.innerHTML = `
+    <div style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.11),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.28);border-radius:12px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:11px">
+        <div style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:conic-gradient(var(--gold) 0deg ${volta}deg,rgba(255,255,255,.08) ${volta}deg 360deg);display:flex;align-items:center;justify-content:center">
+          <div style="width:25px;height:25px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--gold)">${quantas}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="t-titulo">${quantas === 1 ? 'Falta uma coisa no seu cadastro' : `Faltam ${quantas} coisas no seu cadastro`}</div>
+          <div style="font-size:11.5px;color:var(--text2);margin-top:2px">Menos de um minuto</div>
+        </div>
+      </div>
+      <div style="margin-top:13px;padding-top:13px;border-top:1px solid rgba(212,168,67,.2)">
+        <div style="display:flex;align-items:flex-start;gap:9px">
+          <span style="font-size:19px;line-height:1.2">${agora.emoji}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:650;line-height:1.35">${agora.titulo}</div>
+            <div class="t-corpo">${agora.porque}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px">${campoHtml}</div>
+        <div id="cad-err" class="erro-campo"></div>
+        <div style="display:flex;gap:8px;margin-top:9px">
+          ${agora.tipo === 'sim_nao' ? '' : '<button class="btn btn-primary" id="cad-save" style="flex:1;padding:10px">Salvar</button>'}
+          <button class="btn" id="cad-pular" style="padding:10px 14px;${agora.tipo === 'sim_nao' ? 'flex:1' : ''}">Pular</button>
+        </div>
+      </div>
+    </div>`;
+
+  const erro = (m) => { const e = $('#cad-err'); e.textContent = m; e.style.display = 'block'; };
+
+  const salvar = async (valor) => {
+    $('#cad-err').style.display = 'none';
+    try {
+      await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { [agora.campo]: valor });
+      f[agora.campo] = valor;
+      const i = APP.filhos.findIndex((x) => x.id === f.id);
+      if (i >= 0) APP.filhos[i][agora.campo] = valor;
+      toast('Guardado, obrigado ✓','ok');
+      renderCadastro(f);                     // já mostra a próxima, se houver
+      if (agora.campo === 'data_nascimento') renderAniversariantes();
+    } catch (e) {
+      erro(Filhos.explicar(e.message));
+    }
+  };
+
+  $('#cad-pular').onclick = () => { pular(agora.campo); renderCadastro(f); };
+  $('#cad-sim')?.addEventListener('click', () => salvar(true));
+  $('#cad-nao')?.addEventListener('click', () => salvar(false));
+  $('#cad-save')?.addEventListener('click', () => {
+    const v = $('#cad-val').value.trim();
+    if (!v) { erro('Preenche o campo antes de salvar.'); return; }
+    salvar(v);
+  });
+}
+
+const hojeISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
 
 function renderAniversariantes() {
   const card = $('#aniversariantes-card');
@@ -1136,50 +1221,6 @@ function renderAniversariantes() {
       </div>
     `;
   }).join('');
-}
-
-function renderEmailCapture(f) {
-  const card = $('#email-capture-card');
-  if (!card) return;
-  // Mostra só pra quem ainda não tem email cadastrado
-  if (f.auth_email) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
-  const inp = $('#ec-email');
-  const btn = $('#ec-save');
-  const err = $('#ec-err');
-  if (inp) inp.value = '';
-  if (err) err.style.display = 'none';
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = 'Salvar';
-    btn.onclick = async () => {
-      const email = (inp.value || '').trim().toLowerCase();
-      err.style.display = 'none';
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        err.textContent = 'Email inválido. Use o formato seu@email.com.';
-        err.style.display = 'block';
-        return;
-      }
-      btn.disabled = true; btn.textContent = 'Salvando…';
-      try {
-        // Mesmo motivo do card de nascimento: escrita pública em fin_filhos
-        // sempre foi negada, e este botão nunca salvou nada.
-        await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { auth_email: email });
-        // Atualiza estado local pra esconder o card
-        f.auth_email = email;
-        const idx = APP.filhos.findIndex(x => x.id === f.id);
-        if (idx >= 0) APP.filhos[idx].auth_email = email;
-        toast('Email salvo. Em breve você vai receber os lembretes ✓','ok');
-        card.style.display = 'none';
-      } catch(e) {
-        console.error(e);
-        err.textContent = 'Erro ao salvar. Tenta de novo em alguns segundos.';
-        err.style.display = 'block';
-        btn.disabled = false; btn.textContent = 'Salvar';
-      }
-    };
-  }
-  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') btn.click(); };
 }
 
 function renderIdentityHero(f) {
@@ -1333,6 +1374,88 @@ async function renderPushCard(filho) {
     renderPushCard(filho);
   };
 }
+
+// ── A CAIXA DE AVISOS ─────────────────────────────────────────────────────
+//
+// Existe por um número: dos 56 ativos, 31 não têm email, e o push exige
+// instalar (no iPhone, obrigatoriamente). Mais da metade da casa não tinha
+// canal garantido, e a notificação era o único registro dela mesma — celular
+// desligado e a informação sumia, sem ninguém saber que sumiu.
+//
+// Aqui o recado fica. Quem não recebeu abre e lê.
+async function renderAvisosInbox() {
+  const sec = $('#dash-sec-avisos');
+  const cont = $('#avisos-inbox');
+  const cnt = $('#dash-cnt-avisos');
+  if (!sec || !cont || !APP.sessao) { if (sec) sec.style.display = 'none'; return; }
+
+  sec.style.display = '';
+  cont.innerHTML = '<div style="color:var(--text3);font-size:12.5px;padding:10px 0">Carregando...</div>';
+
+  let d;
+  try {
+    d = await Filhos.avisos(APP.cfgAgendamento, APP.sessao);
+  } catch (e) {
+    cont.innerHTML = `<div style="color:var(--text3);font-size:12.5px;padding:10px 0">Não consegui carregar seus avisos agora. ${Filhos.explicar(e.message)}</div>`;
+    return;
+  }
+
+  const lista = d.avisos || [];
+  cnt.textContent = d.nao_lidos ? `${d.nao_lidos} novo${d.nao_lidos === 1 ? '' : 's'}` : '';
+  cnt.className = d.nao_lidos ? 'dash-badge' : 'dash-badge muted';
+
+  if (!lista.length) {
+    cont.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:14px 0;line-height:1.5">Nada por aqui ainda. Quando a casa te avisar de alguma coisa, ela fica guardada nesta lista.</div>';
+    return;
+  }
+
+  const quando = (iso) => {
+    if (!iso) return '';
+    const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (dias <= 0) return 'hoje';
+    if (dias === 1) return 'ontem';
+    if (dias < 7) return `há ${dias} dias`;
+    return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
+  };
+
+  let html = '', jaMarcouDivisor = false;
+  for (const n of lista) {
+    if (n.lido && !jaMarcouDivisor && lista.some(x => !x.lido)) {
+      html += '<div class="av-divisor">Antes disso</div>';
+      jaMarcouDivisor = true;
+    }
+    html += `
+      <div class="av-item ${n.lido ? '' : 'novo'}">
+        <div class="av-ponto"></div>
+        <div class="av-corpo">
+          <div class="av-tit">${escapaHtml(n.titulo)}</div>
+          ${n.corpo ? `<div class="av-txt">${escapaHtml(n.corpo)}</div>` : ''}
+          <div class="av-quando">${quando(n.criadoEm)}${n.da_casa ? ' · aviso da casa' : ''}</div>
+        </div>
+      </div>`;
+  }
+  cont.innerHTML = html;
+
+  // Abriu, leu. Marcar num botão separado é pedir um gesto que ninguém faz, e
+  // aí o contador fica vermelho pra sempre e a pessoa aprende a ignorar.
+  if (d.nao_lidos) {
+    try {
+      await Filhos.marcarAvisosLidos(APP.cfgAgendamento, APP.sessao);
+      cnt.textContent = '';
+      cnt.className = 'dash-badge muted';
+    } catch (e) { console.warn('marcar lidos', e); }
+  }
+}
+
+// O título e o corpo do aviso vêm do que o admin escreveu no mural. É texto de
+// gente, não de sistema, e entra em innerHTML — então escapa.
+//
+// Nome por extenso porque `esc` já é usado como variável local de escala mais
+// abaixo. Duas coisas com o mesmo nome curto e significados diferentes é como
+// se escreve um bug que ninguém acha.
+const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
+  { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
 
 // ── MENSALIDADE ───────────────────────────────────────────────────────────
 // Esta página NÃO lê fin_mensalidade_pedidos: a collection é fechada de
@@ -3043,8 +3166,7 @@ function trocarFilho() {
   const az = $('#dash-sec-afazeres'); if(az) az.style.display = 'none';
   const pq = $('#dash-sec-perguntas'); if(pq) pq.style.display = 'none';
   // Cards de captura também
-  const ec = $('#email-capture-card'); if(ec) ec.style.display = 'none';
-  const nc = $('#nasc-capture-card'); if(nc) nc.style.display = 'none';
+  const cc = $('#cadastro-card'); if(cc) cc.style.display = 'none';
   const an = $('#aniversariantes-card'); if(an) an.style.display = 'none';
   const aw = $('#actions-wrap'); if(aw) aw.style.display = 'none';
 }
