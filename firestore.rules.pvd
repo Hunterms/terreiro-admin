@@ -308,6 +308,43 @@ service cloud.firestore {
       allow write: if ehAdmin();
     }
 
+    // ── PUSH: o id do doc é o próprio token ───────────────────────────────
+    // `adm_push_tokens/{token}` — e é essa escolha que segura a regra de pé.
+    //
+    // O token do FCM é secreto e só o aparelho que o gerou conhece. Então
+    // "pode escrever quem souber o id" não é o mesmo desleixo de sempre: pra
+    // apagar ou trocar o registro de outra pessoa seria preciso já ter o token
+    // dela, e quem tem o token dela já recebe as notificações dela de qualquer
+    // jeito. Não há nada a ganhar.
+    //
+    // Isso é o que deixa o filho registrar sem login — ele entra na área dele
+    // por 4 dígitos do telefone, não por Firebase Auth.
+    //
+    // O que continua fechado é o que importa: `list` só pra quem tem login (a
+    // regra genérica lá em cima), então ninguém varre a collection pra sair com
+    // a lista de aparelhos da casa. E `create` exige papel declarado e nada
+    // além dos campos previstos — token não é lugar de guardar recado.
+    match /adm_push_tokens/{token} {
+      allow get: if ehAuth();
+      // Token do FCM tem ~160 caracteres. O piso de 100 não é segurança — é o
+      // que impede a collection de virar depósito de doc de id curto inventado
+      // por quem nem tem um aparelho registrado.
+      allow create, update: if token.size() > 100
+                            && request.resource.data.papel in ['admin', 'filho']
+                            && request.resource.data.keys().hasOnly(
+                                 ['papel', 'filho_id', 'nome', 'uid', 'ua', 'criadoEm']);
+      allow delete: if true;
+    }
+
+    // ── CONTAS FIXAS: vencimento e baixa do mês ───────────────────────────
+    // `fin_gastos` é do financeiro (regra lá em cima). O que nasce aqui é a
+    // baixa mensal, no mesmo formato do fin_pagamentos da mensalidade: um doc
+    // por ciclo, booleano por conta. Os dois apps escrevem nele.
+    match /fin_gastos_pagos/{ciclo} {
+      allow read: if ehAuth();
+      allow write: if ehFinanceiro();
+    }
+
     // Rega diária: leitura + write público (QR-based / trust-based)
     // delete público pra liberar dia reservado (UX de "trocar com outra pessoa"
     // na area-filho.html). Auth client-side via 4 dígitos do tel do dono.

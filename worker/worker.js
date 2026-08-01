@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker — Terreiro do Candieiro
  *
- * Um deploy, quatro assuntos: email, checkout, mensalidade e papéis.
+ * Um deploy, cinco assuntos: email, checkout, mensalidade, papéis e push.
  *
  *   POST /            → email (Resend). Compat: o admin já chama a raiz.
  *   POST /email       → mesma coisa, nome explícito.
@@ -11,9 +11,13 @@
  *   POST /webhook     → InfinitePay avisa que pagou. Confere no payment_check,
  *                       compara o valor, e só então marca pago no Firestore.
  *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
- *   POST /lote        → gera as cobranças do mês. Também roda por cron dia 1.
+ *   POST /lote        → gera as cobranças do mês. Também roda pelo cron do dia 1.
  *   POST /papel       → grava custom claim (admin/financeiro/loja) numa conta.
- *   POST /lembretes   → email pra quem vence amanhã. Também roda por cron diário.
+ *   POST /lembretes   → { dry: true } devolve a lista de quem deve receber o
+ *                       lembrete de mensalidade; { filho_id } manda pra UM.
+ *                       Nunca dispara sozinho — quem aprova é o admin.
+ *   POST /push        → manda notificação pros celulares (FCM). Alvo por papel
+ *                       ('admin') ou por filho_id.
  *
  * ── POR QUE O VALOR É RECALCULADO ─────────────────────────────────────────
  * O cliente é dono do navegador. Se o preço saísse do frontend, dava pra abrir
@@ -45,6 +49,10 @@
  *   GCP_SA_EMAIL         texto      xxx@terreiro-pvd.iam.gserviceaccount.com
  *   GCP_SA_KEY           encrypt    -----BEGIN PRIVATE KEY-----\n...
  *   CAND_API_KEY         texto      AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM
+ *
+ * O push usa a MESMA service account, só com outro escopo OAuth
+ * (firebase.messaging). Nada novo pra configurar além de habilitar a
+ * "Firebase Cloud Messaging API (V1)" no projeto — ver PUSH.md.
  *
  * A service account sai do Firebase Console → Configurações do projeto →
  * Contas de serviço → Gerar nova chave privada. Do JSON baixado, pega
@@ -159,6 +167,7 @@ export default {
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
       if (rota === '/lembretes') return await rotaLembretes(body, request, env);
+      if (rota === '/push') return await rotaPush(body, request, env);
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
@@ -166,28 +175,25 @@ export default {
     }
   },
 
-  // Cron Trigger. Configurar no painel: o Worker → Settings → Triggers →
-  // Cron Triggers → "0 9 1 * *" (dia 1, 9h UTC = 6h de Brasília).
+  // ── CRON: UM SÓ ──────────────────────────────────────────────────────────
+  // Cloudflare → o Worker → Settings → Triggers → Cron Triggers:
   //
-  // Mesma função do botão do admin: gera o lote do ciclo atual. Se alguém já
-  // tiver rodado na mão, não duplica — o id do doc é determinístico.
-  // Dois crons, e o handler decide pelo `event.cron`:
+  //   */15 * * * *      e mais nenhum
   //
-  //   0 9 1 * *   dia 1, 6h de Brasília  → gera o lote do mês
-  //   0 12 * * *  todo dia, 9h           → lembra quem vence amanhã
+  // Era dois ("0 9 1 * *" e "0 12 * * *"). Virou um porque o Worker tem teto de
+  // subrequests por invocação, e cron separado por assunto multiplica gatilho
+  // sem multiplicar teto. Quem decide o que roda agora é o relógio de Brasília,
+  // aqui dentro, com marca no Firestore pra não repetir (ver `tick`).
   //
-  // O lembrete é diário de propósito, não "dia 9": o vencimento é o prazo de
-  // CADA filho (45 no dia 10, 8 no 15, 1 no 20, 1 no último). Um cron fixo no
-  // dia 9 lembraria os 45 e esqueceria os 10 restantes.
+  // A cada 15 minutos:  novidade desde o último olhar → push pro admin
+  // 9h de Brasília:     digest do dia (atrasos, contas, quem vence amanhã)
+  // dia 1, a partir das 6h: gera o lote de mensalidade do ciclo
+  //
+  // O que o cron NÃO faz mais: mandar email de mensalidade pro filho. Isso
+  // agora é ato do admin — ele revisa a lista, tira quem não deve receber, e
+  // aprova. O cron só cutuca ("10 vencem amanhã") e a decisão continua humana.
   async scheduled(event, env, ctx) {
-    if (event.cron === '0 9 1 * *') {
-      const ciclo = cicloAtual();
-      console.log('cron: gerando lote do ciclo', ciclo);
-      console.log('cron: lote', JSON.stringify(await gerarLoteMensalidade(ciclo, env)));
-      return;
-    }
-    console.log('cron: lembretes de vencimento');
-    console.log('cron: lembretes', JSON.stringify(await enviarLembretesVencimento(env)));
+    console.log('cron', JSON.stringify(await tick(env)));
   },
 };
 
@@ -198,6 +204,25 @@ function hojeSP() {
 }
 function cicloAtual() {
   return hojeSP().slice(0, 7); // YYYY-MM
+}
+/**
+ * Hora cheia em Brasília, 0..23.
+ *
+ * `hourCycle: 'h23'` e não `hour12: false`: com o segundo, parte das
+ * implementações devolve "24" à meia-noite em vez de "0". O `% 24` é a rede —
+ * o dia em que isso acontecer, o digest das 9h não vira digest das 24h.
+ */
+function horaSP() {
+  const h = new Date().toLocaleString('en-US', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23',
+  });
+  return (Number(h) || 0) % 24;
+}
+/** Soma dias a uma data ISO (YYYY-MM-DD) sem passar por fuso. */
+export function maisDias(iso, n) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 // ── EMAIL ──────────────────────────────────────────────────────────────────
@@ -279,6 +304,43 @@ export function mensalidadeReais(pedido, filho, hoje) {
   return base + multa;
 }
 
+/**
+ * A mensalidade está paga? Devolve COMO, ou null.
+ *
+ *   'checkout' → pagou pelo link (o pedido tem recibo, método, valor congelado)
+ *   'manual'   → alguém deu baixa no financeiro: dinheiro na gira, PIX no
+ *                telefone do Pai, filho mais velho que não usa a interface
+ *
+ * ── POR QUE ISTO EXISTE ───────────────────────────────────────────────────
+ * "Pagou" mora em DOIS lugares, e até 01/08 só havia caminho de ida:
+ *
+ *   fin_mensalidade_pedidos/{filho}__{ciclo}   o Worker escreve ao confirmar
+ *   fin_pagamentos/{ciclo}.{filho}             o toggle manual do financeiro
+ *
+ * O Worker flipava o segundo ao confirmar o primeiro (`marcarPagamentoNoFinanceiro`),
+ * mas nada lia de volta. Resultado medido: filha com baixa manual ontem viu
+ * "mensalidade atrasada" na área dela, com acréscimo — e teria recebido email
+ * de cobrança pela lista de lembretes.
+ *
+ * A saída não é copiar o booleano pro pedido. É DERIVAR, todas as vezes, dos
+ * dois — mesma regra do valor (MENSALIDADE.md §7): copiar faria "desmarquei no
+ * financeiro" deixar o pedido pago pra sempre, que é a mesma divergência ao
+ * contrário.
+ *
+ * `fin_pagamentos/{ciclo}` é um doc só, um mapa `{filhoId: true}`: custa UM
+ * fsGet pra qualquer quantidade de filhos.
+ */
+export function estaPago(pedido, pagosDoCiclo, filhoId) {
+  if (pedido?.pago_automatico === true || pedido?.status === 'pago') return 'checkout';
+  if (pagosDoCiclo && pagosDoCiclo[filhoId] === true) return 'manual';
+  return null;
+}
+
+/** O mapa `{filhoId: true}` do ciclo. Doc que não existe vira `{}`. */
+async function pagosDoCiclo(ciclo, token) {
+  return (await fsGet(PROJETO_PVD, 'fin_pagamentos', ciclo, { token })) || {};
+}
+
 export function precoCentavos(tipo, pedido, fonte, hoje) {
   const reais = (() => {
     if (tipo === 'sol') return Number(fonte.valor) || 0;
@@ -343,6 +405,14 @@ async function rotaCheckout(body, env, origem) {
   const pedido = await fsGet(PROJETO_PVD, t.colecao, doc_id, { token });
   if (!pedido) return json({ error: 'pedido não encontrado' }, 404);
   if (pedido.pago_automatico) return json({ error: 'pedido já está pago' }, 409);
+
+  // Mensalidade tem uma segunda origem de "pago" que não vive no pedido: a
+  // baixa manual do financeiro. Sem esta trava, o filho que pagou no PIX do Pai
+  // abre a área dele, vê o botão, clica, e paga o mês duas vezes.
+  if (tipo === 'men' && pedido.ciclo && pedido.filho_id) {
+    const como = estaPago(pedido, await pagosDoCiclo(pedido.ciclo, token), pedido.filho_id);
+    if (como) return json({ error: 'esta contribuição já consta como paga' }, 409);
+  }
 
   const { centavos, fonte, erro } = await valorEsperado(tipo, pedido, env, token);
   if (erro) return json({ error: erro }, 422);
@@ -537,89 +607,160 @@ async function gerarLoteMensalidade(ciclo, env) {
 }
 
 // ── LEMBRETE DE VENCIMENTO ─────────────────────────────────────────────────
-// Manda email pra quem vence AMANHÃ e ainda não pagou, com o link já pronto.
-// Roda por cron diário, ou na mão: POST /lembretes (com o shared secret).
+// Email pro filho com o valor do mês e o link já pronto. Duas rotas, e a
+// separação entre elas é o ponto:
+//
+//   POST /lembretes { dry: true }     → só a LISTA. Não cria pedido, não gera
+//                                       link, não manda nada.
+//   POST /lembretes { filho_id }      → manda pra UM filho.
+//
+// Por que um por chamada, e não um lote: o admin revisa a lista, desmarca quem
+// não deve receber, e o navegador chama esta rota uma vez por filho aprovado.
+// Isso dá a barra de progresso, isola a falha num filho só, e mantém cada
+// invocação do Worker longe do teto de subrequests (gerar link + email + gravar
+// são 3 por filho; 48 num request só estouraria).
+//
+// Nada aqui dispara sozinho. O cron só conta quantos vencem amanhã e cutuca o
+// admin — quem decide quem recebe é gente.
 //
 // Um dia antes do vencimento DE CADA UM, não numa data fixa: 45 filhos vencem
-// dia 10, mas 8 vencem dia 15, 1 dia 20 e 1 no último dia do mês. Cron fixo no
+// dia 10, mas 8 vencem dia 15, 1 dia 20 e 1 no último dia do mês. Data fixa no
 // dia 9 lembraria os 45 e esqueceria os outros 10.
 //
 // Só manda pra quem tem email (medido em 30/07: 27 dos 48 pagantes). Quem não
-// tem, o resumo devolve em `sem_email` pra você cobrar por WhatsApp.
+// tem aparece na lista com a flag `sem_email`, pra cobrar por WhatsApp.
 //
-// Não repete: grava `lembrete_enviadoEm` no pedido e pula quem já recebeu no
-// ciclo. Rodar duas vezes no mesmo dia não incomoda ninguém duas vezes.
+// `lembrete_enviadoEm` continua sendo gravado, mas agora ele AVISA em vez de
+// bloquear: a lista mostra "já avisado" e vem desmarcado. Se o admin marcar
+// de novo, manda de novo — ele viu e quis.
 
 async function rotaLembretes(body, request, env) {
   const barrado = checarSegredo(request, env);
   if (barrado) return barrado;
-  return json(await enviarLembretesVencimento(env, body?.ciclo));
+
+  const ciclo = body?.ciclo || cicloAtual();
+  if (!/^\d{4}-\d{2}$/.test(ciclo)) return json({ error: 'ciclo inválido (use YYYY-MM)' }, 400);
+
+  if (body?.dry) return json(await listarLembretes(env, ciclo));
+  if (!body?.filho_id) return json({ error: 'falta filho_id (ou use dry:true pra ver a lista)' }, 400);
+  return json(await enviarLembreteDeUm(env, ciclo, String(body.filho_id)));
 }
 
-async function enviarLembretesVencimento(env, cicloForcado) {
-  const ciclo = cicloForcado || cicloAtual();
+/**
+ * A lista que o admin revisa antes de aprovar. Devolve TODO filho ativo pagante
+ * do ciclo — não só quem vence amanhã — porque quem edita a lista precisa ver
+ * também o atrasado e o que vence semana que vem. Quem pré-marcar é a tela.
+ *
+ * Quatro subrequests no total (token + filhos + pedidos do ciclo + baixas
+ * manuais), independente de quantos filhos existam: nada aqui é um get por
+ * filho.
+ */
+async function listarLembretes(env, ciclo) {
   const hoje = hojeSP();
+  const amanha = maisDias(hoje, 1);
   const token = await tokenGoogle(env);
 
   const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
-  const resumo = { ciclo, hoje, enviados: 0, sem_email: [], ja_avisados: 0, pagos: 0, nao_vence_amanha: 0, falhas: 0 };
+  const pedidos = await fsQuery(PROJETO_PVD, 'fin_mensalidade_pedidos', token, { campo: 'ciclo', valor: ciclo });
+  const porFilho = Object.fromEntries(pedidos.map((p) => [p.filho_id, p]));
+  // Sem isto, quem pagou na mão entrava na lista pré-marcado e recebia email
+  // cobrando — com acréscimo por atraso.
+  const pagos = await pagosDoCiclo(ciclo, token);
 
+  const lista = [];
   for (const f of filhos) {
     if (f.status && f.status !== 'ativo') continue;
-    if (!(Number(f.valor) > 0)) continue; // isento
+    const base = Number(f.valor);
+    if (!(base > 0)) continue; // isento não recebe cobrança
 
     const venc = vencimentoMensalidade(f.prazo, ciclo);
-    if (!venc) continue; // 'combinado' não tem data
-
-    // vence amanhã? compara data como string ISO, que ordena certo
-    const amanha = new Date(hoje + 'T12:00:00Z');
-    amanha.setUTCDate(amanha.getUTCDate() + 1);
-    if (venc !== amanha.toISOString().slice(0, 10)) { resumo.nao_vence_amanha++; continue; }
-
-    const docId = `${f.id}__${ciclo}`;
-    let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
-
-    if (pedido?.pago_automatico || pedido?.status === 'pago') { resumo.pagos++; continue; }
-    if (pedido?.lembrete_enviadoEm) { resumo.ja_avisados++; continue; }
-
-    const email = String(f.auth_email || f.email || '').trim();
-    if (!email.includes('@')) { resumo.sem_email.push(f.nome || f.id); continue; }
-
-    // Garante o pedido do ciclo (o Worker pode criar; o público não)
-    if (!pedido) {
-      await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
-        filho_id: f.id, filho_nome: f.nome || '', ciclo,
-        status: 'aberto', avisou_atraso: false,
-        geradoEm: new Date().toISOString(), geradoPor: 'lembrete',
-      });
-      pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
-      if (!pedido) { resumo.falhas++; continue; }
-    }
-
+    const pedido = porFilho[f.id] || { ciclo, avisou_atraso: false };
+    const como = estaPago(pedido, pagos, f.id);
     const valor = mensalidadeReais(pedido, f, hoje);
-    if (!(valor > 0)) continue;
+    const email = String(f.auth_email || f.email || '').trim();
 
-    const link = await gerarLinkMensalidade(f, pedido, docId, valor, env, token);
-    if (!link) { resumo.falhas++; continue; }
-
-    const enviado = await enviarEmail(env, {
-      to: email,
-      to_name: f.nome || '',
-      subject: `Sua contribuição de ${nomeDoMes(ciclo)} vence amanhã`,
-      html: emailLembrete(f, ciclo, valor, venc, link),
+    lista.push({
+      filho_id: f.id,
+      nome: f.nome || '(sem nome)',
+      email: email.includes('@') ? email : null,
+      tel: f.tel || f.telefone || null,
+      base,
+      valor,
+      multa: Math.max(0, valor - base),
+      vencimento: venc,          // null = prazo 'combinado', sem data
+      vence_amanha: venc === amanha,
+      // Quem pagou não está atrasado, mesmo que a data já tenha passado.
+      atrasado: !como && !!venc && hoje > venc,
+      avisou_atraso: !!pedido.avisou_atraso,
+      pago: !!como,
+      pago_como: como,           // 'checkout' | 'manual' | null
+      ja_avisado: !!pedido.lembrete_enviadoEm,
+      avisado_em: pedido.lembrete_enviadoEm || null,
     });
-
-    if (!enviado) { resumo.falhas++; continue; }
-
-    await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
-      lembrete_enviadoEm: new Date().toISOString(),
-      lembrete_valor: valor,
-    });
-    resumo.enviados++;
   }
 
-  console.log('lembretes', JSON.stringify(resumo));
-  return resumo;
+  lista.sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999') || a.nome.localeCompare(b.nome));
+  return { ciclo, hoje, amanha, total: lista.length, lista };
+}
+
+/** Manda o lembrete de um filho. Cria o pedido do ciclo se ainda não existir. */
+async function enviarLembreteDeUm(env, ciclo, filhoId) {
+  const hoje = hojeSP();
+  const token = await tokenGoogle(env);
+
+  const f = await fsGet(PROJETO_PVD, 'fin_filhos', filhoId, { token });
+  if (!f) return { erro: 'filho não encontrado', filho_id: filhoId };
+
+  const email = String(f.auth_email || f.email || '').trim();
+  if (!email.includes('@')) return { erro: 'filho sem email', filho_id: filhoId };
+
+  const docId = `${filhoId}__${ciclo}`;
+  let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+
+  // Última porta antes do email sair. A lista já filtra, mas ela pode ter sido
+  // carregada meia hora antes de você clicar em enviar — e nesse meio tempo
+  // alguém pode ter dado a baixa no financeiro.
+  const como = estaPago(pedido, await pagosDoCiclo(ciclo, token), filhoId);
+  if (como) return { erro: `já está pago (${como})`, filho_id: filhoId };
+
+  // O pedido do ciclo pode não existir (filho cadastrado depois do lote). O
+  // Worker cria; o público não consegue — as rules negam create nesta collection.
+  if (!pedido) {
+    await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+      filho_id: filhoId, filho_nome: f.nome || '', ciclo,
+      status: 'aberto', avisou_atraso: false,
+      geradoEm: new Date().toISOString(), geradoPor: 'lembrete',
+    });
+    pedido = { filho_id: filhoId, ciclo, status: 'aberto', avisou_atraso: false };
+  }
+
+  const valor = mensalidadeReais(pedido, f, hoje);
+  if (!(valor > 0)) return { erro: 'valor zero (isento?)', filho_id: filhoId };
+
+  const venc = vencimentoMensalidade(f.prazo, ciclo);
+  const link = await gerarLinkMensalidade(f, pedido, docId, valor, env, token);
+  if (!link) return { erro: 'não consegui gerar o link de pagamento', filho_id: filhoId };
+
+  // 'combinado' não tem data: o email fala de mês, não de dia.
+  const assunto =
+    !venc ? `Sua contribuição de ${nomeDoMes(ciclo)}` :
+    hoje > venc ? `Sua contribuição de ${nomeDoMes(ciclo)} está em aberto` :
+    venc === maisDias(hoje, 1) ? `Sua contribuição de ${nomeDoMes(ciclo)} vence amanhã` :
+    `Sua contribuição de ${nomeDoMes(ciclo)} vence dia ${venc.slice(8, 10)}`;
+
+  const enviado = await enviarEmail(env, {
+    to: email, to_name: f.nome || '',
+    subject: assunto,
+    html: emailLembrete(f, ciclo, valor, venc, link, hoje),
+  });
+  if (!enviado) return { erro: 'o email não saiu (Resend)', filho_id: filhoId };
+
+  await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+    lembrete_enviadoEm: new Date().toISOString(),
+    lembrete_valor: valor,
+  });
+
+  return { ok: true, filho_id: filhoId, nome: f.nome || '', email, valor };
 }
 
 /** Gera (ou reaproveita) o link de checkout da mensalidade e fixa o valor. */
@@ -662,19 +803,28 @@ function nomeDoMes(ciclo) {
   return new Date(ciclo + '-02T00:00:00Z').toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
 }
 
-function emailLembrete(filho, ciclo, valor, venc, link) {
+function emailLembrete(filho, ciclo, valor, venc, link, hoje = hojeSP()) {
   const primeiro = String(filho.nome || '').split(' ')[0];
   const brl = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
-  const dia = venc.slice(8, 10);
   const base = Number(filho.valor) || 0;
   const multa = Math.max(0, valor - base);
+
+  // A frase muda com o caso: sem data ('combinado'), vencida, amanhã, ou um dia
+  // qualquer à frente. Antes o texto era sempre "vence amanhã" — agora o admin
+  // manda quando quer, e o email precisa dizer a verdade do dia em que sai.
+  const dia = venc ? venc.slice(8, 10) : null;
+  const quando =
+    !venc ? `de <strong>${nomeDoMes(ciclo)}</strong> está aberta` :
+    hoje > venc ? `de <strong>${nomeDoMes(ciclo)}</strong> venceu <strong>dia ${dia}</strong> e está em aberto` :
+    venc === maisDias(hoje, 1) ? `de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>amanhã, dia ${dia}</strong>` :
+    `de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>dia ${dia}</strong>`;
 
   return `<div style="font-family:-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;color:#2b2b2b;line-height:1.6">
   <div style="text-align:center;padding:24px 0 8px">
     <img src="https://terreirodocandieiro.com.br/logocandieiro.png" alt="Terreiro do Candieiro" width="72" style="display:block;margin:0 auto"/>
   </div>
   <p>Olá, ${primeiro}.</p>
-  <p>Sua contribuição de <strong>${nomeDoMes(ciclo)}</strong> vence <strong>amanhã, dia ${dia}</strong>.</p>
+  <p>Sua contribuição ${quando}.</p>
   <div style="background:#faf7f0;border:1px solid #e8dfc8;border-radius:10px;padding:16px;margin:18px 0">
     <div style="font-size:13px;color:#7a6a52">Valor</div>
     <div style="font-size:26px;font-weight:700;color:#a8802a">${brl(valor)}</div>
@@ -712,6 +862,284 @@ async function enviarEmail(env, { to, to_name, subject, html }) {
     console.error('Resend falhou', e);
     return false;
   }
+}
+
+// ── PUSH (notificação no celular) ──────────────────────────────────────────
+//
+// O celular guarda o site na home (PWA) e recebe notificação mesmo com o app
+// fechado. Quem entrega é o FCM — o mesmo Firebase que já é o banco. A service
+// account também já existe: muda só o escopo do OAuth. Nada novo pra assinar.
+//
+// Onde mora o registro: `adm_push_tokens/{token}` — o id do doc É o token do
+// aparelho. Isso dá duas coisas de graça: o mesmo celular re-registrando
+// sobrescreve em vez de duplicar, e "só quem tem o token mexe no doc" vira uma
+// regra de segurança que se sustenta sozinha (ver firestore.rules.pvd).
+//
+//   { papel: 'admin'|'filho', filho_id, nome, uid, ua, criadoEm }
+//
+// TETO DE SUBREQUESTS: cada envio é um fetch, e o Worker tem limite por
+// invocação. Por isso o push por CRON só vai pro admin (poucos aparelhos), e o
+// push pro filho sai um por vez, disparado pelo navegador do admin no mesmo
+// laço que manda o email. Não existe fan-out pra 48 filhos dentro de um tick.
+
+const ESCOPO_FCM = 'https://www.googleapis.com/auth/firebase.messaging';
+const FCM_MAX = 20; // aparelhos por envio; acima disso o resumo diz quantos ficaram
+
+async function rotaPush(body, request, env) {
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
+  if (!body?.titulo || !body?.corpo) return json({ error: 'faltam titulo e corpo' }, 400);
+  return json(await mandarPush(env, body));
+}
+
+/**
+ * Manda a notificação pros aparelhos do alvo. Alvo é `filho_id` (um filho) ou
+ * `papel` (default 'admin'). Devolve o resumo — nunca lança: notificação que
+ * falha não pode derrubar o pagamento nem o email que veio antes dela.
+ */
+async function mandarPush(env, { titulo, corpo, url, papel, filho_id, tag }) {
+  try {
+    const token = await tokenGoogle(env);
+    const filtro = filho_id
+      ? { campo: 'filho_id', valor: String(filho_id) }
+      : { campo: 'papel', valor: papel || 'admin' };
+
+    const alvos = await fsQuery(PROJETO_PVD, 'adm_push_tokens', token, filtro);
+    if (!alvos.length) return { enviados: 0, aviso: 'nenhum celular registrado pra esse alvo' };
+
+    const fcm = await tokenGoogle(env, ESCOPO_FCM);
+    const lote = alvos.slice(0, FCM_MAX);
+    let enviados = 0, mortos = 0, erros = 0;
+
+    for (const a of lote) {
+      const r = await fcmEnviar(fcm, a.id, { titulo, corpo, url, tag });
+      if (r === 'ok') enviados++;
+      else if (r === 'morto') { mortos++; await fsDelete(PROJETO_PVD, 'adm_push_tokens', a.id, token); }
+      else erros++;
+    }
+
+    const resumo = { enviados, mortos, erros, alvos: alvos.length };
+    if (alvos.length > lote.length) resumo.nao_tentados = alvos.length - lote.length;
+    return resumo;
+  } catch (e) {
+    console.error('push falhou', e?.stack || e);
+    return { enviados: 0, erro: String(e?.message || e) };
+  }
+}
+
+/**
+ * Um aparelho. Devolve 'ok' | 'morto' | 'erro'.
+ *
+ * Só `data`, sem `notification`: quem desenha a notificação é o sw.js. Com as
+ * duas o Chrome mostra uma e o service worker mostra outra, e aparecem duas
+ * notificações pro mesmo fato.
+ */
+async function fcmEnviar(fcmToken, deviceToken, { titulo, corpo, url, tag }) {
+  const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${PROJETO_PVD}/messages:send`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${fcmToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        token: deviceToken,
+        data: { titulo: String(titulo), corpo: String(corpo), url: String(url || '/'), tag: String(tag || 'geral') },
+        webpush: { headers: { Urgency: 'high', TTL: '86400' } },
+      },
+    }),
+  });
+  if (resp.ok) return 'ok';
+
+  const txt = await resp.text().catch(() => '');
+  // Desinstalou o app, limpou o site, ou o token expirou. Apagar é o certo:
+  // token morto que fica no banco vira erro em todo envio, pra sempre.
+  if (resp.status === 404 || txt.includes('UNREGISTERED') || txt.includes('INVALID_ARGUMENT')) return 'morto';
+  console.error('FCM', resp.status, txt.slice(0, 300));
+  return 'erro';
+}
+
+// ── O TICK ─────────────────────────────────────────────────────────────────
+// Roda de 15 em 15 minutos e decide o que fazer pelo relógio de Brasília. O
+// estado mora em `adm_config/push_estado`, e é ele que impede repetição: o
+// digest é uma vez por dia e o lote uma vez por ciclo, mesmo com 96 batidas.
+
+async function tick(env) {
+  const token = await tokenGoogle(env);
+  const hoje = hojeSP();
+  const hora = horaSP();
+  const agora = new Date().toISOString();
+  const estado = (await fsGet(PROJETO_PVD, 'adm_config', 'push_estado', { token })) || {};
+  const feito = [];
+
+  // 1) Novidade desde o último olhar.
+  //
+  // Na primeira execução não avisa nada: sem marca gravada, o corte é agora.
+  // Senão o primeiro tick despejaria o histórico inteiro na tela de quem acabou
+  // de instalar — a estreia do recurso seria 40 notificações de coisa velha.
+  if (estado.ultimo_olhar) {
+    for (const aviso of await novidades(token, estado.ultimo_olhar)) {
+      await mandarPush(env, aviso);
+      feito.push(aviso.tag);
+    }
+  }
+  const patch = { ultimo_olhar: agora };
+
+  // 2) Digest das 9h — o que precisa de olho hoje.
+  if (hora >= 9 && estado.digest_em !== hoje) {
+    for (const aviso of await digestDoDia(env, token, hoje)) {
+      await mandarPush(env, aviso);
+      feito.push(aviso.tag);
+    }
+    patch.digest_em = hoje;
+  }
+
+  // 3) Lote de mensalidade, dia 1 a partir das 6h.
+  const ciclo = cicloAtual();
+  if (hoje.endsWith('-01') && hora >= 6 && estado.lote_ciclo !== ciclo) {
+    const r = await gerarLoteMensalidade(ciclo, env);
+    patch.lote_ciclo = ciclo;
+    feito.push(`lote:${r.criados}`);
+  }
+
+  await fsPatch(PROJETO_PVD, 'adm_config', 'push_estado', token, patch);
+  return { hoje, hora, feito };
+}
+
+/**
+ * O que apareceu desde a última batida. Três queries, todas por data.
+ *
+ * Filtra pela `origem`: pedido que o próprio admin acabou de digitar na tela
+ * (`admin_manual`) não vira notificação. Avisar alguém do que ele mesmo fez
+ * dois segundos atrás treina a pessoa a ignorar o aviso — e aí o dia em que
+ * chegar um de verdade ela também ignora.
+ */
+async function novidades(token, desde) {
+  const corte = new Date(desde);
+  const avisos = [];
+
+  const sols = await fsQuery(PROJETO_PVD, 'adm_solicitacoes', token,
+    { campo: 'criadoEm', op: 'GREATER_THAN', valor: corte });
+  const pendentes = sols.filter((s) => s.status === 'pendente' && s.origem === 'agendar_publico');
+  if (pendentes.length) {
+    avisos.push({
+      tag: 'agendamento',
+      titulo: pendentes.length === 1 ? 'Novo pedido de consulta' : `${pendentes.length} pedidos de consulta`,
+      corpo: pendentes.length === 1
+        ? `${pendentes[0].nome || 'alguém'} — ${fmtDataHora(pendentes[0])}`
+        : pendentes.map((s) => s.nome || '?').slice(0, 4).join(', '),
+      url: 'index.html#solicitacoes',
+    });
+  }
+
+  const peds = (await fsQuery(PROJETO_PVD, 'vendas_pedidos', token,
+    { campo: 'criadoEm', op: 'GREATER_THAN', valor: corte }))
+    .filter((p) => p.origem !== 'admin_manual');
+  if (peds.length) {
+    const total = peds.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    avisos.push({
+      tag: 'venda',
+      titulo: peds.length === 1 ? 'Nova venda' : `${peds.length} vendas novas`,
+      corpo: peds.length === 1
+        ? `${peds[0].produto_nome || 'produto'} — ${brl(peds[0].valor)} · ${peds[0].nome || ''}`.trim()
+        : `${brl(total)} no total`,
+      url: 'index.html#pedidos',
+    });
+  }
+
+  const remb = await fsQuery(PROJETO_PVD, 'fin_reembolsos', token,
+    { campo: 'criadoEm', op: 'GREATER_THAN', valor: corte });
+  if (remb.length) {
+    avisos.push({
+      tag: 'financeiro',
+      titulo: remb.length === 1 ? 'Pedido de reembolso' : `${remb.length} pedidos de reembolso`,
+      corpo: remb.length === 1
+        ? `${remb[0].nome || '?'} — ${brl(remb[0].valor)} · ${(remb[0].descricao || '').slice(0, 60)}`
+        : `${brl(remb.reduce((s, r) => s + (Number(r.valor) || 0), 0))} no total`,
+      url: 'index.html#pedidos',
+    });
+  }
+
+  return avisos;
+}
+
+/** Uma vez por dia, às 9h: o que está atrasado e o que vence amanhã. */
+async function digestDoDia(env, token, hoje) {
+  const amanha = maisDias(hoje, 1);
+  const avisos = [];
+
+  // Tarefas com prazo vencido e ainda em aberto.
+  const tarefas = (await fsQuery(PROJETO_PVD, 'adm_kanban', token,
+    { campo: 'prazo', op: 'LESS_THAN', valor: hoje }))
+    .filter((k) => k.status !== 'done' && !k.arquivado);
+  if (tarefas.length) {
+    avisos.push({
+      tag: 'tarefas',
+      titulo: `${tarefas.length} tarefa${tarefas.length === 1 ? '' : 's'} atrasada${tarefas.length === 1 ? '' : 's'}`,
+      corpo: tarefas.map((k) => k.titulo || 'sem título').slice(0, 3).join(' · '),
+      url: 'index.html#kanban',
+    });
+  }
+
+  // Contas fixas que vencem amanhã e ainda não foram pagas neste ciclo.
+  const contas = await contasVencendo(token, amanha);
+  if (contas.length) {
+    const total = contas.reduce((s, g) => s + (Number(g.valor) || 0), 0);
+    avisos.push({
+      tag: 'contas',
+      titulo: `${contas.length} conta${contas.length === 1 ? '' : 's'} vence${contas.length === 1 ? '' : 'm'} amanhã`,
+      corpo: `${contas.map((g) => g.nome).slice(0, 3).join(' · ')} — ${brl(total)}`,
+      url: 'index.html#contas',
+    });
+  }
+
+  // Mensalidades vencendo amanhã. O push NÃO manda o email — ele chama o admin
+  // pra revisar a lista e aprovar. A decisão continua sendo de gente.
+  const { lista } = await listarLembretes(env, cicloAtual());
+  const revisar = lista.filter((f) => f.vence_amanha && !f.pago && !f.ja_avisado && f.email);
+  if (revisar.length) {
+    avisos.push({
+      tag: 'mensalidade',
+      titulo: `${revisar.length} contribuiç${revisar.length === 1 ? 'ão vence' : 'ões vencem'} amanhã`,
+      corpo: 'Abra os Lembretes, confira a lista e aprove o envio.',
+      url: 'index.html#lembretes',
+    });
+  }
+
+  return avisos;
+}
+
+/**
+ * Uma conta fixa vence nesta data?
+ *
+ * `dia_venc` é campo novo: conta sem ele nunca avisa, que é o comportamento
+ * certo pra quem ainda não preencheu. E dia 31 em mês de 30 cai no último dia
+ * — sem essa dobra, a conta do dia 31 nunca venceria em abril, junho, setembro
+ * e novembro. Mesma dobra do `'ultimo'` da mensalidade, pelo mesmo motivo.
+ *
+ * Exportada pura porque é regra de calendário, e calendário é onde erro passa
+ * despercebido por meses: `node worker/test-contas.mjs`.
+ */
+export function contaVenceEm(gasto, dataISO) {
+  const d = Number(gasto?.dia_venc);
+  if (!d || d < 1) return false;
+  const dia = Number(dataISO.slice(8, 10));
+  const ultimo = ultimoDiaDoCiclo(dataISO.slice(0, 7));
+  return d === dia || (d > ultimo && dia === ultimo);
+}
+
+/** Contas fixas que vencem na data pedida e ainda não têm baixa no ciclo. */
+async function contasVencendo(token, dataISO) {
+  const ciclo = dataISO.slice(0, 7);
+  const gastos = await fsList(PROJETO_PVD, 'fin_gastos', token);
+  const pagos = (await fsGet(PROJETO_PVD, 'fin_gastos_pagos', ciclo, { token })) || {};
+  return gastos.filter((g) => contaVenceEm(g, dataISO) && pagos[g.id] !== true);
+}
+
+function brl(v) {
+  return `R$ ${(Number(v) || 0).toFixed(2).replace('.', ',')}`;
+}
+function fmtDataHora(s) {
+  if (!s?.data) return s?.hora || '';
+  const [a, m, d] = String(s.data).split('-');
+  return `${d}/${m}${s.hora ? ` às ${s.hora}` : ''}`;
 }
 
 // ── MENSALIDADE DO FILHO ───────────────────────────────────────────────────
@@ -768,7 +1196,10 @@ async function rotaMensalidade(body, env) {
     if (!pedido) return json({ error: 'não consegui abrir a mensalidade do mês' }, 500);
   }
 
-  const pago = pedido.pago_automatico === true || pedido.status === 'pago';
+  // Os DOIS lugares, sempre. Baixa manual no financeiro vale tanto quanto
+  // pagamento pelo link — e antes desta linha ela não valia nada aqui.
+  const como = estaPago(pedido, await pagosDoCiclo(ciclo, token), filho_id);
+  const pago = !!como;
   const valor = mensalidadeReais(pedido, filho, hojeSP());
 
   return json({
@@ -776,12 +1207,14 @@ async function rotaMensalidade(body, env) {
     ciclo,
     doc_id: docId,
     pago,
-    valor: pago ? Number(pedido.valor_cobrado) || valor : valor,
+    // Baixa manual não tem valor congelado: mostra o que era devido, sem
+    // acréscimo, porque cobrar multa de quem já pagou é o bug de novo.
+    valor: pago ? Number(pedido.valor_cobrado) || (como === 'manual' ? base : valor) : valor,
     base,
-    multa: Math.max(0, valor - base),
+    multa: pago ? 0 : Math.max(0, valor - base),
     vencimento: vencimentoMensalidade(filho.prazo, ciclo),
     avisou_atraso: !!pedido.avisou_atraso,
-    metodo: pago ? pedido.metodo_pagamento || null : null,
+    metodo: pago ? (pedido.metodo_pagamento || (como === 'manual' ? 'manual' : null)) : null,
     recibo_url: pago ? pedido.pagamento_recibo_url || null : null,
   });
 }
@@ -1006,6 +1439,17 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
   }
 
   await registrar('pago', `${t.colecao}/${doc_id} marcado pago, ${cobrado} centavos`);
+
+  // Notificação no celular do admin. Dinheiro que entra é a coisa que ele mais
+  // quer saber na hora, e aqui é o único ponto por onde toda entrada passa.
+  // Não precisa de cron: o pagamento avisa a si mesmo.
+  await mandarPush(env, {
+    tag: 'venda',
+    titulo: tipo === 'men' ? 'Contribuição paga' : 'Pagamento confirmado',
+    corpo: `${pedido.filho_nome || pedido.nome || pedido.produto_nome || 'pedido'} — ${brl(cobrado / 100)} no ${metodo === 'pix' ? 'PIX' : 'cartão'}`,
+    url: tipo === 'men' ? 'index.html#filhos' : 'index.html#pedidos',
+  });
+
   return { ok: true, centavos: cobrado, metodo };
 }
 
@@ -1075,6 +1519,59 @@ async function fsList(projeto, colecao, token) {
   } while (pageToken);
 
   return out;
+}
+
+/**
+ * Query com filtro, numa subrequest só. Devolve [{id, ...campos}].
+ *
+ * Existe porque o teto de subrequests do Worker é por invocação: ler o pedido
+ * de 48 filhos com 48 `fsGet` estoura sozinho, e a mesma leitura cabe numa
+ * query. Filtro é `{campo, valor, op}` (op default EQUAL) ou uma lista deles.
+ *
+ * Um filtro de igualdade ou de intervalo num campo só usa o índice automático
+ * do Firestore — não precisa criar índice composto pra nada daqui.
+ */
+async function fsQuery(projeto, colecao, token, filtros, limite = 300) {
+  const lista = (Array.isArray(filtros) ? filtros : [filtros]).map((f) => ({
+    fieldFilter: {
+      field: { fieldPath: f.campo },
+      op: f.op || 'EQUAL',
+      value: f.valor instanceof Date ? { timestampValue: f.valor.toISOString() } : embrulha(f.valor),
+    },
+  }));
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents:runQuery`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: colecao }],
+        where: lista.length === 1 ? lista[0] : { compositeFilter: { op: 'AND', filters: lista } },
+        limit: limite,
+      },
+    }),
+  });
+  if (!resp.ok) throw new Error(`Firestore QUERY ${colecao}: ${resp.status} ${await resp.text()}`);
+
+  const linhas = await resp.json();
+  return (Array.isArray(linhas) ? linhas : [])
+    .filter((l) => l.document)
+    .map((l) => ({
+      id: l.document.name.split('/').pop(),
+      ...desembrulha({ mapValue: { fields: l.document.fields || {} } }),
+    }));
+}
+
+/** Apaga um doc. Usado só pra tirar token de push morto. 404 não é erro. */
+async function fsDelete(projeto, colecao, id, token) {
+  const resp = await fetch(fsUrl(projeto, colecao, encodeURIComponent(id)), {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok && resp.status !== 404) {
+    console.error(`Firestore DELETE ${colecao}/${id}: ${resp.status}`);
+  }
 }
 
 /**

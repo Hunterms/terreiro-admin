@@ -59,6 +59,24 @@ if [[ "$alvo" == "tudo" || "$alvo" == "admin" ]]; then
   checa https://hunterms.github.io/terreiro-admin/css/main.css "css separado" "--bg"
   checa https://hunterms.github.io/terreiro-admin/confirma-rega.html "QR da rega" ""
   checa https://hunterms.github.io/terreiro-admin/despensa.html "despensa" ""
+  # PWA: sem service worker no ar não há instalação nem notificação, e a página
+  # continua abrindo normalmente — falha que não dá sinal nenhum.
+  checa https://hunterms.github.io/terreiro-admin/sw.js "service worker" "notificationclick"
+  checa https://hunterms.github.io/terreiro-admin/push.js "registro de push" "adm_push_tokens"
+  checa https://hunterms.github.io/terreiro-admin/manifest.json "manifest do admin" "standalone"
+  checa https://hunterms.github.io/terreiro-admin/manifest-filho.json "manifest do filho" "standalone"
+  # A VAPID tem que estar lá E entre aspas. Sem aspas a linha continua sendo
+  # JavaScript válido (vira subtração de variáveis), então `node --check` passa,
+  # o deploy passa, e a página só quebra no navegador com ReferenceError.
+  # Aconteceu em 01/08 — daí a checagem ser do FORMATO, não da presença.
+  corpo=$(pega https://hunterms.github.io/terreiro-admin/push.js)
+  if grep -qE "^const VAPID = '[A-Za-z0-9_-]{80,100}';" <<< "$corpo"; then
+    ok "chave VAPID no formato certo"
+  elif grep -q 'COLE_AQUI_A_CHAVE_PUBLICA_VAPID' <<< "$corpo"; then
+    erro "push.js sem a chave VAPID — notificação não liga (ver PUSH.md §1.1)"
+  else
+    erro "VAPID em push.js fora do formato — faltou aspas? a página quebra na carga"
+  fi
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "site" ]]; then
@@ -70,6 +88,10 @@ if [[ "$alvo" == "tudo" || "$alvo" == "site" ]]; then
   checa https://terreirodocandieiro.com.br/area-filho.html "área do filho" "dash-sec-mensalidade"
   checa https://terreirodocandieiro.com.br/pago.html "retorno do pagamento" "telaPago"
   checa https://terreirodocandieiro.com.br/checkout.js "checkout.js" "Resumo do pedido"
+  # A área do filho faz `import "./push.js"`. Import que dá 404 não deixa a
+  # página "sem notificação" — derruba o módulo inteiro e ela abre em branco.
+  checa https://terreirodocandieiro.com.br/push.js "push.js no domínio" "adm_push_tokens"
+  checa https://terreirodocandieiro.com.br/sw.js "sw.js no domínio" "notificationclick"
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "financeiro" ]]; then
@@ -113,6 +135,12 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   echo "$r" | grep -q 'inválido' && ok "mensalidade" || erro "mensalidade: $r"
   r=$(curl -s -X POST "$W/papel" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "papel (protegida)" || erro "papel: $r"
+  # As duas rotas novas: existem e estão protegidas. Sem segredo elas não podem
+  # responder outra coisa — /lembretes manda email e /push manda notificação.
+  r=$(curl -s -X POST "$W/lembretes" -H 'Content-Type: application/json' -d '{"dry":true}')
+  echo "$r" | grep -q 'X-Auth-Secret' && ok "lembretes (protegida)" || erro "lembretes: $r"
+  r=$(curl -s -X POST "$W/push" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'X-Auth-Secret' && ok "push (protegida)" || erro "push: $r"
 fi
 
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then

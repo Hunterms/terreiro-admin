@@ -1,6 +1,6 @@
 # Worker do Candieiro — email + checkout automático
 
-Um Worker, quatro assuntos: email, checkout, mensalidade e papéis.
+Um Worker, cinco assuntos: email, checkout, mensalidade, papéis e push.
 
 | Rota | Quem chama | Protegida por |
 |---|---|---|
@@ -11,7 +11,9 @@ Um Worker, quatro assuntos: email, checkout, mensalidade e papéis.
 | `POST /mensalidade` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /lote` | admin (mensalidade) | `X-Auth-Secret` |
 | `POST /papel` | você, na mão | `X-Auth-Secret` |
-| cron `0 9 1 * *` | Cloudflare | — gera o lote do mês |
+| `POST /lembretes` | admin (Lembretes → Mensalidade) | `X-Auth-Secret` |
+| `POST /push` | admin, na mão | `X-Auth-Secret` |
+| cron `*/15 * * * *` | Cloudflare | — o único; ver "O tick" |
 
 Arquivo: **`worker.js`** (era `email-worker.js`, que virou este).
 
@@ -190,8 +192,13 @@ cliente vê um preço e paga outro. Os testes existem pra pegar essa divergênci
 
 ## Limites do free tier
 
-- **Cloudflare Workers**: 100.000 requests/dia
+- **Cloudflare Workers**: 100.000 requests/dia. O tick de 15 em 15 min gasta 96.
+- **Subrequests por invocação**: é o teto que molda o desenho aqui. É por causa
+  dele que a lista de lembretes vem numa query só (e não num `get` por filho),
+  que o envio é um filho por chamada, e que não existe push em massa pros 48.
+  Fan-out grande não dá erro bonito — falha calado no meio.
 - **Resend**: 100 emails/dia, 3.000/mês
+- **FCM**: sem cobrança por notificação
 - **InfinitePay**: sem mensalidade; a taxa sai por transação, conforme o plano
 
 ## Segurança
@@ -241,10 +248,8 @@ Sem `ciclo`, usa o mês atual. Resposta:
 
 ### Cron
 
-Precisa ser configurado no painel, não sai do código: o Worker → **Settings →
-Triggers → Cron Triggers → Add** → `0 9 1 * *`.
-
-Dia 1 às 9h UTC = **6h de Brasília**. O cron da Cloudflare é sempre UTC.
+O lote não tem cron próprio: quem gera é o `tick()` (ver "O tick — um cron só"),
+no dia 1 a partir das 6h de Brasília, uma vez por ciclo.
 
 ### Fuso
 
@@ -293,44 +298,97 @@ A rede de email nas rules pode sair quando o passo 3 confirmar as duas contas.
 
 ---
 
-## Lembrete de vencimento
+## Lembrete de vencimento — nunca dispara sozinho
 
-Email pra quem vence **amanhã** e ainda não pagou, com o link já pronto.
+Email pro filho com o valor do mês e o link pronto. **O cron não manda.** Ele
+conta quantos vencem amanhã e notifica o admin; quem aprova a lista é gente.
+
+Duas chamadas, e a diferença entre elas é o ponto:
 
 ```bash
-curl -X POST https://terreiro-email.hunter-soares-c.workers.dev/lembretes \
-  -H "Content-Type: application/json" -H "X-Auth-Secret: SEU_SECRET" -d '{}'
+# 1. a LISTA — não cria pedido, não gera link, não manda nada
+curl -X POST .../lembretes -H "Content-Type: application/json" \
+  -H "X-Auth-Secret: SEU_SECRET" -d '{"dry":true}'
+
+# 2. manda pra UM filho (o navegador do admin repete isto por aprovado)
+curl -X POST .../lembretes -H "Content-Type: application/json" \
+  -H "X-Auth-Secret: SEU_SECRET" -d '{"filho_id":"abc123"}'
 ```
 
-Resposta: `{ enviados, sem_email:[nomes], ja_avisados, pagos, falhas }`.
+A lista devolve **todo filho ativo pagante do ciclo**, não só quem vence amanhã:
+quem edita a lista precisa ver também o atrasado e o de semana que vem. Cada
+linha traz `valor`, `multa`, `vencimento`, `vence_amanha`, `atrasado`, `pago`,
+`ja_avisado` e `email` — e quem pré-marca é a tela, não o Worker.
 
-### Por que diário, e não "dia 9"
+### Um por chamada, e não um lote
+
+Falha num filho não derruba os outros, a barra anda, e cada request fica longe
+do teto de subrequests: gerar link + email + gravar são 3 por filho, e 48 num
+request só estouraria.
+
+### Por que "um dia antes de cada um", e não "dia 9"
 
 O vencimento é o `prazo` de cada filho. Medido em 30/07: **45 vencem dia 10, 8
-no dia 15, 1 no dia 20, 1 no último dia do mês**. Um cron fixo no dia 9
-lembraria os 45 e esqueceria os outros 10.
+no dia 15, 1 no dia 20, 1 no último dia do mês**. Data fixa no dia 9 lembraria
+os 45 e esqueceria os outros 10.
 
-Então o cron roda todo dia e manda pra quem vence no dia seguinte — o que, pra
-maioria, cai no dia 9 mesmo.
+### `lembrete_enviadoEm` agora avisa, não bloqueia
 
-### Cron
-
-Painel do Worker → **Settings → Triggers → Cron Triggers**, dois:
-
-```
-0 9 1 * *     dia 1, 6h de Brasília   → gera o lote do mês
-0 12 * * *    todo dia, 9h de Brasília → lembra quem vence amanhã
-```
-
-### Não repete
-
-Grava `lembrete_enviadoEm` no pedido do ciclo e pula quem já recebeu. Rodar duas
-vezes no mesmo dia não incomoda ninguém duas vezes.
+Continua sendo gravado, e a lista mostra "já avisado" com a linha desmarcada.
+Se você marcar de novo, manda de novo — você viu e quis. Antes ele barrava, e
+não havia como reenviar pra quem apagou o email sem querer.
 
 ### Alcance: 27 de 48
 
 Medido em 30/07: dos 48 pagantes ativos, **27 têm email** e **48 têm telefone**.
-Quem não tem email volta na resposta em `sem_email`, pra cobrar por WhatsApp.
+Quem não tem email aparece na lista com a marca `sem email`, pra cobrar por
+WhatsApp.
 
 Se quiser alcançar os 48, o caminho é o bot de WhatsApp que já existe
 configurado no financeiro (Railway) — não foi ligado aqui.
+
+---
+
+## O tick — um cron só
+
+Painel do Worker → **Settings → Triggers → Cron Triggers**:
+
+```
+*/15 * * * *     e mais nenhum
+```
+
+Eram dois (`0 9 1 * *` e `0 12 * * *`). **Apague os dois.** Virou um porque o
+teto de subrequests é *por invocação*: cron separado por assunto multiplica
+gatilho sem multiplicar teto. Quem decide o que roda agora é o relógio de
+Brasília, dentro do `tick()`:
+
+| Quando | O quê |
+|---|---|
+| toda batida | novidade desde o último olhar → push pro admin |
+| 9h | digest: tarefas atrasadas, contas de amanhã, contribuições de amanhã |
+| dia 1, das 6h em diante | gera o lote de mensalidade do ciclo |
+
+O estado mora em `adm_config/push_estado` (`ultimo_olhar`, `digest_em`,
+`lote_ciclo`), e é ele que impede repetição com 96 batidas por dia.
+
+**A primeira execução não avisa nada do passado**: sem `ultimo_olhar` gravado, o
+corte é agora. Senão o primeiro tick despejaria o histórico inteiro na tela de
+quem acabou de instalar.
+
+### Push
+
+Ver `../PUSH.md` pra a configuração (chave VAPID, API do FCM) e pra a lista do
+que chega. Aqui só o teste:
+
+```bash
+curl -X POST .../push -H "Content-Type: application/json" \
+  -H "X-Auth-Secret: SEU_SECRET" \
+  -d '{"titulo":"Teste","corpo":"chegou?","url":"index.html#dashboard"}'
+```
+
+Sem `papel` nem `filho_id`, vai pros aparelhos do admin. Resposta:
+`{ enviados, mortos, erros, alvos }` — `mortos` são tokens de celular que
+desinstalou, e eles são apagados no mesmo passo.
+
+O envio usa a **mesma service account** do Firestore, só com o escopo
+`firebase.messaging`. Nenhuma variável nova no Worker.

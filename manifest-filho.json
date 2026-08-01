@@ -1,8 +1,8 @@
 {
-  "name": "Candieiro Admin",
-  "short_name": "Candieiro",
-  "description": "Admin do Terreiro do Candieiro",
-  "start_url": "./index.html",
+  "name": "Minha área · Terreiro do Candieiro",
+  "short_name": "Minha área",
+  "description": "Escalas, tarefas, disponibilidade e contribuição do filho da casa",
+  "start_url": "./area-filho.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0d0d0d",

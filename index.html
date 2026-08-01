@@ -8,6 +8,8 @@
 <link rel="icon" type="image/png" href="logocandieiro.png"/>
 <link rel="apple-touch-icon" href="logocandieiro.png"/>
 <meta name="theme-color" content="#0d0d0d"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Candieiro"/>
 <!-- Google Identity Services pra OAuth com Calendar -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="stylesheet" href="css/main.css"/>
@@ -88,6 +90,10 @@
       <button data-route="despensa">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18M5 6v12M19 6v12"/></svg>
         Despensa
+      </button>
+      <button data-route="contas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Contas fixas <span id="contas-badge" style="margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px;font-weight:700;display:none"></span>
       </button>
 
       <div class="section-label">Atendimentos do Pai</div>
@@ -170,6 +176,10 @@
           <div class="user-role" id="user-role">—</div>
         </div>
       </div>
+      <button class="btn-logout" id="btn-push" title="Notificações neste aparelho">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span id="btn-push-txt">Notificações</span>
+      </button>
       <button class="btn-logout" id="btn-logout">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Sair
@@ -191,7 +201,7 @@
 
 <script type="module">
 /* ════════════════════════════════════════════════════════════════════════════
-   MAPA DO ADMIN — 7.882 linhas, 164 funções, 24 rotas
+   MAPA DO ADMIN — 8.342 linhas, 178 funções, 25 rotas
 
    Sem número de linha de propósito: número envelhece na primeira edição, e
    mapa que mente é pior que mapa nenhum. Pra achar qualquer um:
@@ -205,7 +215,8 @@
    renderFilhos · renderFuncoes · renderControleDisp · renderRega
 
    ── OPERAÇÃO ───────────────────────────────────────────────────────────────
-   renderKanban · renderCalendario · renderEscalas · renderDespensa
+   renderKanban · renderCalendario · renderEscalas · renderDespensa ·
+   renderContas
 
    ── ATENDIMENTOS DO PAI ────────────────────────────────────────────────────
    renderAgenda · renderSolicitacoes · renderConsulentes · renderServicos ·
@@ -218,7 +229,11 @@
    renderDashboard · renderInteligencia
 
    ── COMUNICAÇÃO ────────────────────────────────────────────────────────────
-   renderAvisos · renderLembretes · renderPerguntas
+   renderAvisos · renderLembretes · renderLembretesMensalidade · renderPerguntas
+
+   ── PUSH (fora do router) ──────────────────────────────────────────────────
+   pushBootstrap · togglePush · pintarBotaoPush — o registro mora em push.js,
+   compartilhado com a area-filho.html
 
    ── VISTA DO FILHO LOGADO ──────────────────────────────────────────────────
    renderMeuDashboard · renderMinhasEscalas · renderDisponibilidade ·
@@ -244,6 +259,12 @@ import {
   getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc,
   query, where, orderBy, serverTimestamp, getDoc, getDocs
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+import * as Push from "./push.js";
+
+// Registra o service worker já na carga, antes de qualquer login: é ele que faz
+// o Android oferecer "instalar na tela de início". Falha aqui não importa — a
+// página funciona igual, só não vira app.
+if ('serviceWorker' in navigator) Push.registrarSW().catch(e => console.warn('sw:', e.message));
 
 // ── GOOGLE CALENDAR OAUTH ──────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = "365180068240-5d6avrv93pdltq140o18hb8r3jvvosui.apps.googleusercontent.com";
@@ -289,6 +310,8 @@ const S = {
   solicitacoes: [],
   regas: [],
   despensa: [],
+  gastos: [],            // fin_gastos — contas fixas (dono: financeiro)
+  gastosPagos: {},       // fin_gastos_pagos/{ciclo} — { gastoId: true }
   perguntas: [],
   respostas: [],
   servicos: [],
@@ -682,9 +705,69 @@ onAuthStateChanged(authPvd, async user => {
   setupUserPill();
   setupNav();
   attachListeners();
-  navigate(role === 'admin' ? 'dashboard' : 'meu-dashboard');
+  // O hash manda quando existe: é por ele que o clique numa notificação cai na
+  // página do assunto em vez de no dashboard.
+  navigate(rotaDoHash() || (role === 'admin' ? 'dashboard' : 'meu-dashboard'));
   // Google Calendar: tenta refresh silencioso se já tinha conectado antes
   if(role === 'admin') gcalBootstrapRefresh();
+  pushBootstrap();
+});
+
+// ── PUSH ───────────────────────────────────────────────────────────────────
+// O botão fica no rodapé da sidebar porque notificação é do APARELHO, não da
+// conta: o mesmo login em dois celulares tem dois estados, e um switch dentro
+// de uma tela de config sugeriria o contrário.
+async function pushBootstrap() {
+  const btn = $('#btn-push');
+  if (!btn) return;
+  btn.onclick = togglePush;
+  pintarBotaoPush();
+
+  // Já autorizou antes neste aparelho: renova o token em silêncio. Token de FCM
+  // é rotativo — sem isso o celular para de receber sem ninguém perceber, que é
+  // o pior modo de falhar de uma notificação.
+  if (Push.ativo()) {
+    const r = await Push.ativar(appPvd, dbPvd, { papel: 'admin', nome: S.user?.email || '', uid: S.user?.uid });
+    if (!r.ok) console.warn('push: não renovou —', r.motivo);
+    pintarBotaoPush();
+  }
+}
+
+async function pintarBotaoPush() {
+  const txt = $('#btn-push-txt');
+  if (!txt) return;
+  if (Push.ativo()) { txt.textContent = 'Notificações ligadas'; $('#btn-push').style.opacity = '1'; return; }
+  const motivo = await Push.diagnostico();
+  txt.textContent = motivo === 'ok' ? 'Ativar notificações' : 'Notificações';
+  $('#btn-push').style.opacity = motivo === 'ok' ? '1' : '.55';
+}
+
+async function togglePush() {
+  if (Push.ativo()) {
+    if (!confirm('Desligar as notificações neste aparelho?')) return;
+    await Push.desativar(appPvd, dbPvd);
+    toast('Notificações desligadas neste aparelho');
+    return pintarBotaoPush();
+  }
+  const r = await Push.ativar(appPvd, dbPvd, { papel: 'admin', nome: S.user?.email || '', uid: S.user?.uid });
+  toast(r.ok ? '🔔 Notificações ligadas neste aparelho' : (Push.EXPLICACAO[r.motivo] || 'Não deu'), r.ok ? 'ok' : 'err');
+  pintarBotaoPush();
+}
+
+// Rota vinda do #hash, se for uma que existe. Nome desconhecido devolve null
+// pra cair no default em vez de mostrar "página não encontrada".
+const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','rega','calendario',
+  'escalas','despensa','contas','agenda','solicitacoes','consulentes','servicos','config-agendamento',
+  'produtos','pedidos','inteligencia','avisos','lembretes','perguntas',
+  'meu-dashboard','minhas-escalas','disponibilidade','avisos-filho'];
+function rotaDoHash() {
+  const r = (location.hash || '').replace(/^#/, '');
+  return ROTAS_VALIDAS.includes(r) ? r : null;
+}
+// Notificação clicada com a aba já aberta: o service worker só troca o hash.
+window.addEventListener('hashchange', () => {
+  const r = rotaDoHash();
+  if (r && r !== S.route) navigate(r);
 });
 
 function setupUserPill() {
@@ -836,12 +919,54 @@ function attachListeners() {
       S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       if(['solicitacoes','agenda','dashboard'].includes(S.route)) renderRoute();
     }));
+
+    // Contas fixas. A collection é do financeiro (fin_gastos) — aqui o admin
+    // só cuida do vencimento e da baixa do mês, que é o que o lembrete precisa
+    // e o app do financeiro nunca teve.
+    S.unsubs.push(onSnapshot(collection(dbPvd,'fin_gastos'), snap => {
+      S.gastos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      badgeContas();
+      if(S.route === 'contas') renderRoute();
+    }));
+    S.unsubs.push(onSnapshot(doc(dbPvd,'fin_gastos_pagos', cicloAtual()), snap => {
+      S.gastosPagos = snap.exists() ? snap.data() : {};
+      badgeContas();
+      if(S.route === 'contas') renderRoute();
+    }));
   }
+}
+
+// Ciclo no fuso do terreiro: depois das 21h de Brasília o UTC já virou o dia
+// seguinte, e na virada do mês isso trocaria o ciclo antes da hora.
+function cicloAtual() {
+  return new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7);
+}
+function hojeISO() {
+  return new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+}
+/** Conta fixa vencida e sem baixa neste ciclo. Espelha contaVenceEm() do Worker. */
+function contasVencidas() {
+  const hoje = hojeISO();
+  const diaHoje = Number(hoje.slice(8,10));
+  return (S.gastos||[]).filter(g => {
+    const d = Number(g.dia_venc);
+    return d >= 1 && d < diaHoje && S.gastosPagos[g.id] !== true;
+  });
+}
+function badgeContas() {
+  const el = $('#contas-badge');
+  if(!el) return;
+  const n = contasVencidas().length;
+  el.textContent = n;
+  el.style.display = n ? '' : 'none';
 }
 
 // ── ROUTER ─────────────────────────────────────────────────────────────────
 function navigate(route) {
   S.route = route;
+  // O hash acompanha a rota pra o link da notificação ter onde chegar. O
+  // listener de hashchange compara com S.route, então isto não vira laço.
+  if (location.hash.replace(/^#/, '') !== route) location.hash = route;
   const navEl = S.role === 'admin' ? $('#nav-admin') : $('#nav-filho');
   navEl.querySelectorAll('button').forEach(b => {
     b.classList.toggle('active', b.dataset.route === route);
@@ -862,6 +987,7 @@ function renderRoute() {
     case 'calendario':    return renderCalendario(c);
     case 'escalas':       return renderEscalas(c);
     case 'despensa':      return renderDespensa(c);
+    case 'contas':        return renderContas(c);
     case 'agenda':        return renderAgenda(c);
     case 'solicitacoes':  return renderSolicitacoes(c);
     case 'consulentes':   return renderConsulentes(c);
@@ -4244,7 +4370,126 @@ function _lembAmanhaISO() {
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
+// ── CONTAS FIXAS ───────────────────────────────────────────────────────────
+// `fin_gastos` é do financeiro e sempre teve só nome, valor e tipo. Duas coisas
+// que faltavam pra existir lembrete de conta, e que ninguém tinha onde guardar:
+//
+//   dia_venc                    o dia do mês em que aquela conta vence
+//   fin_gastos_pagos/{ciclo}    { gastoId: true } — a baixa daquele mês
+//
+// O segundo é o mesmo formato do `fin_pagamentos` da mensalidade, de propósito:
+// um doc por mês, booleano por item. Quem já entendeu um entende o outro, e o
+// mês passado fica intacto quando o cadastro muda.
+//
+// O aviso no celular sai um dia antes (cron das 9h). Aqui é onde o dado nasce.
+function renderContas(c) {
+  const ciclo = cicloAtual();
+  const hoje = hojeISO();
+  const diaHoje = Number(hoje.slice(8,10));
+  const mesBr = new Date(ciclo+'-02T00:00:00Z').toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'});
+
+  const gastos = [...(S.gastos||[])].sort((a,b) =>
+    (Number(a.dia_venc)||99) - (Number(b.dia_venc)||99) || (a.nome||'').localeCompare(b.nome||''));
+
+  const semDia = gastos.filter(g => !Number(g.dia_venc));
+  const vencidas = contasVencidas();
+  const total = gastos.reduce((s,g) => s + (Number(g.valor)||0), 0);
+  const pago = gastos.filter(g => S.gastosPagos[g.id] === true).reduce((s,g) => s + (Number(g.valor)||0), 0);
+  const brl = v => `R$ ${(Number(v)||0).toFixed(2).replace('.',',')}`;
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Contas fixas</div>
+        <div class="page-sub" style="text-transform:capitalize">${mesBr} · ${brl(pago)} de ${brl(total)} baixado</div>
+      </div>
+    </div>
+
+    ${vencidas.length ? `
+      <div class="card" style="margin-bottom:14px;border-color:var(--red-bd);background:var(--red-bg)">
+        <div style="padding:12px 14px;font-size:13px;color:var(--text)">
+          <strong>${vencidas.length} conta${vencidas.length===1?'':'s'} passou do dia e não tem baixa:</strong>
+          ${vencidas.map(g=>g.nome).join(', ')}
+        </div>
+      </div>` : ''}
+
+    ${semDia.length ? `
+      <div class="card" style="margin-bottom:14px">
+        <div style="padding:12px 14px;font-size:12.5px;color:var(--text3)">
+          ${semDia.length} conta${semDia.length===1?'':'s'} sem dia de vencimento — enquanto ficar vazio, ela não gera aviso nenhum.
+        </div>
+      </div>` : ''}
+
+    ${gastos.length === 0 ? `
+      <div class="card"><div class="empty">
+        <div class="empty-t">Nenhuma conta fixa cadastrada</div>
+        <div class="empty-s">As contas fixas são cadastradas no app do financeiro. Aqui você define o dia do vencimento e dá a baixa do mês.</div>
+      </div></div>
+    ` : `
+      <div class="card">
+        <div class="card-h"><div class="card-title">Contas <span style="color:var(--text3);font-weight:400">· ${gastos.length}</span></div></div>
+        ${gastos.map(g => {
+          const dia = Number(g.dia_venc) || '';
+          const baixada = S.gastosPagos[g.id] === true;
+          const venceu = dia && dia < diaHoje && !baixada;
+          const hojeMesmo = dia && dia === diaHoje && !baixada;
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+              <div style="flex:1;min-width:140px">
+                <div style="font-size:13.5px;font-weight:600;color:var(--text);${baixada?'opacity:.5;text-decoration:line-through':''}">${g.nome||'(sem nome)'}</div>
+                <div style="font-size:11.5px;color:${venceu?'var(--red)':(hojeMesmo?'var(--gold)':'var(--text3)')};margin-top:2px">
+                  ${brl(g.valor)}${dia ? ` · dia ${dia}${venceu?' — passou':(hojeMesmo?' — é hoje':'')}` : ' · sem dia definido'}
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:11px;color:var(--text3)">vence dia</span>
+                <input type="number" min="1" max="31" class="fi conta-dia" data-id="${g.id}" value="${dia}"
+                       placeholder="—" style="width:64px;text-align:center;padding:6px"/>
+              </div>
+              <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--text2);white-space:nowrap">
+                <input type="checkbox" class="conta-pago" data-id="${g.id}" ${baixada?'checked':''}
+                       style="accent-color:var(--gold);width:17px;height:17px"/>
+                paguei
+              </label>
+            </div>`;
+        }).join('')}
+      </div>
+    `}
+  `;
+
+  $$('.conta-dia').forEach(inp => {
+    inp.onchange = async () => {
+      const n = parseInt(inp.value, 10);
+      // Vazio limpa o vencimento (a conta volta a não avisar). Fora de 1..31 é
+      // erro de digitação: recusa e devolve o valor de antes.
+      if (inp.value !== '' && (isNaN(n) || n < 1 || n > 31)) { toast('Dia tem que ser de 1 a 31','err'); return renderRoute(); }
+      try {
+        await updateDoc(doc(dbPvd,'fin_gastos', inp.dataset.id), { dia_venc: inp.value === '' ? null : n });
+        toast('Vencimento salvo','ok');
+      } catch(e) { toast('Não consegui salvar','err'); renderRoute(); }
+    };
+  });
+
+  $$('.conta-pago').forEach(cb => {
+    cb.onchange = async () => {
+      try {
+        // merge: escreve só o campo desta conta, sem apagar a baixa das outras.
+        await setDoc(doc(dbPvd,'fin_gastos_pagos', ciclo), { [cb.dataset.id]: cb.checked }, { merge: true });
+      } catch(e) { toast('Não consegui marcar','err'); renderRoute(); }
+    };
+  });
+}
+
+// Duas coisas diferentes chamadas "lembrete", e por isso duas abas:
+//   Do dia        — o que cada filho tem pra fazer amanhã (rega, escala, tarefa)
+//   Mensalidade   — a contribuição do mês, com valor e link de pagamento
+// A segunda mexe com dinheiro e por isso o envio nunca é automático: o Worker
+// devolve a lista, você tira quem não deve receber, e só então sai.
+let lembTab = 'dia';
+function setLembTab(t) { lembTab = t; renderRoute(); }
+
 function renderLembretes(c) {
+  if (lembTab === 'mensalidade') return renderLembretesMensalidade(c);
   if (!lembretesDataSelecionada) lembretesDataSelecionada = _lembAmanhaISO();
   const data = lembretesDataSelecionada;
   const dataBr = new Date(data+'T00:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
@@ -4314,6 +4559,11 @@ function renderLembretes(c) {
       <div class="page-actions">
         <button class="btn btn-primary" id="lemb-enviar" disabled>Enviar lembretes</button>
       </div>
+    </div>
+
+    <div class="tabs">
+      <button class="active" onclick="window._app.setLembTab('dia')">Do dia</button>
+      <button onclick="window._app.setLembTab('mensalidade')">Mensalidade</button>
     </div>
 
     <div class="card" style="margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap;align-items:end">
@@ -4434,6 +4684,187 @@ async function enviarLembretes(data) {
   toast(err === 0 ? `📧 ${ok} lembrete${ok===1?'':'s'} enviado${ok===1?'':'s'}` : `${ok} enviados · ${err} falharam`, err === 0 ? 'ok' : 'err');
   btn.disabled = false;
   btn.textContent = 'Enviar lembretes';
+}
+
+// ── LEMBRETE DE MENSALIDADE ────────────────────────────────────────────────
+// Fluxo em três tempos, e o do meio é o que você pediu:
+//
+//   1. o Worker devolve a lista (dry run) — não cria nada, não manda nada
+//   2. VOCÊ edita: vem pré-marcado quem vence amanhã e ainda não foi avisado,
+//      e você marca ou desmarca quem quiser
+//   3. envia — um filho por chamada, com a barra andando
+//
+// Por que um por chamada e não um lote: falha num filho não derruba os outros,
+// dá pra ver o progresso, e cada request do Worker fica longe do teto de
+// subrequests (gerar link + email + gravar são 3 por filho).
+let lembMens = null;        // cache da última lista carregada
+let lembMensSel = null;     // Set de filho_id marcados; null = usar o padrão
+let lembMensTentou = false; // já tentei carregar? impede o laço quando o Worker falha
+
+async function _workerFetch(rota, corpo) {
+  const cfg = await _carregarEmailCfg();
+  if (!cfg?.worker_url || !cfg.worker_secret) throw new Error('Config do Worker incompleta (adm_config/email)');
+  const resp = await fetch(cfg.worker_url.replace(/\/+$/,'') + rota, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+    body: JSON.stringify(corpo || {})
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `Worker ${resp.status}`);
+  return data;
+}
+
+function renderLembretesMensalidade(c) {
+  const brl = v => `R$ ${(Number(v)||0).toFixed(2).replace('.',',')}`;
+  const lista = lembMens?.lista || [];
+
+  // Padrão de marcação: vence amanhã, tem email, não pagou e não foi avisado.
+  // É sugestão, não regra — o Set abaixo passa a mandar assim que você toca.
+  const padrao = f => f.vence_amanha && f.email && !f.pago && !f.ja_avisado;
+  const marcado = f => (lembMensSel ? lembMensSel.has(f.filho_id) : padrao(f));
+  const marcados = lista.filter(f => marcado(f) && f.email && !f.pago);
+
+  const cabe = (f) => {
+    const tags = [];
+    // Distingue as duas origens: "na mão" é baixa do financeiro, sem recibo. Se
+    // aparecer errado, é lá que se desmarca — e não aqui.
+    if (f.pago) tags.push(`<span class="chip" style="background:rgba(46,204,113,.14);color:#2ecc71;font-size:10px">pago${f.pago_como === 'manual' ? ' (na mão)' : ''}</span>`);
+    if (f.atrasado && !f.pago) tags.push('<span class="chip" style="background:rgba(231,51,41,.12);color:var(--red);font-size:10px">atrasado</span>');
+    if (f.vence_amanha) tags.push('<span class="chip" style="background:rgba(212,168,67,.16);color:var(--gold);font-size:10px">vence amanhã</span>');
+    if (f.ja_avisado) tags.push('<span class="chip" style="font-size:10px">já avisado</span>');
+    if (!f.email) tags.push('<span class="chip" style="background:rgba(231,51,41,.12);color:var(--red);font-size:10px">sem email</span>');
+    if (f.avisou_atraso) tags.push('<span class="chip" style="font-size:10px">avisou o atraso</span>');
+    return tags.join(' ');
+  };
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Lembretes</div>
+        <div class="page-sub">Contribuição do mês. Nada sai sem você aprovar — confira a lista antes de enviar.</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn" id="lm-recarregar">${lembMens ? 'Recarregar' : 'Carregar lista'}</button>
+        <button class="btn btn-primary" id="lm-enviar" ${marcados.length ? '' : 'disabled'}>
+          ${marcados.length ? `Enviar ${marcados.length} lembrete${marcados.length===1?'':'s'}` : 'Enviar lembretes'}
+        </button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button onclick="window._app.setLembTab('dia')">Do dia</button>
+      <button class="active" onclick="window._app.setLembTab('mensalidade')">Mensalidade</button>
+    </div>
+
+    ${!lembMens ? `
+      <div class="card"><div class="empty">
+        <div class="empty-t">${lembMensTentou ? 'Não consegui carregar a lista' : 'Carregando a lista...'}</div>
+        <div class="empty-s">${lembMensTentou
+          ? 'Confira o Worker em adm_config/email (worker_url e worker_secret) e clique em Recarregar.'
+          : 'O Worker calcula valor e vencimento de cada filho na hora, sem criar nem mandar nada.'}</div>
+      </div></div>
+    ` : `
+      <div class="card" style="margin-bottom:14px">
+        <div style="padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.7">
+          Ciclo <strong>${lembMens.ciclo}</strong> · ${lista.length} filho${lista.length===1?'':'s'} pagante${lista.length===1?'':'s'} ·
+          <strong>${lista.filter(f=>f.vence_amanha && !f.pago).length}</strong> vence${lista.filter(f=>f.vence_amanha && !f.pago).length===1?'':'m'} amanhã ·
+          <strong>${lista.filter(f=>f.atrasado && !f.pago).length}</strong> atrasado(s) ·
+          <strong>${lista.filter(f=>!f.email).length}</strong> sem email (cobre no WhatsApp)
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-sm" id="lm-so-amanha">Só quem vence amanhã</button>
+            <button class="btn btn-sm" id="lm-atrasados">+ os atrasados</button>
+            <button class="btn btn-sm" id="lm-nenhum">Desmarcar tudo</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        ${lista.map(f => {
+          const bloqueado = !f.email || f.pago;
+          return `
+            <label style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:${bloqueado?'not-allowed':'pointer'};opacity:${bloqueado?'.5':'1'}">
+              <input type="checkbox" class="lm-chk" data-id="${f.filho_id}" ${bloqueado?'disabled':''} ${marcado(f)&&!bloqueado?'checked':''}
+                     style="accent-color:var(--gold);width:18px;height:18px;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;font-weight:600;color:var(--text)">${f.nome}</div>
+                <div style="font-size:11.5px;color:var(--text3);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  ${cabe(f)}
+                </div>
+              </div>
+              <div style="text-align:right;white-space:nowrap">
+                <div style="font-size:13px;font-weight:700;color:${f.multa?'var(--red)':'var(--text2)'}">${brl(f.valor)}</div>
+                <div style="font-size:10.5px;color:var(--text3)">${f.vencimento ? `vence ${f.vencimento.slice(8,10)}/${f.vencimento.slice(5,7)}` : 'combinado'}${f.multa?` · +${brl(f.multa)}`:''}</div>
+              </div>
+            </label>`;
+        }).join('')}
+      </div>
+    `}
+  `;
+
+  $('#lm-recarregar').onclick = carregarListaMensalidade;
+
+  if (lembMens) {
+    // A partir do primeiro toque, quem manda é a seleção explícita — o padrão
+    // some. Senão desmarcar alguém que o padrão marca não teria efeito.
+    const fixar = () => { lembMensSel = new Set($$('.lm-chk:checked').map(cb => cb.dataset.id)); renderRoute(); };
+    $$('.lm-chk').forEach(cb => cb.addEventListener('change', fixar));
+    $('#lm-so-amanha').onclick = () => { lembMensSel = new Set(lista.filter(padrao).map(f=>f.filho_id)); renderRoute(); };
+    $('#lm-atrasados').onclick = () => {
+      lembMensSel = new Set(lista.filter(f => (padrao(f) || (f.atrasado && f.email && !f.pago))).map(f=>f.filho_id));
+      renderRoute();
+    };
+    $('#lm-nenhum').onclick = () => { lembMensSel = new Set(); renderRoute(); };
+    $('#lm-enviar').onclick = () => enviarLembretesMensalidade(marcados);
+  }
+
+  // Carrega sozinho ao abrir a aba. `lembMensTentou` é o que impede o laço: sem
+  // ele, Worker fora do ar = falha, re-render, tenta de novo, pra sempre.
+  if (!lembMens && !lembMensTentou) carregarListaMensalidade();
+}
+
+async function carregarListaMensalidade() {
+  const btn = $('#lm-recarregar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Carregando...'; }
+  lembMensTentou = true;
+  try {
+    lembMens = await _workerFetch('/lembretes', { dry: true });
+    lembMensSel = null; // volta pro padrão quando a lista é nova
+  } catch(e) {
+    toast(e.message, 'err');
+  }
+  if (S.route === 'lembretes') renderRoute();
+}
+
+async function enviarLembretesMensalidade(marcados) {
+  if (!marcados.length) return;
+  const nomes = marcados.map(f => f.nome.split(' ')[0]).join(', ');
+  const total = marcados.reduce((s,f) => s + (Number(f.valor)||0), 0);
+  if (!confirm(`Enviar ${marcados.length} lembrete${marcados.length===1?'':'s'} de contribuição pra:\n\n${nomes}\n\nTotal cobrado: R$ ${total.toFixed(2).replace('.',',')}`)) return;
+
+  const btn = $('#lm-enviar');
+  btn.disabled = true;
+  let ok = 0; const falhas = [];
+
+  for (const f of marcados) {
+    btn.textContent = `Enviando... ${ok+falhas.length+1}/${marcados.length}`;
+    try {
+      const r = await _workerFetch('/lembretes', { ciclo: lembMens.ciclo, filho_id: f.filho_id });
+      if (r.ok) ok++; else falhas.push(`${f.nome}: ${r.erro || 'não saiu'}`);
+    } catch(e) {
+      falhas.push(`${f.nome}: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 350));
+  }
+
+  // Falha em lote costuma sumir num toast. Aqui ela vira lista com nome, porque
+  // quem não recebeu o email é quem você vai ter que cobrar por WhatsApp.
+  if (falhas.length) {
+    console.warn('lembretes de mensalidade — falhas', falhas);
+    alert(`${ok} enviado(s). ${falhas.length} não saiu(íram):\n\n${falhas.join('\n')}`);
+  } else {
+    toast(`📧 ${ok} lembrete${ok===1?'':'s'} de contribuição enviado${ok===1?'':'s'}`, 'ok');
+  }
+  await carregarListaMensalidade();
 }
 
 function _buildLembreteHTML(filho, dataBr) {
@@ -8019,6 +8450,7 @@ function renderAvisosFilho(c) {
 window._app = {
   toast,
   navigate,
+  setLembTab,
   openFilhoForm,
   openFuncaoForm,
   toggleArquivarFuncao,
