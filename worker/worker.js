@@ -15,6 +15,8 @@
  *   POST /entrar     → confere PIN (ou telefone, na primeira vez) e devolve
  *                       uma sessão assinada. A conferência era no navegador,
  *                       contra dado que o navegador tinha baixado.
+ *   POST /avisar-filho → o admin responde alguém. Push + caixa de avisos.
+ *                       É o único caminho de resposta desde que o email saiu.
  *   POST /avisos     → a caixa de avisos do filho. O push é entrega; ISTO é
  *                       o registro, e é o único canal que alcança os 31 que
  *                       não têm email.
@@ -181,6 +183,7 @@ export default {
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
+      if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
       if (rota === '/avisos-lidos') return await rotaAvisosLidos(body, env);
       if (rota === '/criar-pin') return await rotaCriarPin(body, env);
@@ -1911,6 +1914,34 @@ async function rotaMeuCadastro(body, env) {
   patch.atualizadoEm = new Date().toISOString();
   await fsPatch(PROJETO_PVD, 'fin_filhos', String(filho_id), token, patch);
   return json({ ok: true, ...patch });
+}
+
+/**
+ * O admin avisa um filho. Protegida pelo segredo.
+ *
+ * Existe porque o financeiro decide coisas SOBRE uma pessoa (isenção aprovada,
+ * reembolso pago) e escrevia só no Firestore. Quem escreveu "não vou conseguir
+ * pagar este mês" — que é difícil de escrever — só descobria a resposta se
+ * abrisse o app por conta própria e fosse procurar.
+ *
+ * Com o email fora do jogo, esta rota é o único caminho de resposta que existe.
+ */
+async function rotaAvisarFilho(body, request, env) {
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
+
+  const { filho_id, titulo, corpo, url, tag } = body || {};
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+  if (!titulo) return json({ error: 'falta titulo' }, 400);
+
+  const token = await tokenGoogle(env);
+  const r = await avisar(env, token, {
+    para: 'filho', filho_id: String(filho_id),
+    titulo, corpo: corpo || '', url: url || 'area-filho.html', tag: tag || null,
+  });
+  return json({ ok: true, push: r?.enviados ?? 0 });
 }
 
 // ── AJUSTE DA MENSALIDADE PELO FILHO ───────────────────────────────────────

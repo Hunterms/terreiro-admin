@@ -178,6 +178,8 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # ⚠️ Rota que NÃO EXISTE cai no /email, que pede o mesmo header — então este
   # teste sozinho dá verde num Worker velho. A checagem de existência é a de
   # baixo: /criar-pin sem PIN responde uma mensagem que só ela sabe dizer.
+  r=$(curl -s -X POST "$W/avisar-filho" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "zerar-pin (protegida)" || erro "zerar-pin: $r"
   r=$(curl -s -X POST "$W/criar-pin" -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","pin":"12"}')
