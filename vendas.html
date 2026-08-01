@@ -201,7 +201,7 @@ function mostrarErro(titulo, msg) {
         // Pelo Worker, sem telefone nem email. Quem se identificar recebe os
         // próprios dados de volta pelo /entrar. Ver filhos.js.
         APP.filhos = Filhos.ativos(await Filhos.carregarFilhos(CFG_AGENDAMENTO));
-      } catch(e) { APP.filhos = []; }
+      } catch(e) { Filhos.avisarFalha('a lista de filhos', e); APP.filhos = []; }
     }
     if(prod.publico === false) {
       // Continua mostrando — link continua válido mesmo se "privado" (só não lista)

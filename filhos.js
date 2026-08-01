@@ -139,6 +139,33 @@ export function esquecerSessao() {
   try { localStorage.removeItem(CHAVE_SESSAO); } catch {}
 }
 
+// ── LEITURA DE UMA VEZ QUE FALHA ──────────────────────────────────────────
+//
+// Os listeners contínuos já são embrulhados na página. Isto é pro outro caso:
+// `getDocs` dentro de try/catch que, ao falhar, zera o array e segue. A tela
+// desenha vazio, e vazio parece dado.
+//
+// Não interrompe nada: a página continua, só passa a DIZER o que não carregou.
+// Uma seção vazia por engano é indistinguível de uma seção vazia de verdade, e
+// foi assim que o reembolso do filho ficou invisível de junho a julho.
+export function avisarFalha(oQue, e) {
+  console.error(`não carregou: ${oQue}`, e);
+  let b = document.getElementById('faixa-erro-leitura');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'faixa-erro-leitura';
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:4000;background:#7f1d1d;color:#fff;'
+      + 'font:600 13px/1.45 -apple-system,system-ui,sans-serif;padding:10px 14px;text-align:center';
+    document.body.appendChild(b);
+  }
+  const jaTem = b.dataset.itens ? b.dataset.itens.split('|') : [];
+  if (!jaTem.includes(oQue)) jaTem.push(oQue);
+  b.dataset.itens = jaTem.join('|');
+  b.textContent = jaTem.length === 1
+    ? `Não consegui carregar: ${jaTem[0]}. O resto da página funciona.`
+    : `Não consegui carregar ${jaTem.length} partes desta página (${jaTem.join(', ')}).`;
+}
+
 /**
  * Mensagem pro humano. O Worker responde em português e a tela pode mostrar
  * direto — menos 'não confere', que precisa de contexto pra não soar acusatório

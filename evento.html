@@ -303,7 +303,7 @@ function _highlight(nome, q){
     try {
       const iSnap = await getDocs(query(collection(dbPvd,'evento_inscricoes'), where('evento_id','==',APP.eventoId)));
       APP.inscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-    } catch(e) { APP.inscricoes = []; }
+    } catch(e) { Filhos.avisarFalha('as inscrições', e); APP.inscricoes = []; }
 
     renderEvento();
     $('#loading').style.display = 'none';

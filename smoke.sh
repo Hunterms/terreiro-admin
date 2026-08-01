@@ -178,6 +178,23 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   echo "$r" | grep -q 'PIN tem 4' && ok "criar-pin no ar" || erro "criar-pin: Worker velho? $(head -c 100 <<< "$r")"
 fi
 
+if [[ "$alvo" == "tudo" || "$alvo" == "calado" ]]; then
+  echo "FALHA CALADA"
+  # A classe de bug que mais custou aqui: erro que a tela desenha como VAZIO.
+  # Em 01/08 eram 48 onSnapshot e UM com tratamento. O conserto foi embrulhar o
+  # onSnapshot em cada superfície — esta checagem é o que impede alguém desfazer
+  # o embrulho sem perceber que está reabrindo os 47.
+  for par in "index.html:_onSnapshotOriginal" "despensa.html:_onSnapshotOriginal" \
+             "area-filho.html:avisarFalha" "filhos.js:avisarFalha"; do
+    arq="${par%%:*}"; marca="${par##*:}"
+    if grep -q "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
+      ok "$arq protege leitura que falha"
+    else
+      erro "$arq PERDEU o tratamento de erro de leitura — 47 falhas caladas de volta"
+    fi
+  done
+fi
+
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   echo "RULES"
   K=AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4
