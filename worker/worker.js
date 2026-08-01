@@ -11,6 +11,8 @@
  *   POST /webhook     → InfinitePay avisa que pagou. Confere no payment_check,
  *                       compara o valor, e só então marca pago no Firestore.
  *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
+ *   POST /mensalidade-ajuste → o filho remarca a data OU pede isenção do mês.
+ *                       Só até o dia 5, só o mês corrente, mesma prova.
  *   POST /lote        → gera as cobranças do mês. Também roda pelo cron do dia 1.
  *   POST /papel       → grava custom claim (admin/financeiro/loja) numa conta.
  *   POST /lembretes   → { dry: true } devolve a lista de quem deve receber o
@@ -165,6 +167,7 @@ export default {
       if (rota === '/webhook') return await rotaWebhook(body, env);
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
+      if (rota === '/mensalidade-ajuste') return await rotaMensalidadeAjuste(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
       if (rota === '/lembretes') return await rotaLembretes(body, request, env);
       if (rota === '/push') return await rotaPush(body, request, env);
@@ -217,6 +220,13 @@ function horaSP() {
     timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23',
   });
   return (Number(h) || 0) % 24;
+}
+/** Minutos desde a meia-noite em Brasília. É o relógio do lembrete de 1h. */
+function minutosSP() {
+  const s = new Date().toLocaleString('en-US', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  return minutosDoDia(s.replace(/^(\d{1,2}):(\d{2}).*$/, '$1:$2')) ?? 0;
 }
 /** Soma dias a uma data ISO (YYYY-MM-DD) sem passar por fuso. */
 export function maisDias(iso, n) {
@@ -274,8 +284,14 @@ export function ultimoDiaDoCiclo(ciclo) {
  * financeiro: '10'|'15'|'20' → o dia, 'ultimo' → último dia do mês.
  * 'combinado' e vazio não têm data, então retornam null — e sem data não há
  * multa automática.
+ *
+ * `combinado` é a data que o próprio filho escolheu pra ESTE mês (rota
+ * /mensalidade-ajuste, até o dia 5). Vale só dentro do ciclo dela: o prefixo é
+ * conferido de propósito, senão uma data de outro mês gravada no pedido — por
+ * erro ou por má fé — adiaria a multa pra sempre.
  */
-export function vencimentoMensalidade(prazo, ciclo) {
+export function vencimentoMensalidade(prazo, ciclo, combinado) {
+  if (combinado && String(combinado).startsWith(`${ciclo}-`)) return String(combinado);
   const dia =
     !prazo || prazo === '10' ? 10 :
     prazo === '15' ? 15 :
@@ -298,7 +314,11 @@ export function mensalidadeReais(pedido, filho, hoje) {
   const base = Number(filho.valor);
   if (!base || base <= 0) return 0; // isento: 0 ou campo ausente
 
-  const venc = vencimentoMensalidade(filho.prazo, pedido.ciclo);
+  // Isenção do mês, já aprovada por gente no financeiro. Pedida ainda não vale
+  // nada: enquanto está 'pedida' o filho continua devendo o mês inteiro.
+  if (pedido.isencao_status === 'aprovada') return 0;
+
+  const venc = vencimentoMensalidade(filho.prazo, pedido.ciclo, pedido.venc_combinado);
   const atrasado = !!venc && hoje > venc;
   const multa = atrasado && !pedido.avisou_atraso ? MULTA_ATRASO : 0;
   return base + multa;
@@ -462,7 +482,7 @@ async function rotaCheckout(body, env, origem) {
     ...(tipo === 'men' && {
       checkout_valor_base: Number(fonte.valor) || 0,
       checkout_multa: Math.max(0, centavos / 100 - (Number(fonte.valor) || 0)),
-      checkout_vencimento: vencimentoMensalidade(fonte.prazo, pedido.ciclo),
+      checkout_vencimento: vencimentoMensalidade(fonte.prazo, pedido.ciclo, pedido.venc_combinado),
     }),
   });
 
@@ -673,8 +693,8 @@ async function listarLembretes(env, ciclo) {
     const base = Number(f.valor);
     if (!(base > 0)) continue; // isento não recebe cobrança
 
-    const venc = vencimentoMensalidade(f.prazo, ciclo);
     const pedido = porFilho[f.id] || { ciclo, avisou_atraso: false };
+    const venc = vencimentoMensalidade(f.prazo, ciclo, pedido.venc_combinado);
     const como = estaPago(pedido, pagos, f.id);
     const valor = mensalidadeReais(pedido, f, hoje);
     const email = String(f.auth_email || f.email || '').trim();
@@ -688,6 +708,12 @@ async function listarLembretes(env, ciclo) {
       valor,
       multa: Math.max(0, valor - base),
       vencimento: venc,          // null = prazo 'combinado', sem data
+      // Data que o próprio filho escolheu pra este mês, se escolheu. Fica
+      // separada de `vencimento` porque quem lê a lista precisa saber que a
+      // data mudou — e por quem.
+      venc_combinado: pedido.venc_combinado || null,
+      isencao_status: pedido.isencao_status || null,  // 'pedida'|'aprovada'|'recusada'
+      isencao_motivo: pedido.isencao_motivo || null,
       vence_amanha: venc === amanha,
       // Quem pagou não está atrasado, mesmo que a data já tenha passado.
       atrasado: !como && !!venc && hoje > venc,
@@ -734,10 +760,16 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
     pedido = { filho_id: filhoId, ciclo, status: 'aberto', avisou_atraso: false };
   }
 
+  // Isenção aprovada zera o valor. Dizer isso aqui, e não deixar cair no
+  // "valor zero (isento?)" genérico: são dois motivos diferentes de não cobrar.
+  if (pedido.isencao_status === 'aprovada') {
+    return { erro: 'isenção aprovada neste mês', filho_id: filhoId };
+  }
+
   const valor = mensalidadeReais(pedido, f, hoje);
   if (!(valor > 0)) return { erro: 'valor zero (isento?)', filho_id: filhoId };
 
-  const venc = vencimentoMensalidade(f.prazo, ciclo);
+  const venc = vencimentoMensalidade(f.prazo, ciclo, pedido.venc_combinado);
   const link = await gerarLinkMensalidade(f, pedido, docId, valor, env, token);
   if (!link) return { erro: 'não consegui gerar o link de pagamento', filho_id: filhoId };
 
@@ -793,7 +825,7 @@ async function gerarLinkMensalidade(filho, pedido, docId, valor, env, token) {
     checkout_criadoEm: new Date().toISOString(),
     checkout_valor_base: Number(filho.valor) || 0,
     checkout_multa: Math.max(0, valor - (Number(filho.valor) || 0)),
-    checkout_vencimento: vencimentoMensalidade(filho.prazo, pedido.ciclo),
+    checkout_vencimento: vencimentoMensalidade(filho.prazo, pedido.ciclo, pedido.venc_combinado),
   });
 
   return data.url;
@@ -927,6 +959,72 @@ async function mandarPush(env, { titulo, corpo, url, papel, filho_id, tag }) {
   }
 }
 
+// ── FILA DE AVISO PROS FILHOS ──────────────────────────────────────────────
+//
+// O mural (`adm_avisos`) manda push pra casa inteira, e é a única coisa aqui
+// que fala com dezenas de aparelhos de uma vez. Por isso é fila, e não laço.
+//
+// O teto de subrequests do Worker é POR INVOCAÇÃO, e o plano de graça dá 50.
+// Um laço em 48 filhos estoura no meio e falha calado: metade recebe, metade
+// não, e ninguém fica sabendo qual metade. A fila troca isso por tempo — cada
+// batida do cron manda um pedaço, e a casa inteira leva ~30 minutos.
+//
+// A fila é a lista de APARELHOS, não de filhos: é o aparelho que custa uma
+// subrequest, e um filho com celular e tablet custa dois.
+const AVISO_LOTE = 15;
+
+/**
+ * Manda um lote do aviso mais antigo que ainda tem fila. Devolve null quando
+ * não há nada a fazer — o caso normal, 95 batidas em cada 96.
+ */
+async function drenarFilaDeAvisos(env, token) {
+  const fila = await fsQuery(PROJETO_PVD, 'adm_avisos', token, { campo: 'push_status', valor: 'pendente' }, 10);
+  if (!fila.length) return null;
+
+  // Mais antigo primeiro: se dois avisos saíram juntos, o que foi publicado
+  // antes chega antes. Sem isto a ordem é a que o Firestore quiser.
+  const aviso = fila.sort((a, b) =>
+    String(a.publicadoEm || '').localeCompare(String(b.publicadoEm || '')))[0];
+
+  // Primeira batida deste aviso: resolve quem recebe, uma vez só. Quem
+  // registrar o celular depois não recebe este aviso — e é o certo, senão a
+  // fila nunca fecharia.
+  let restantes = Array.isArray(aviso.push_restantes) ? aviso.push_restantes : null;
+  if (!restantes) {
+    restantes = (await fsQuery(PROJETO_PVD, 'adm_push_tokens', token, { campo: 'papel', valor: 'filho' }))
+      .map((t) => t.id);
+  }
+
+  const lote = restantes.slice(0, AVISO_LOTE);
+  const resto = restantes.slice(lote.length);
+
+  let enviados = 0, mortos = 0;
+  if (lote.length) {
+    const fcm = await tokenGoogle(env, ESCOPO_FCM);
+    for (const deviceToken of lote) {
+      const r = await fcmEnviar(fcm, deviceToken, {
+        titulo: aviso.titulo || 'Aviso do terreiro',
+        corpo: (aviso.corpo || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+        url: 'area-filho.html',
+        tag: `aviso-${aviso.id}`,
+      });
+      if (r === 'ok') enviados++;
+      else if (r === 'morto') mortos++;
+      // Token morto não é apagado aqui de propósito: o delete é mais uma
+      // subrequest por aparelho, e é justo o que a fila está economizando. O
+      // caminho normal do push (mandarPush) limpa na próxima vez que passar.
+    }
+  }
+
+  await fsPatch(PROJETO_PVD, 'adm_avisos', aviso.id, token, {
+    push_restantes: resto,
+    push_enviados: (Number(aviso.push_enviados) || 0) + enviados,
+    push_status: resto.length ? 'pendente' : 'enviado',
+  });
+
+  return { aviso: aviso.id, enviados, mortos, restam: resto.length };
+}
+
 /**
  * Um aparelho. Devolve 'ok' | 'morto' | 'erro'.
  *
@@ -965,6 +1063,7 @@ async function tick(env) {
   const token = await tokenGoogle(env);
   const hoje = hojeSP();
   const hora = horaSP();
+  const minutos = minutosSP();
   const agora = new Date().toISOString();
   const estado = (await fsGet(PROJETO_PVD, 'adm_config', 'push_estado', { token })) || {};
   const feito = [];
@@ -998,6 +1097,31 @@ async function tick(env) {
     patch.lote_ciclo = ciclo;
     feito.push(`lote:${r.criados}`);
   }
+
+  // 4) Consulta que começa em ~1h.
+  //
+  // A marca vive no próprio atendimento (`push_1h_em`), não aqui no estado: o
+  // remarcar de horário tem que poder reabrir o lembrete, e uma flag no estado
+  // global ficaria valendo pro dia inteiro.
+  for (const a of await consultasDoDia(token, hoje)) {
+    const min = minutosDoDia(a.hora);
+    if (min === null || a.push_1h_em === hoje) continue;
+    if (!naJanelaDeUmaHora(minutos, min)) continue;
+
+    await mandarPush(env, {
+      tag: `consulta-${a.id}`,
+      titulo: `Consulta às ${a.hora}`,
+      corpo: `${a.consulente_nome || 'sem nome'}${a.tipo_oraculo === 'buzios' ? ' · búzios' : ''}`,
+      url: 'index.html#agenda',
+    });
+    await fsPatch(PROJETO_PVD, 'adm_atendimentos', a.id, token, { push_1h_em: hoje });
+    feito.push(`consulta1h:${a.id}`);
+  }
+
+  // 5) Um lote da fila de push de avisos. A fila mora no próprio aviso, não
+  // aqui: um aviso apagado leva a fila dele junto, sem deixar órfão no estado.
+  const fila = await drenarFilaDeAvisos(env, token);
+  if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
 
   await fsPatch(PROJETO_PVD, 'adm_config', 'push_estado', token, patch);
   return { hoje, hora, feito };
@@ -1065,6 +1189,19 @@ async function digestDoDia(env, token, hoje) {
   const amanha = maisDias(hoje, 1);
   const avisos = [];
 
+  // A agenda do dia. Vem primeiro de propósito: é o que mais muda o que você
+  // faz nas próximas horas, e o push empilha na ordem em que é mandado.
+  const consultas = await consultasDoDia(token, hoje);
+  if (consultas.length) {
+    avisos.push({
+      tag: 'agenda',
+      titulo: `${consultas.length} consulta${consultas.length === 1 ? '' : 's'} hoje`,
+      corpo: consultas.map((a) => `${a.hora || '??:??'} ${a.consulente_nome || 'sem nome'}`)
+        .slice(0, 4).join(' · '),
+      url: 'index.html#agenda',
+    });
+  }
+
   // Tarefas com prazo vencido e ainda em aberto.
   const tarefas = (await fsQuery(PROJETO_PVD, 'adm_kanban', token,
     { campo: 'prazo', op: 'LESS_THAN', valor: hoje }))
@@ -1123,6 +1260,45 @@ export function contaVenceEm(gasto, dataISO) {
   const dia = Number(dataISO.slice(8, 10));
   const ultimo = ultimoDiaDoCiclo(dataISO.slice(0, 7));
   return d === dia || (d > ultimo && dia === ultimo);
+}
+
+/**
+ * Consultas de um dia, em ordem de hora, sem as que não vão acontecer.
+ *
+ * `nao_compareceu` e `realizado` ficam de fora junto com `cancelado`: os três
+ * já são passado, e lembrete de coisa que já aconteceu é ruído.
+ */
+async function consultasDoDia(token, dataISO) {
+  const MORTOS = ['cancelado', 'nao_compareceu', 'realizado'];
+  return (await fsQuery(PROJETO_PVD, 'adm_atendimentos', token, { campo: 'data', valor: dataISO }))
+    .filter((a) => !MORTOS.includes(a.status_atendimento))
+    .sort((a, b) => String(a.hora || '').localeCompare(String(b.hora || '')));
+}
+
+/**
+ * Minutos de "HH:MM" desde a meia-noite. `null` se não der pra ler — hora vazia
+ * ou torta não pode virar 0, senão toda consulta sem hora vira meia-noite e
+ * dispara o lembrete na primeira batida do dia.
+ */
+export function minutosDoDia(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * A consulta cai na janela do lembrete de 1h?
+ *
+ * A janela é [45min, 75min] à frente, e não "exatamente 60": o cron bate de 15
+ * em 15 minutos, então um alvo pontual seria perdido na maioria das vezes. 30
+ * minutos de largura garantem exatamente uma batida dentro dela — duas nunca,
+ * porque a flag no atendimento fecha a porta depois da primeira.
+ */
+export function naJanelaDeUmaHora(minutosAgora, minutosConsulta) {
+  const falta = minutosConsulta - minutosAgora;
+  return falta >= 45 && falta <= 75;
 }
 
 /** Contas fixas que vencem na data pedida e ainda não têm baixa no ciclo. */
@@ -1212,11 +1388,142 @@ async function rotaMensalidade(body, env) {
     valor: pago ? Number(pedido.valor_cobrado) || (como === 'manual' ? base : valor) : valor,
     base,
     multa: pago ? 0 : Math.max(0, valor - base),
-    vencimento: vencimentoMensalidade(filho.prazo, ciclo),
+    vencimento: vencimentoMensalidade(filho.prazo, ciclo, pedido.venc_combinado),
     avisou_atraso: !!pedido.avisou_atraso,
     metodo: pago ? (pedido.metodo_pagamento || (como === 'manual' ? 'manual' : null)) : null,
     recibo_url: pago ? pedido.pagamento_recibo_url || null : null,
+    // O que a área do filho precisa pra desenhar o cartão de ajuste do mês.
+    ajuste: {
+      // Só até o dia 5. A janela é do Worker, não da tela: escondendo o botão
+      // no HTML o pedido continuaria passando por curl no dia 28.
+      aberto: podeAjustar(ciclo),
+      prazo: `${ciclo}-05`,
+      venc_padrao: vencimentoMensalidade(filho.prazo, ciclo),
+      venc_combinado: pedido.venc_combinado || null,
+      isencao_status: pedido.isencao_status || null,
+      isencao_motivo: pedido.isencao_motivo || null,
+    },
   });
+}
+
+/**
+ * A janela de ajuste vai do dia 1 ao dia 5 do próprio ciclo, hora de Brasília.
+ *
+ * Ciclo passado nunca reabre — senão em dezembro dava pra pedir isenção de
+ * março, e o financeiro do ano já estava fechado. Ciclo futuro também não: o
+ * filho pediria isenção de um mês que ainda não existe pra ninguém.
+ */
+export function podeAjustar(ciclo, hoje = hojeSP()) {
+  return hoje.slice(0, 7) === ciclo && Number(hoje.slice(8, 10)) <= 5;
+}
+
+// ── AJUSTE DA MENSALIDADE PELO FILHO ───────────────────────────────────────
+// Entra: { filho_id, tel4, tipo, data?, motivo? }. Tipo é 'data' ou 'isencao'.
+//
+// Existe porque a conversa sobre "não vou conseguir pagar este mês" acontecia
+// no WhatsApp e morria lá: o financeiro continuava contando com o dinheiro, o
+// lembrete continuava saindo, e a multa caía em cima de quem tinha avisado.
+//
+// Regra permanente — mudar o prazo de todos os meses, virar isento de vez — NÃO
+// passa por aqui. Isso é conversa com o Pai, e continua sendo. Esta rota mexe
+// num mês, uma vez, e o mês é o corrente.
+//
+// A prova é a mesma do /mensalidade: 4 últimos dígitos do telefone. Fraca, e de
+// propósito — é o modelo de confiança que a área do filho já tem.
+
+/**
+ * A data escolhida serve? Tem que ser deste ciclo, e não pode ser pra trás.
+ *
+ * O piso é hoje, não o dia 1: escolher uma data que já passou seria escolher
+ * a multa, e o filho quase nunca quer isso — quando quer, é engano.
+ */
+export function dataDeAjusteValida(data, ciclo, hoje) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ''))) return false;
+  if (String(data).slice(0, 7) !== ciclo) return false;
+  if (Number(String(data).slice(8, 10)) > ultimoDiaDoCiclo(ciclo)) return false;
+  return String(data) >= hoje;
+}
+
+async function rotaMensalidadeAjuste(body, env) {
+  const { filho_id, tel4, tipo, data, motivo } = body || {};
+  const ciclo = cicloAtual();
+  const hoje = hojeSP();
+
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+  if (tipo !== 'data' && tipo !== 'isencao') {
+    return json({ error: "tipo tem que ser 'data' ou 'isencao'" }, 400);
+  }
+  if (!podeAjustar(ciclo, hoje)) {
+    return json({ error: `a janela deste mês fechou no dia 5 (${ciclo}-05)` }, 409);
+  }
+
+  const token = await tokenGoogle(env);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filho_id, { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
+  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
+  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+
+  if (!(Number(filho.valor) > 0)) return json({ error: 'você já é isento', isento: true }, 409);
+  if (tipo === 'data' && !dataDeAjusteValida(data, ciclo, hoje)) {
+    return json({ error: 'a data tem que ser deste mês e não pode ser pra trás' }, 400);
+  }
+
+  const docId = `${filho_id}__${ciclo}`;
+  let pedido = await fsGet(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, { token });
+
+  // Mesma razão do /mensalidade: o pedido pode não existir ainda, e ninguém
+  // pode ficar sem avisar por causa de lote não rodado.
+  if (!pedido) {
+    await fsCreateComId(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, {
+      filho_id, filho_nome: filho.nome || '', ciclo,
+      status: 'aberto', avisou_atraso: false,
+      geradoEm: new Date().toISOString(), geradoPor: 'ajuste',
+    });
+    pedido = { ciclo, status: 'aberto' };
+  }
+
+  // Quem já pagou não ajusta nada. Sem isto dava pra pagar dia 2 e pedir
+  // isenção dia 3, e o financeiro ficaria com um mês pago e isento ao mesmo
+  // tempo — dois números verdadeiros contando a mesma coisa duas vezes.
+  if (estaPago(pedido, await pagosDoCiclo(ciclo, token), filho_id)) {
+    return json({ error: 'este mês já está pago', pago: true }, 409);
+  }
+  // Isenção já julgada não volta pra fila pela porta do filho.
+  if (pedido.isencao_status === 'aprovada' || pedido.isencao_status === 'recusada') {
+    return json({ error: `a isenção deste mês já foi ${pedido.isencao_status}`, isencao_status: pedido.isencao_status }, 409);
+  }
+
+  const texto = String(motivo || '').trim().slice(0, 500);
+  const patch = tipo === 'data'
+    ? {
+        venc_combinado: String(data),
+        venc_combinado_em: new Date().toISOString(),
+        venc_combinado_motivo: texto,
+      }
+    : {
+        isencao_status: 'pedida',
+        isencao_pedida_em: new Date().toISOString(),
+        isencao_motivo: texto,
+      };
+
+  await fsPatch(PROJETO_PVD, 'fin_mensalidade_pedidos', docId, token, patch);
+
+  // O Pai precisa saber na hora: é decisão dele, e ela tem prazo.
+  await mandarPush(env, {
+    tag: `ajuste-${filho_id}`,
+    titulo: tipo === 'data' ? 'Filho remarcou a contribuição' : 'Pedido de isenção do mês',
+    corpo: tipo === 'data'
+      ? `${filho.nome || 'alguém'} vai pagar dia ${String(data).slice(8, 10)}`
+      : `${filho.nome || 'alguém'} — ${texto || 'sem motivo escrito'}`.slice(0, 140),
+    url: 'index.html#lembretes',
+  });
+
+  return json({ ok: true, ciclo, tipo, ...patch });
 }
 
 // ── STATUS ─────────────────────────────────────────────────────────────────

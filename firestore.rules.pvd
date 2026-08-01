@@ -85,18 +85,56 @@ service cloud.firestore {
     }
 
     // planejamento de compra — a despensa continua sendo do admin
+    //
+    // Três donos, e cada um com a sua faixa:
+    //   admin       tudo (regra genérica lá em cima)
+    //   financeiro  consumo e custo, que é o planejamento de compra
+    //   filho       o estoque, pelo `despensa.html`
+    //
+    // O filho NÃO tem Firebase Auth: ele entra por 4 dígitos do telefone, o
+    // mesmo modelo do adm_rega_diaria e do adm_disponibilidade. Então a leitura
+    // é pública, e a escrita é presa aos campos que a tela dele edita.
+    //
+    // Isto ficou de fora quando as rules por campo entraram, em 30/07. As rules
+    // que estavam no ar eram mais frouxas e seguravam a página; publicar a
+    // versão do repo tirou o chão dela, e o filho perdeu o acesso sem que nada
+    // reclamasse. Achado por um filho, em 01/08.
     match /adm_despensa/{id} {
+      allow read: if true;
       allow update: if ehFinanceiro() &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['consumo', 'custo']);
+      // O filho conta o que tem na prateleira. Só isso.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['estoque', 'atualizadoEm', 'atualizadoPor'])
+                    && request.resource.data.estoque is number
+                    && request.resource.data.estoque >= 0;
+      // Item novo achado na prateleira. Sem `consumo` nem `custo`: o
+      // planejamento de compra é do financeiro, e não nasce por aqui.
+      allow create: if request.resource.data.nome is string
+                    && request.resource.data.nome.size() > 0
+                    && request.resource.data.nome.size() < 200
+                    && request.resource.data.estoque is number
+                    && request.resource.data.estoque >= 0
+                    && request.resource.data.keys().hasOnly([
+                         'nome', 'categoria', 'unidade', 'estoque', 'minimo',
+                         'obs', 'criadoEm', 'atualizadoEm', 'criadoPor', 'atualizadoPor'
+                       ]);
     }
 
     // "avisou do atraso" tira o acréscimo — decisão de cobrança, do financeiro.
     // O resto do doc é do Worker, que escreve por service account.
+    //
+    // A isenção do mês entra na mesma lista pelo mesmo motivo: quem julga o
+    // pedido do filho é o financeiro, na tela dele. O que ele NÃO pode é
+    // escrever `isencao_status: 'pedida'` — pedir é do filho, e o filho passa
+    // pelo Worker, que confere os 4 dígitos antes.
     match /fin_mensalidade_pedidos/{id} {
       allow update: if ehFinanceiro() &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['avisou_atraso']);
+          .hasOnly(['avisou_atraso', 'isencao_status', 'isencao_julgada_em']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isencao_status'])
+          || request.resource.data.isencao_status in ['aprovada', 'recusada']);
     }
 
     // ── Campos de pagamento: só o Worker escreve ──────────────────────────
@@ -204,6 +242,29 @@ service cloud.firestore {
     }
     match /adm_avisos/{id} {
       allow read: if true;
+    }
+
+    // ── PERGUNTAS DA CASA ─────────────────────────────────────────────────
+    // A pergunta é pública: é conteúdo de ensino, igual ao mural de avisos.
+    //
+    // A RESPOSTA não é. Ela tem nome e acerto/erro de uma pessoa, então não
+    // tem `list`: o id do doc é `{pergunta}__{filho}`, e a área do filho lê
+    // uma a uma por `get`. Mesma escolha do `vendas_alunos` — pra ler é
+    // preciso JÁ SABER de quem é, e ninguém varre a collection pra sair com o
+    // boletim da casa inteira.
+    match /adm_perguntas/{id} {
+      allow read: if true;
+    }
+    match /adm_respostas/{id} {
+      allow get: if true;
+      allow list: if ehAuth();
+      allow create, update: if request.resource.data.filho_id is string
+                            && request.resource.data.pergunta_id is string
+                            && request.resource.data.opcao_idx is int
+                            && request.resource.data.keys().hasOnly([
+                                 'pergunta_id', 'filho_id', 'filho_nome',
+                                 'opcao_idx', 'correta', 'respondidoEm'
+                               ]);
     }
     // Tarefas (kanban) — leitura pública pro area-filho.html mostrar
     // as tarefas do filho logado (trust-based, mesmo modelo das escalas)

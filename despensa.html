@@ -434,11 +434,26 @@ function iniciarMain() {
   $('#who-nome').textContent = APP.filhoLogged.nome;
   $('#who-avatar').textContent = _initials(APP.filhoLogged.nome);
 
-  // Listener da despensa
+  // Listener da despensa.
+  //
+  // O segundo callback não é enfeite: sem ele, rules que negam a leitura fazem
+  // a página mostrar despensa VAZIA em vez de erro. Aconteceu em 01/08 — as
+  // rules novas foram publicadas sem a leitura pública desta collection, e o
+  // filho relatou "a despensa está vazia", que é a pior forma de quebrar:
+  // parece dado, não parece defeito.
   onSnapshot(collection(db, 'adm_despensa'), snap => {
     APP.despensa = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
     renderMain();
+  }, err => {
+    console.error('despensa: leitura negada', err);
+    $('#lista').innerHTML = `
+      <div class="empty" style="color:var(--red)">
+        Não consegui carregar a despensa.<br/>
+        <span style="font-size:12px;color:var(--text3)">${err.code === 'permission-denied'
+          ? 'A permissão de leitura foi negada. Avisa a administração — não é você.'
+          : 'Tenta recarregar. Se continuar, avisa a administração.'}</span>
+      </div>`;
   });
 
   $('#f-busca').oninput = e => { APP.filtros.busca = e.target.value; renderMain(); };

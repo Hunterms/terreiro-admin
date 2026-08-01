@@ -4321,6 +4321,10 @@ function openAvisoForm(id=null) {
       <div class="fi-group"><label>Título *</label><input class="fi" id="av-titulo" value="${a?.titulo||''}"/></div>
       <div class="fi-group"><label>Corpo *</label><textarea class="fi" id="av-corpo" style="min-height:160px">${a?.corpo||''}</textarea></div>
       <label class="checkbox-row"><input type="checkbox" id="av-imp" ${a?.importante?'checked':''}/> Marcar como importante</label>
+      ${isEdit ? statusPushAviso(a) : `
+        <label class="checkbox-row"><input type="checkbox" id="av-push"/> Avisar no celular dos filhos</label>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Vai pra quem tem a área do filho instalada. Sai em lotes de 15 aparelhos, um lote por batida do cron. A casa inteira leva até meia hora.</div>
+      `}
     </div>
     <div class="modal-f">
       <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -4340,11 +4344,35 @@ function openAvisoForm(id=null) {
     };
     try {
       if(isEdit) await updateDoc(doc(dbPvd,'adm_avisos',id), { ...data, atualizadoEm: serverTimestamp() });
-      else await addDoc(collection(dbPvd,'adm_avisos'), { ...data, publicadoEm: serverTimestamp(), criadoEm: serverTimestamp() });
-      toast(isEdit?'Aviso atualizado':'Aviso publicado','ok');
+      else {
+        // push_status é o que o cron procura. Só existe se você pediu — sem o
+        // campo o Worker nem enxerga o aviso, que é o comportamento de antes.
+        const push = $('#av-push')?.checked;
+        await addDoc(collection(dbPvd,'adm_avisos'), {
+          ...data,
+          ...(push && { push_status:'pendente', push_enviados:0 }),
+          publicadoEm: serverTimestamp(), criadoEm: serverTimestamp()
+        });
+        if(push) toast('Aviso publicado — o push começa na próxima batida','ok');
+        else toast('Aviso publicado','ok');
+        closeModal();
+        return;
+      }
+      toast('Aviso atualizado','ok');
       closeModal();
     } catch(e) { toast('Erro: '+e.message,'err'); }
   };
+}
+
+// O push do aviso não é editável depois de publicado: a fila já andou, e
+// desmarcar a caixa não desnotifica quem já recebeu. Então mostra o estado.
+function statusPushAviso(a) {
+  if(!a?.push_status) return '<div style="font-size:12px;color:var(--text3);margin-top:4px">Publicado sem push no celular.</div>';
+  const restam = Array.isArray(a.push_restantes) ? a.push_restantes.length : 0;
+  const feitos = Number(a.push_enviados) || 0;
+  return a.push_status === 'enviado'
+    ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">Push enviado pra ${feitos} aparelho${feitos===1?'':'s'}.</div>`
+    : `<div style="font-size:12px;color:var(--text3);margin-top:4px">Push em andamento: ${feitos} enviado${feitos===1?'':'s'}, ${restam} na fila.</div>`;
 }
 
 async function arquivarAviso(id) {
