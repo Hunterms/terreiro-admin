@@ -339,13 +339,13 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
   </div>
 
   <div id="content" style="display:none">
-    <!-- O que falta pra sua área funcionar vem ANTES de tudo.
-         Cadastro primeiro (pedido do Pai), avisos logo depois — e a ordem entre
-         os dois é discutível: com o email fora do jogo, o push virou o ÚNICO
-         canal, então não ter avisos ligados é o buraco mais caro dos dois. -->
+    <!-- O que falta pra sua área funcionar vem ANTES de tudo, e INSTALAR vem
+         antes de cadastrar. Com o email fora do jogo, o push é o único canal
+         imediato que existe: quem não instalou não é avisado de nada. Data de
+         nascimento pode esperar; ser alcançável, não. -->
     <div id="topo-pendencias" style="max-width:620px;margin:0 auto">
-      <div id="cadastro-card" style="display:none"></div>
       <div id="push-card" style="display:none;margin-bottom:14px"></div>
+      <div id="cadastro-card" style="display:none"></div>
     </div>
 
     <div class="painel-grid">
@@ -411,6 +411,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
               <div class="identity-name" id="id-name"></div>
               <div class="identity-roles" id="id-roles"></div>
             </div>
+            <button class="identity-trocar" id="id-sino" onclick="irParaAvisos()" title="Seus avisos" style="margin-right:6px">🔔</button>
             <button class="identity-trocar" onclick="trocarFilho()" title="Sair desta conta">trocar</button>
           </div>
 
@@ -1479,7 +1480,14 @@ function ligarAbas() {
 // desligado e a informação sumia, sem ninguém saber que sumiu.
 //
 // Aqui o recado fica. Quem não recebeu abre e lê.
+// O sino no cabeçalho. A barra de abas some quando a página rola, e um aviso
+// novo tem que ser alcançável de onde a pessoa estiver — inclusive antes de ela
+// descobrir que existe uma aba chamada Avisos.
+window.irParaAvisos = function() { mostrarAba('avisos'); };
+
 function pontoDaAba(n) {
+  const sino = document.getElementById('id-sino');
+  if (sino) sino.textContent = n > 0 ? `🔔 ${n > 9 ? '9+' : n}` : '🔔';
   const p = document.getElementById('aba-pt-avisos');
   if (!p) return;
   p.textContent = n > 9 ? '9+' : String(n || '');
