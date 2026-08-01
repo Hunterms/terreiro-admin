@@ -1036,26 +1036,107 @@ async function renderPushCard(filho) {
   if (!card) return;
 
   const motivo = await Push.diagnostico();
-  if (motivo === 'sem_suporte' || motivo === 'sem_chave') { card.style.display = 'none'; return; }
+  if (motivo === 'sem_chave') { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  if (motivo === 'ios_precisa_instalar') {
-    card.innerHTML = `<div class="card" style="padding:14px;font-size:13px;line-height:1.6;color:var(--text2)">
-      📲 <strong>Receber avisos no iPhone</strong><br/>
-      Toque em <strong>Compartilhar</strong> e depois em <strong>Adicionar à Tela de Início</strong>.
-      Abra por lá e o botão de ativar aparece aqui.
-    </div>`;
+  const passo = Push.passoInstalacao();
+
+  // Redesenha sozinho quando o convite do navegador chega (ele vem cedo, às
+  // vezes depois desta função rodar) ou quando a pessoa instala por fora.
+  Push.aoMudarInstalacao(() => renderPushCard(filho));
+
+  const caixa = (dentro) => {
+    card.innerHTML = `<div class="card" style="padding:16px">${dentro}</div>`;
+  };
+  const titulo = (t, sub) => `
+    <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">${t}</div>
+    ${sub ? `<div style="font-size:12.5px;color:var(--text2);margin-top:5px;line-height:1.5">${sub}</div>` : ''}`;
+
+  // ── 1. Ainda não instalou ───────────────────────────────────────────────
+  //
+  // Instalar vem antes de avisos nos dois sistemas, e isso é escolha. No
+  // Android o push funcionaria sem instalar, mas duas histórias diferentes pro
+  // mesmo pedido é o que faz ninguém conseguir ajudar ninguém por telefone.
+
+  if (passo === 'pode_instalar') {
+    caixa(`
+      ${titulo('Deixe o Candieiro na sua tela de início',
+               'Vira um app: abre direto, sem procurar o link, e é por ele que chegam os avisos de escala, tarefa e contribuição.')}
+      <button class="btn btn-primary" id="inst-btn" style="width:100%;margin-top:12px">Instalar</button>`);
+    document.getElementById('inst-btn').onclick = async (ev) => {
+      ev.currentTarget.disabled = true;
+      const r = await Push.instalar();
+      if (r === 'recusado') toast('Sem problema. Quando quiser, recarrega a página que eu ofereço de novo.');
+      renderPushCard(filho);
+    };
+    return;
+  }
+
+  if (passo === 'ios_safari') {
+    // A Apple não expõe API de instalação. Sobra instrução, então ela é
+    // numerada e desenha o ícone que a pessoa vai procurar de verdade.
+    const setaCompartilhar = `<svg width="15" height="19" viewBox="0 0 15 19" fill="none" style="vertical-align:-3px" aria-hidden="true">
+      <path d="M7.5 1L7.5 12M7.5 1L4 4.5M7.5 1L11 4.5" stroke="#0a84ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M2.5 8H1.5V17.5H13.5V8H12.5" stroke="#0a84ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    caixa(`
+      ${titulo('Deixe o Candieiro na sua tela de início',
+               'No iPhone os avisos só existem depois disso. Não é escolha nossa, é da Apple.')}
+      <ol style="margin:12px 0 0;padding-left:20px;font-size:13px;color:var(--text2);line-height:1.9">
+        <li>Toque em ${setaCompartilhar} <strong style="color:var(--text)">Compartilhar</strong>, na barra de baixo</li>
+        <li>Role e toque em <strong style="color:var(--text)">Adicionar à Tela de Início</strong></li>
+        <li>Abra o Candieiro pelo ícone novo</li>
+      </ol>
+      <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">O botão de ativar avisos aparece aqui assim que você abrir por lá.</div>`);
+    return;
+  }
+
+  if (passo === 'ios_outro') {
+    // Chrome no iPhone é o Safari por dentro, mas sem o menu de instalar.
+    // Dizer "use o Safari" é a única saída, e é melhor dizer que deixar a
+    // pessoa procurar um item de menu que não existe.
+    caixa(`
+      ${titulo('Abra esta página no Safari',
+               'No iPhone só o Safari consegue instalar o app na tela de início, e é a instalação que libera os avisos. Copie o endereço e abra por lá.')}
+      <button class="btn" id="inst-copiar" style="width:100%;margin-top:12px">Copiar o endereço</button>`);
+    document.getElementById('inst-copiar').onclick = async (ev) => {
+      try {
+        await navigator.clipboard.writeText(location.href);
+        ev.currentTarget.textContent = 'Copiado ✓';
+      } catch { ev.currentTarget.textContent = location.href; }
+    };
+    return;
+  }
+
+  // ── 2. Instalado (ou navegador que não instala): os avisos ──────────────
+
+  if (motivo === 'sem_suporte') {
+    // Só vale a pena dizer isso a quem já instalou; pra quem não instalou, o
+    // cartão de instalação acima já era a conversa certa.
+    if (passo !== 'instalado') { card.style.display = 'none'; return; }
+    caixa(titulo('Avisos não funcionam neste navegador',
+                 'O app está instalado e funciona. Só as notificações que este navegador não entrega.'));
+    return;
+  }
+
+  if (motivo === 'bloqueado') {
+    caixa(`
+      ${titulo('Você bloqueou as notificações deste site',
+               'Dá pra desfazer: nos ajustes do navegador, procure as permissões deste site e volte as notificações pra "perguntar" ou "permitir". Depois recarregue a página.')}`);
     return;
   }
 
   const ligado = Push.ativo();
-  card.innerHTML = `<div class="card" style="padding:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-    <div style="flex:1;min-width:180px;font-size:13px;line-height:1.55;color:var(--text2)">
-      <strong style="color:var(--text)">${ligado ? 'Avisos ligados neste aparelho' : 'Receber avisos no celular'}</strong><br/>
-      <span style="font-size:12px">Escala, tarefa e contribuição do mês — direto na tela, sem precisar abrir o site.</span>
+  const instaladoAgora = passo === 'instalado';
+  caixa(`
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        ${titulo(ligado ? 'Avisos ligados neste aparelho' : 'Receber avisos no celular',
+                 'Escala, tarefa e contribuição do mês, direto na tela, sem precisar abrir o site.')}
+      </div>
+      <button class="btn${ligado ? '' : ' btn-primary'}" id="push-btn">${ligado ? 'Desligar' : 'Ativar'}</button>
     </div>
-    <button class="btn" id="push-btn">${ligado ? 'Desligar' : 'Ativar'}</button>
-  </div>`;
+    ${instaladoAgora ? '' : `<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Dica: instale o Candieiro na tela de início pelo menu do navegador. Os avisos chegam melhor, e você abre direto pelo ícone.</div>`}`);
 
   document.getElementById('push-btn').onclick = async () => {
     const btn = document.getElementById('push-btn');
