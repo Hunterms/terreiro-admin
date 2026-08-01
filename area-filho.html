@@ -226,6 +226,39 @@ a.dash-link:active{transform:scale(.99)}
 
 .help{font-size:13px;color:var(--text3);line-height:1.5;padding:12px 14px;background:var(--glass2);border-radius:8px;margin-bottom:14px}
 
+/* ── BARRA DE ABAS ────────────────────────────────────────────────────────
+   Todo app de celular tem abas embaixo, e a área do filho é um app instalado.
+   Dez acordeões irmãos eram uma lista plana: cada coisa nova virava a décima
+   primeira e a página só crescia pra baixo. Com abas, coisa nova entra numa
+   aba que já existe.
+
+   Fixa no rodapé, com respiro pro notch do iPhone (`safe-area-inset-bottom`).
+   Sem isso, no iPhone X pra frente o último botão fica embaixo da barra de
+   gestos e vira intocável. */
+.abas{position:fixed;left:0;right:0;bottom:0;z-index:900;display:flex;background:rgba(13,13,13,.97);backdrop-filter:blur(14px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom,0)}
+.aba-btn{flex:1;padding:9px 2px 7px;background:none;border:none;font-family:var(--font);color:var(--text3);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;-webkit-tap-highlight-color:transparent}
+.aba-btn .ic{font-size:17px;line-height:1}
+.aba-btn .rot{font-size:10px;font-weight:650;letter-spacing:.01em}
+.aba-btn[aria-selected="true"]{color:var(--gold)}
+.aba-btn:focus-visible{outline:2px solid var(--gold);outline-offset:-3px;border-radius:8px}
+.aba-pt{position:absolute;top:6px;right:calc(50% - 16px);min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--red);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--bg)}
+/* A aba esconde com !important pra conviver com o `style.display` que catorze
+   render functions já escrevem por conta própria. Basta uma das duas dizer não
+   pra seção sumir — que é o comportamento certo: a aba diz "não é aqui", o
+   papel diz "não é pra você". */
+.fora-da-aba{display:none !important}
+/* Com abas, as duas colunas viram estorvo: as seções de uma aba se dividiriam
+   entre elas, e a outra ficaria vazia na maioria das abas. Vira coluna única,
+   com largura de leitura. E os títulos "Área da comunidade" / "Meu painel"
+   somem — quem nomeia a seção agora é a aba acesa. */
+body.com-abas .painel-grid{grid-template-columns:1fr;gap:0;max-width:620px;margin:0 auto}
+body.com-abas .col-titulo{display:none}
+/* O corpo precisa caber acima da barra, senão o último card fica escondido. */
+body.com-abas{padding-bottom:calc(78px + env(safe-area-inset-bottom,0))}
+/* Com abas, as seções param de ser sanfona: a aba já é o recolher. */
+body.com-abas .dash-secao > summary{cursor:default}
+body.com-abas .dash-chevron{display:none}
+
 /* ── CAIXA DE AVISOS ─────────────────────────────────────────────────────
    O não lido é marcado por fundo e por um ponto, não só por peso da fonte:
    negrito sozinho some pra quem enxerga pouco, e some de vez em tela pequena
@@ -329,7 +362,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         <div id="eventos-filho-container"></div>
         <div id="giras-container"></div>
 
-        <details class="dash-secao" id="dash-sec-rega">
+        <details class="dash-secao" id="dash-sec-rega" data-aba="agenda">
           <summary>
             <div class="dash-head-text">
               <h2>💧 Escala de rega <span class="dash-badge muted" id="dash-cnt-rega"></span></h2>
@@ -389,7 +422,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <!-- Ordem: Tarefas → Escalas → Reembolso → Disponibilidade → Afilhados -->
 
           <!-- Mensalidade do mês (escondida até o Worker responder) -->
-          <details class="dash-secao" id="dash-sec-avisos" style="display:none" open>
+          <details class="dash-secao" id="dash-sec-avisos" data-aba="avisos" style="display:none" open>
             <summary>
               <div class="dash-head-text">
                 <h2>🔔 Seus avisos <span class="dash-badge" id="dash-cnt-avisos"></span></h2>
@@ -402,7 +435,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             </div>
           </details>
 
-          <details class="dash-secao" id="dash-sec-mensalidade" style="display:none">
+          <details class="dash-secao" id="dash-sec-mensalidade" data-aba="mensalidade" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>💰 Minha mensalidade <span class="dash-badge" id="dash-cnt-mensalidade"></span></h2>
@@ -416,7 +449,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Tarefas (kanban) -->
-          <details class="dash-secao" id="dash-sec-tarefas">
+          <details class="dash-secao" id="dash-sec-tarefas" data-aba="inicio">
             <summary>
               <div class="dash-head-text">
                 <h2>✅ Minhas tarefas <span class="dash-badge" id="dash-cnt-tarefas"></span></h2>
@@ -430,7 +463,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Perguntas da casa (quiz/alinhamento de conhecimento) -->
-          <details class="dash-secao" id="dash-sec-perguntas" style="display:none">
+          <details class="dash-secao" id="dash-sec-perguntas" data-aba="inicio" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>❓ Perguntas pra você <span class="dash-badge" id="dash-cnt-perguntas"></span></h2>
@@ -444,7 +477,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Lista de afazeres da casa (tarefas abertas pra qualquer um pegar) -->
-          <details class="dash-secao" id="dash-sec-afazeres" style="display:none">
+          <details class="dash-secao" id="dash-sec-afazeres" data-aba="casa" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>📝 Lista de afazeres da casa <span class="dash-badge" id="dash-cnt-afazeres"></span></h2>
@@ -458,7 +491,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Próximas escalas -->
-          <details class="dash-secao" id="dash-sec-escalas">
+          <details class="dash-secao" id="dash-sec-escalas" data-aba="agenda">
             <summary>
               <div class="dash-head-text">
                 <h2>📅 Minhas próximas escalas <span class="dash-badge" id="dash-cnt-escalas"></span></h2>
@@ -472,7 +505,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Reembolso -->
-          <details class="dash-secao" id="dash-sec-reemb">
+          <details class="dash-secao" id="dash-sec-reemb" data-aba="mensalidade">
             <summary>
               <div class="dash-head-text">
                 <h2>💸 Pedir reembolso <span class="dash-badge" id="dash-cnt-reemb"></span></h2>
@@ -487,7 +520,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Disponibilidade do mês -->
-          <details class="dash-secao" id="dash-sec-disp">
+          <details class="dash-secao" id="dash-sec-disp" data-aba="agenda">
             <summary>
               <div class="dash-head-text">
                 <h2>📋 Minha disponibilidade <span class="dash-badge muted" id="dash-cnt-disp"></span></h2>
@@ -501,7 +534,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Afilhados (só aparece se for padrinho/madrinha) -->
-          <details class="dash-secao" id="dash-sec-afilhados" style="display:none">
+          <details class="dash-secao" id="dash-sec-afilhados" data-aba="casa" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>👥 Meus afilhados <span class="dash-badge" id="dash-cnt-afilhados"></span></h2>
@@ -515,7 +548,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Lojinha — só aparece pra quem gerencia (Giovana, Aline, etc.) -->
-          <details class="dash-secao" id="dash-sec-lojinha" style="display:none">
+          <details class="dash-secao" id="dash-sec-lojinha" data-aba="casa" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>🛍️ Escala da lojinha <span class="dash-badge" id="dash-cnt-lojinha"></span></h2>
@@ -529,7 +562,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           </details>
 
           <!-- Despensa — atalho pra página standalone (só pra quem gerencia) -->
-          <a href="https://hunterms.github.io/terreiro-admin/despensa.html" target="_blank" rel="noopener" class="dash-secao dash-link" id="dash-sec-despensa" style="display:none;text-decoration:none;color:inherit">
+          <a href="https://hunterms.github.io/terreiro-admin/despensa.html" target="_blank" rel="noopener" class="dash-secao dash-link" id="dash-sec-despensa" data-aba="casa" style="display:none;text-decoration:none;color:inherit">
             <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px">
               <div class="dash-head-text">
                 <h2>🏺 Despensa</h2>
@@ -821,6 +854,7 @@ async function selecionarFilho(id) {
     } catch(e) { console.warn('cfg agendamento', e); APP.cfgAgendamento = {}; }
   }
 
+  ligarAbas();
   renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
   renderAvisosInbox(); // idem — e é a única coisa que alcança quem não tem email
   renderDisp();
@@ -1375,6 +1409,60 @@ async function renderPushCard(filho) {
   };
 }
 
+// ── AS ABAS ───────────────────────────────────────────────────────────────
+//
+// A barra só aparece depois de entrar: antes disso a página é o seletor de
+// nomes mais o mural público, e cinco abas ali seriam navegação pra lugar
+// nenhum.
+//
+// Mostrar e esconder por atributo, e não movendo nó no DOM. Mover doze blocos
+// dentro de um arquivo de 2900 linhas é exatamente onde se perde um listener
+// sem ninguém notar — e o listener perdido só aparece no dia em que alguém
+// clica.
+//
+// Uma seção que a pessoa não pode ver (despensa sem gerência, afilhados sem
+// afilhado) continua com `display:none` decidido pelo dono dela. A aba nunca
+// mostra o que o papel esconde: quem manda é a regra mais restritiva.
+let _abaAtual = 'inicio';
+
+function mostrarAba(nome) {
+  _abaAtual = nome;
+  document.querySelectorAll('.aba-btn').forEach((b) => {
+    b.setAttribute('aria-selected', String(b.dataset.ir === nome));
+  });
+  // A aba esconde por CLASSE, e nunca escreve em `style.display`.
+  //
+  // Isso não é preciosismo: catorze lugares desta página já decidem
+  // `style.display` por conta própria — despensa só pra quem tem gerência,
+  // afilhados só pra padrinho, mensalidade só se o checkout estiver ligado.
+  // Se a aba escrevesse display, trocar de aba REVELARIA o que o papel esconde.
+  //
+  // Com classe + `!important`, as duas decisões convivem: a aba diz "não é
+  // aqui", o dono da seção diz "não é pra você", e basta uma delas pra sumir.
+  document.querySelectorAll('[data-aba]').forEach((sec) => {
+    const dessaAba = sec.dataset.aba === nome;
+    sec.classList.toggle('fora-da-aba', !dessaAba);
+    if (dessaAba && sec.tagName === 'DETAILS') sec.open = true;
+  });
+  // Início não tem seção própria: é o mural, os eventos e o cartão de cadastro,
+  // que vivem fora do sistema de abas.
+  ['avisos-container', 'eventos-filho-container', 'giras-container',
+   'aniversariantes-card', 'cadastro-card', 'push-card', 'actions-wrap'].forEach((id) => {
+    document.getElementById(id)?.classList.toggle('fora-da-aba', nome !== 'inicio');
+  });
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  if (nome === 'avisos') renderAvisosInbox();
+}
+
+function ligarAbas() {
+  document.querySelectorAll('.aba-btn').forEach((b) => {
+    b.onclick = () => mostrarAba(b.dataset.ir);
+  });
+  $('#abas').style.display = 'flex';
+  document.body.classList.add('com-abas');
+  mostrarAba('inicio');
+}
+
 // ── A CAIXA DE AVISOS ─────────────────────────────────────────────────────
 //
 // Existe por um número: dos 56 ativos, 31 não têm email, e o push exige
@@ -1383,6 +1471,13 @@ async function renderPushCard(filho) {
 // desligado e a informação sumia, sem ninguém saber que sumiu.
 //
 // Aqui o recado fica. Quem não recebeu abre e lê.
+function pontoDaAba(n) {
+  const p = document.getElementById('aba-pt-avisos');
+  if (!p) return;
+  p.textContent = n > 9 ? '9+' : String(n || '');
+  p.style.display = n > 0 ? 'flex' : 'none';
+}
+
 async function renderAvisosInbox() {
   const sec = $('#dash-sec-avisos');
   const cont = $('#avisos-inbox');
@@ -1403,6 +1498,7 @@ async function renderAvisosInbox() {
   const lista = d.avisos || [];
   cnt.textContent = d.nao_lidos ? `${d.nao_lidos} novo${d.nao_lidos === 1 ? '' : 's'}` : '';
   cnt.className = d.nao_lidos ? 'dash-badge' : 'dash-badge muted';
+  pontoDaAba(d.nao_lidos);
 
   if (!lista.length) {
     cont.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:14px 0;line-height:1.5">Nada por aqui ainda. Quando a casa te avisar de alguma coisa, ela fica guardada nesta lista.</div>';
@@ -1443,6 +1539,7 @@ async function renderAvisosInbox() {
       await Filhos.marcarAvisosLidos(APP.cfgAgendamento, APP.sessao);
       cnt.textContent = '';
       cnt.className = 'dash-badge muted';
+      pontoDaAba(0);
     } catch (e) { console.warn('marcar lidos', e); }
   }
 }
@@ -3177,5 +3274,12 @@ window.setTab = setTab;
 window.setSubTab = setSubTab;
 window._app = { salvar, toggleDiaRega, confirmarRega, limparCarrinho };
 </script>
+<nav class="abas" id="abas" role="tablist" aria-label="Seções da sua área" style="display:none">
+  <button class="aba-btn" role="tab" data-ir="inicio"      aria-selected="true"><span class="ic">🏠</span><span class="rot">Início</span></button>
+  <button class="aba-btn" role="tab" data-ir="avisos"      aria-selected="false"><span class="ic">🔔</span><span class="rot">Avisos</span><span class="aba-pt" id="aba-pt-avisos" style="display:none"></span></button>
+  <button class="aba-btn" role="tab" data-ir="agenda"      aria-selected="false"><span class="ic">📅</span><span class="rot">Agenda</span></button>
+  <button class="aba-btn" role="tab" data-ir="mensalidade" aria-selected="false"><span class="ic">💰</span><span class="rot">Mensalidade</span></button>
+  <button class="aba-btn" role="tab" data-ir="casa"        aria-selected="false"><span class="ic">🏺</span><span class="rot">Casa</span></button>
+</nav>
 </body>
 </html>
