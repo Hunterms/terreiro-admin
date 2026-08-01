@@ -12,8 +12,15 @@
  *                       compara o valor, e só então marca pago no Firestore.
  *   POST /filhos     → o elenco pro seletor, SEM telefone/valor/email/obs.
  *                       Público: é o que as páginas sem login mostram.
- *   POST /entrar     → confere os 4 dígitos. A conferência era no navegador,
+ *   POST /entrar     → confere PIN (ou telefone, na primeira vez) e devolve
+ *                       uma sessão assinada. A conferência era no navegador,
  *                       contra dado que o navegador tinha baixado.
+ *   POST /avisos     → a caixa de avisos do filho. O push é entrega; ISTO é
+ *                       o registro, e é o único canal que alcança os 31 que
+ *                       não têm email.
+ *   POST /avisos-lidos → marca tudo até agora como lido.
+ *   POST /criar-pin  → o filho escolhe o PIN. Obrigatório na primeira vez.
+ *   POST /zerar-pin  → admin devolve alguém pro modo telefone (esqueceu).
  *   POST /meu-cadastro → o filho grava a própria data de nascimento e email.
  *                       Só esses dois; o resto do cadastro é da administração.
  *   POST /mensalidade → quanto o filho deve neste mês (prova: 4 dígitos do tel).
@@ -174,6 +181,10 @@ export default {
       if (rota === '/lote') return await rotaLote(body, request, env);
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
+      if (rota === '/avisos') return await rotaAvisos(body, env);
+      if (rota === '/avisos-lidos') return await rotaAvisosLidos(body, env);
+      if (rota === '/criar-pin') return await rotaCriarPin(body, env);
+      if (rota === '/zerar-pin') return await rotaZerarPin(body, request, env);
       if (rota === '/meu-cadastro') return await rotaMeuCadastro(body, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/mensalidade-ajuste') return await rotaMensalidadeAjuste(body, env);
@@ -801,6 +812,20 @@ async function enviarLembreteDeUm(env, ciclo, filhoId) {
     lembrete_valor: valor,
   });
 
+  // O email alcança 29 dos 56. Os outros 27 só ficam sabendo se estiver escrito
+  // na área deles — e agora está, mesmo pra quem não tem email nem celular
+  // registrado. Sem push aqui: o email já foi, dois toques pelo mesmo assunto
+  // é o caminho pra pessoa desligar os dois.
+  await avisar(env, token, {
+    para: 'filho', filho_id: filhoId, push: false,
+    titulo: `Sua contribuição de ${nomeDoMes(ciclo)}`,
+    corpo: venc
+      ? `${brl(valor)}, até ${venc.slice(8, 10)}/${venc.slice(5, 7)}. Dá pra pagar pela sua área.`
+      : `${brl(valor)}. Dá pra pagar pela sua área.`,
+    url: 'area-filho.html',
+    tag: `mensalidade-${ciclo}`,
+  });
+
   return { ok: true, filho_id: filhoId, nome: f.nome || '', email, valor };
 }
 
@@ -968,6 +993,105 @@ async function mandarPush(env, { titulo, corpo, url, papel, filho_id, tag }) {
   }
 }
 
+// ── A CAIXA DE AVISOS ──────────────────────────────────────────────────────
+//
+// Até aqui a notificação era o único registro dela mesma. Celular desligado,
+// app não instalado, pessoa que limpou a tela — a informação sumia, e ninguém
+// ficava sabendo que sumiu.
+//
+// Medido em 01/08, entre os 56 ativos: 31 não têm email, e o push exige
+// instalar (no iPhone, obrigatoriamente). Mais da metade da casa não tinha
+// nenhum canal garantido.
+//
+// Então a ordem se inverte. O REGISTRO passa a ser a fonte, e o push vira uma
+// das formas de entregar. Quem não recebeu abre a área e o recado está lá.
+//
+// ── COMO "LIDO" É GUARDADO ────────────────────────────────────────────────
+// Um campo por PESSOA (`adm_avisos_lidos/{filho_id}.ate`), não um por aviso.
+//
+// Marcar aviso a aviso pediria um doc por par pessoa×aviso, ou um array que
+// cresce pra sempre. Com "li até tal hora", é um doc minúsculo por filho, o
+// broadcast e o pessoal funcionam pelo mesmo caminho, e abrir a aba já é o
+// gesto que marca. O que se perde é marcar um aviso do meio como não lido —
+// e ninguém pediu isso.
+
+/**
+ * Registra o aviso e, se der, empurra pro celular. Nesta ordem, de propósito:
+ * push que falha não pode levar o registro junto.
+ *
+ * `filho_id` ausente com `para: 'filho'` é recado pra casa inteira.
+ */
+async function avisar(env, token, { para, filho_id, titulo, corpo, url, tag, push = true }) {
+  // 'admin' | 'filho' (com filho_id) | 'todos' (a casa inteira)
+  const alvo = para || (filho_id ? 'filho' : 'todos');
+  try {
+    await fsCreate(PROJETO_PVD, 'adm_notificacoes', token, {
+      para: alvo,
+      filho_id: filho_id || null,
+      titulo: String(titulo || '').slice(0, 140),
+      corpo: String(corpo || '').slice(0, 400),
+      url: url || null,
+      tag: tag || null,
+      criadoEm: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('não consegui registrar o aviso', e?.message || e);
+  }
+  // 'todos' NÃO empurra por aqui: recado pra casa inteira é fila (60 aparelhos
+  // estouram o teto de subrequests numa invocação só). Quem cuida disso é o
+  // `drenarFilaDeAvisos`, um lote por batida do cron.
+  if (push && alvo !== 'todos') {
+    await mandarPush(env, { titulo, corpo, url, tag, papel: alvo, filho_id });
+  }
+}
+
+/** Os avisos de quem chamou, do mais novo pro mais velho. */
+async function rotaAvisos(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  // Duas queries em vez de um OR: o `compositeFilter` com OR existe no
+  // Firestore, mas exige índice composto pra ordenar junto. Duas leituras
+  // simples usam o índice automático e não pedem nada de ninguém.
+  const [meus, daCasa] = await Promise.all([
+    fsQuery(PROJETO_PVD, 'adm_notificacoes', token, { campo: 'filho_id', valor: quem.id }, 60),
+    fsQuery(PROJETO_PVD, 'adm_notificacoes', token, { campo: 'para', valor: 'todos' }, 60),
+  ]);
+
+  const lidos = await fsGet(PROJETO_PVD, 'adm_avisos_lidos', quem.id, { token });
+  const ate = lidos?.ate || '';
+
+  const lista = [...meus, ...daCasa]
+    .sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')))
+    .slice(0, 50)
+    .map((n) => ({
+      id: n.id,
+      titulo: n.titulo || '',
+      corpo: n.corpo || '',
+      url: n.url || null,
+      criadoEm: n.criadoEm || null,
+      lido: !!ate && String(n.criadoEm || '') <= ate,
+      da_casa: !n.filho_id,
+    }));
+
+  return json({ avisos: lista, nao_lidos: lista.filter((n) => !n.lido).length });
+}
+
+/** Marca tudo até agora como lido. Chamado quando a aba de avisos abre. */
+async function rotaAvisosLidos(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const ate = new Date().toISOString();
+  const campos = { ate, filho_id: quem.id };
+  if ((await fsCreateComId(PROJETO_PVD, 'adm_avisos_lidos', quem.id, token, campos)) === 'existe') {
+    await fsPatch(PROJETO_PVD, 'adm_avisos_lidos', quem.id, token, campos);
+  }
+  return json({ ok: true, ate });
+}
+
 // ── FILA DE AVISO PROS FILHOS ──────────────────────────────────────────────
 //
 // O mural (`adm_avisos`) manda push pra casa inteira, e é a única coisa aqui
@@ -1002,6 +1126,17 @@ async function drenarFilaDeAvisos(env, token) {
   if (!restantes) {
     restantes = (await fsQuery(PROJETO_PVD, 'adm_push_tokens', token, { campo: 'papel', valor: 'filho' }))
       .map((t) => t.id);
+    // O registro sai UMA vez, na largada, e alcança a casa inteira — inclusive
+    // quem não tem celular registrado e nunca receberia o push. É o ponto todo
+    // da caixa de avisos: entrega falha, registro não.
+    await avisar(env, token, {
+      para: 'todos',
+      titulo: aviso.titulo || 'Aviso do terreiro',
+      corpo: (aviso.corpo || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      url: 'area-filho.html',
+      tag: `aviso-${aviso.id}`,
+      push: false,
+    });
   }
 
   const lote = restantes.slice(0, AVISO_LOTE);
@@ -1344,22 +1479,13 @@ function fmtDataHora(s) {
 // Assim ninguém fica sem poder pagar por causa de lote não rodado.
 
 async function rotaMensalidade(body, env) {
-  const { filho_id, tel4 } = body || {};
   const ciclo = body?.ciclo || cicloAtual();
-
-  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
-    return json({ error: 'filho_id inválido' }, 400);
-  }
   if (!/^\d{4}-\d{2}$/.test(ciclo)) return json({ error: 'ciclo inválido' }, 400);
 
   const token = await tokenGoogle(env);
-  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filho_id, { token });
-  if (!filho) return json({ error: 'filho não encontrado' }, 404);
-
-  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
-  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
-  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
-  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+  const { id: filho_id, filho } = quem;
 
   const base = Number(filho.valor) || 0;
   if (base <= 0) return json({ isento: true, ciclo });
@@ -1439,7 +1565,7 @@ export function podeAjustar(ciclo, hoje = hojeSP()) {
 // Agora a collection é fechada e o elenco vem por aqui, sem os cinco campos.
 // O custo honesto: se o Worker cair, o seletor não carrega. A área do filho já
 // dependia dele pra mensalidade, checkout e push — agora depende pra abrir.
-const CAMPOS_PRIVADOS = ['tel', 'pin', 'auth_email', 'obs', 'valor'];
+const CAMPOS_PRIVADOS = ['tel', 'pin', 'pin_hash', 'pin_criado_em', 'auth_email', 'obs', 'valor'];
 
 async function rotaFilhos(env) {
   const token = await tokenGoogle(env);
@@ -1456,6 +1582,143 @@ async function rotaFilhos(env) {
 
   limpos.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
   return json({ filhos: limpos });
+}
+
+// ── PIN, SESSÃO E LIMITE DE TENTATIVA ──────────────────────────────────────
+//
+// O telefone deixou de ser público em 01/08, mas continuava sendo a chave. Duas
+// pessoas da casa que se conhecem sabem o número uma da outra, e pronto.
+//
+// Agora cada um escolhe um PIN de 4 dígitos. O telefone vira só a porta da
+// PRIMEIRA vez — depois disso ele não abre mais nada.
+//
+// ── COMO O PIN É GUARDADO ─────────────────────────────────────────────────
+// HMAC-SHA256 com o `ADMIN_SECRET` do Worker como PIMENTA (pepper), não hash
+// simples nem PBKDF2.
+//
+// O motivo é honesto: 4 dígitos são 10 mil combinações. Qualquer hash, por mais
+// caro que seja, cai num sábado de GPU se o banco vazar. PBKDF2 daria a
+// sensação de segurança sem a coisa.
+//
+// A pimenta muda o jogo porque ela NÃO está no Firestore: vive só nas variáveis
+// do Worker. Vazar o banco inteiro não basta pra testar um único palpite — é
+// preciso vazar o Cloudflare também. É a diferença entre "10 mil tentativas
+// offline" e "não dá pra tentar".
+//
+// Consequência que precisa estar escrita: trocar o ADMIN_SECRET invalida os 60
+// PINs de uma vez. Se um dia isso for necessário, todo mundo volta pro modo
+// telefone — e é por isso que o modo telefone não pode ser removido do código.
+export async function pinHash(env, filhoId, pin) {
+  const chave = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(env.ADMIN_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const mac = await crypto.subtle.sign('HMAC', chave, new TextEncoder().encode(`${filhoId}:${pin}`));
+  return b64url(mac);
+}
+
+/** Comparação em tempo constante. Paranoia barata, e o custo é zero. */
+export function igual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+// ── SESSÃO ────────────────────────────────────────────────────────────────
+//
+// Depois do primeiro acerto o navegador guarda um token assinado, não o PIN.
+// Assim o segredo não fica em disco no aparelho, e cada rota confere a
+// assinatura em vez de reconferir a senha.
+const SESSAO_DIAS = 30;
+
+export async function assinarSessao(env, filhoId) {
+  const exp = Math.floor(Date.now() / 1000) + SESSAO_DIAS * 86400;
+  const corpo = b64url(JSON.stringify({ f: String(filhoId), e: exp }));
+  return `${corpo}.${await pinHash(env, 'sessao', corpo)}`;
+}
+
+/** Devolve o filho_id se o token vale, ou null. Nunca lança. */
+export async function lerSessao(env, token) {
+  try {
+    const [corpo, sig] = String(token || '').split('.');
+    if (!corpo || !sig) return null;
+    if (!igual(sig, await pinHash(env, 'sessao', corpo))) return null;
+    const { f, e } = JSON.parse(atob(corpo.replace(/-/g, '+').replace(/_/g, '/')));
+    if (!f || !e || e < Math.floor(Date.now() / 1000)) return null;
+    return String(f);
+  } catch { return null; }
+}
+
+// ── LIMITE DE TENTATIVA ───────────────────────────────────────────────────
+//
+// Quatro dígitos sem limite são 10 mil palpites pra quem tiver paciência e um
+// laço. Cinco erros travam o cadastro por 10 minutos.
+//
+// O contador mora num doc por filho (`adm_tentativas/{filho_id}`), e não em
+// memória: o Worker é distribuído, e uma variável de módulo contaria errado —
+// cada região com a própria conta, o que na prática multiplica o limite.
+const ERROS_ATE_TRAVAR = 5;
+const TRAVA_MINUTOS = 10;
+
+async function checarTrava(token, filhoId) {
+  const d = await fsGet(PROJETO_PVD, 'adm_tentativas', filhoId, { token });
+  if (!d?.travado_ate) return null;
+  const falta = Math.ceil((new Date(d.travado_ate).getTime() - Date.now()) / 60000);
+  return falta > 0 ? falta : null;
+}
+
+async function registrarErro(token, filhoId) {
+  const d = (await fsGet(PROJETO_PVD, 'adm_tentativas', filhoId, { token })) || {};
+  const n = (Number(d.erros) || 0) + 1;
+  const patch = { erros: n, ultimo_em: new Date().toISOString() };
+  if (n >= ERROS_ATE_TRAVAR) {
+    patch.travado_ate = new Date(Date.now() + TRAVA_MINUTOS * 60000).toISOString();
+    patch.erros = 0; // trava e zera: a próxima rodada recomeça a contagem
+  }
+  // Cria, e se já existe, atualiza. O 409 do create é o que evita ler antes só
+  // pra saber qual das duas chamadas fazer.
+  if ((await fsCreateComId(PROJETO_PVD, 'adm_tentativas', filhoId, token, patch)) === 'existe') {
+    await fsPatch(PROJETO_PVD, 'adm_tentativas', filhoId, token, patch).catch(() => {});
+  }
+}
+
+async function limparErros(token, filhoId) {
+  await fsPatch(PROJETO_PVD, 'adm_tentativas', filhoId, token,
+    { erros: 0, travado_ate: null }).catch(() => {});
+}
+
+/**
+ * Quem está falando? Aceita a sessão assinada OU a prova de 4 dígitos.
+ *
+ * Existe pra sessão e prova não virarem dois caminhos de código em cada rota —
+ * quando isso acontece, uma delas ganha uma checagem que a outra não tem, e a
+ * diferença só aparece no dia do problema.
+ *
+ * Devolve `{ id, filho }` no acerto, ou `{ erro, status }`.
+ */
+async function quemFala(body, env, token) {
+  const daSessao = await lerSessao(env, body?.sessao);
+  const id = daSessao || String(body?.filho_id || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return { erro: 'filho_id inválido', status: 400 };
+
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', id, { token });
+  if (!filho) return { erro: 'filho não encontrado', status: 404 };
+  if (daSessao) return { id, filho };
+
+  const falta = await checarTrava(token, id);
+  if (falta) return { erro: `Muitas tentativas. Tenta em ${falta} min.`, status: 429 };
+
+  const digitado = String(body?.tel4 || '').replace(/\D/g, '').slice(-4);
+  const tel = String(filho.tel || '').replace(/\D/g, '');
+  const ok = filho.pin_hash
+    ? igual(filho.pin_hash, await pinHash(env, id, digitado))
+    : (tel.length >= 4 && digitado === tel.slice(-4));
+  if (!ok) {
+    await registrarErro(token, id);
+    return { erro: 'não confere', status: 403 };
+  }
+  return { id, filho };
 }
 
 // ── ENTRAR: A PROVA DOS 4 DÍGITOS, AGORA DO LADO DE CÁ ─────────────────────
@@ -1475,27 +1738,119 @@ async function rotaEntrar(body, env) {
   if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
     return json({ error: 'filho_id inválido' }, 400);
   }
-
+  const id = String(filho_id);
   const token = await tokenGoogle(env);
-  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', String(filho_id), { token });
-  if (!filho) return json({ error: 'filho não encontrado' }, 404);
 
-  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
-  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
-  if (!esperado) {
-    return json({ error: 'seu cadastro não tem telefone nem PIN. Fala com a administração.' }, 409);
+  const falta = await checarTrava(token, id);
+  if (falta) {
+    return json({ error: `Muitas tentativas. Tenta de novo em ${falta} minuto${falta === 1 ? '' : 's'}.`, travado: true }, 429);
   }
 
-  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
-  if (recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', id, { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const digitado = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  if (digitado.length !== 4) return json({ error: 'são 4 números' }, 400);
+
+  // Quem já tem PIN entra SÓ por ele. O telefone não é aceito como alternativa
+  // — se fosse, o PIN seria decoração: bastaria conhecer o número pra pular.
+  const temPin = !!filho.pin_hash;
+  const confere = temPin
+    ? igual(filho.pin_hash, await pinHash(env, id, digitado))
+    : (() => {
+        const tel = String(filho.tel || '').replace(/\D/g, '');
+        return tel.length >= 4 && digitado === tel.slice(-4);
+      })();
+
+  if (!confere) {
+    await registrarErro(token, id);
+    return json({ error: 'não confere', usando: temPin ? 'pin' : 'telefone' }, 403);
+  }
+  await limparErros(token, id);
 
   return json({
     ok: true,
-    filho_id: String(filho_id),
+    filho_id: id,
     nome: filho.nome || '',
     tel: filho.tel || '',
     auth_email: filho.auth_email || null,
+    // Sem PIN ainda: a tela obriga a criar antes de mostrar a área. É uma vez
+    // só, pra todo mundo, e a partir dali o telefone não abre mais porta.
+    precisa_pin: !temPin,
+    sessao: await assinarSessao(env, id),
   });
+}
+
+// ── CRIAR E ZERAR O PIN ────────────────────────────────────────────────────
+//
+// Criar exige a prova de agora (telefone na primeira vez, PIN atual pra trocar).
+// Não basta a sessão: sessão é "você entrou faz um tempo", e trocar senha é
+// exatamente o momento em que isso não é suficiente.
+async function rotaCriarPin(body, env) {
+  const { filho_id, tel4, pin } = body || {};
+  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
+    return json({ error: 'filho_id inválido' }, 400);
+  }
+  const id = String(filho_id);
+  const novoPin = String(pin || '').replace(/\D/g, '');
+  if (novoPin.length !== 4) return json({ error: 'o PIN tem 4 números' }, 400);
+
+  // Recusa os óbvios. Não é teatro: com 10 mil combinações, quem for tentar
+  // adivinhar começa por 0000, 1234 e pelo ano de nascimento.
+  if (/^(\d)\1{3}$/.test(novoPin) || ['1234', '4321', '0123', '2580'].includes(novoPin)) {
+    return json({ error: 'esse PIN é fácil demais. Escolhe outro.' }, 400);
+  }
+
+  const token = await tokenGoogle(env);
+  const falta = await checarTrava(token, id);
+  if (falta) return json({ error: `Muitas tentativas. Tenta em ${falta} min.`, travado: true }, 429);
+
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', id, { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  const digitado = String(tel4 || '').replace(/\D/g, '').slice(-4);
+  const tel = String(filho.tel || '').replace(/\D/g, '');
+  const confere = filho.pin_hash
+    ? igual(filho.pin_hash, await pinHash(env, id, digitado))
+    : (tel.length >= 4 && digitado === tel.slice(-4));
+  if (!confere) {
+    await registrarErro(token, id);
+    return json({ error: 'a prova atual não confere' }, 403);
+  }
+
+  await fsPatch(PROJETO_PVD, 'fin_filhos', id, token, {
+    pin_hash: await pinHash(env, id, novoPin),
+    pin_criado_em: new Date().toISOString(),
+  });
+  await limparErros(token, id);
+  return json({ ok: true, sessao: await assinarSessao(env, id) });
+}
+
+/**
+ * Zera o PIN de alguém. Protegida pelo segredo do admin.
+ *
+ * Existe porque PIN obrigatório sem chaveiro é gente trancada do lado de fora:
+ * 31 dos 56 não têm email, não há SMS, e portanto não há recuperação
+ * automática possível. Quem esquece procura a administração, e a administração
+ * precisa de um botão.
+ *
+ * Zerar devolve a pessoa pro modo telefone — ela entra com os 4 dígitos e cria
+ * um PIN novo na hora seguinte.
+ */
+async function rotaZerarPin(body, request, env) {
+  const barrado = checarSegredo(request, env);
+  if (barrado) return barrado;
+
+  const id = String(body?.filho_id || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return json({ error: 'filho_id inválido' }, 400);
+
+  const token = await tokenGoogle(env);
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', id, { token });
+  if (!filho) return json({ error: 'filho não encontrado' }, 404);
+
+  await fsPatch(PROJETO_PVD, 'fin_filhos', id, token, { pin_hash: null, pin_criado_em: null });
+  await limparErros(token, id);
+  return json({ ok: true, nome: filho.nome || '', voltou_pro_telefone: true });
 }
 
 // ── O FILHO EDITANDO O PRÓPRIO CADASTRO ────────────────────────────────────
@@ -1511,19 +1866,11 @@ async function rotaEntrar(body, env) {
 // Agora passa por aqui, com a mesma prova do /entrar, e são só estes dois
 // campos: o resto do cadastro continua sendo da administração.
 async function rotaMeuCadastro(body, env) {
-  const { filho_id, tel4, data_nascimento, auth_email } = body || {};
-  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
-    return json({ error: 'filho_id inválido' }, 400);
-  }
-
+  const { data_nascimento, auth_email, mora_perto, trabalha_clt } = body || {};
   const token = await tokenGoogle(env);
-  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', String(filho_id), { token });
-  if (!filho) return json({ error: 'filho não encontrado' }, 404);
-
-  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
-  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
-  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
-  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+  const filho_id = quem.id;
 
   const patch = {};
   if (data_nascimento !== undefined) {
@@ -1543,6 +1890,12 @@ async function rotaMeuCadastro(body, env) {
     }
     patch.auth_email = e;
   }
+  // Só o que é conhecimento DELE. Posto, padrinho, valor e prazo são decisão da
+  // casa, e deixar alguém declarar o próprio posto é deixar a pessoa se dar uma
+  // função. Campo da casa não entra nesta lista, nunca.
+  if (mora_perto !== undefined) patch.mora_perto = !!mora_perto;
+  if (trabalha_clt !== undefined) patch.trabalha_clt = !!trabalha_clt;
+
   if (!Object.keys(patch).length) return json({ error: 'nada pra salvar' }, 400);
 
   patch.atualizadoEm = new Date().toISOString();
@@ -1578,13 +1931,10 @@ export function dataDeAjusteValida(data, ciclo, hoje) {
 }
 
 async function rotaMensalidadeAjuste(body, env) {
-  const { filho_id, tel4, tipo, data, motivo } = body || {};
+  const { tipo, data, motivo } = body || {};
   const ciclo = cicloAtual();
   const hoje = hojeSP();
 
-  if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
-    return json({ error: 'filho_id inválido' }, 400);
-  }
   if (tipo !== 'data' && tipo !== 'isencao') {
     return json({ error: "tipo tem que ser 'data' ou 'isencao'" }, 400);
   }
@@ -1593,13 +1943,9 @@ async function rotaMensalidadeAjuste(body, env) {
   }
 
   const token = await tokenGoogle(env);
-  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filho_id, { token });
-  if (!filho) return json({ error: 'filho não encontrado' }, 404);
-
-  const telLimpo = String(filho.tel || '').replace(/\D/g, '');
-  const esperado = telLimpo.length >= 4 ? telLimpo.slice(-4) : filho.pin || null;
-  const recebido = String(tel4 || '').replace(/\D/g, '').slice(-4);
-  if (!esperado || recebido !== String(esperado)) return json({ error: 'não confere' }, 403);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+  const { id: filho_id, filho } = quem;
 
   if (!(Number(filho.valor) > 0)) return json({ error: 'você já é isento', isento: true }, 409);
   if (tipo === 'data' && !dataDeAjusteValida(data, ciclo, hoje)) {
