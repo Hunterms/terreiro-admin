@@ -1633,9 +1633,18 @@ async function renderMensalidade() {
   // Isenção aprovada zera o valor no Worker. Sem esta porta o cartão de baixo
   // desenharia um botão "Pagar R$ 0,00", que é pior que não desenhar nada.
   if (d.ajuste?.isencao_status === 'aprovada') {
-    cnt.textContent = 'isento este mês';
+    // "A isenção foi aprovada. Nada a pagar neste mês." era linguagem de
+    // repartição, no exato momento em que a casa está dizendo "a gente te
+    // segura". E a frase não respondia o que a pessoa realmente quer saber:
+    // se aquilo vira dívida depois.
+    cnt.textContent = 'resolvido';
     cnt.className = 'dash-badge muted';
-    cont.innerHTML = `<div class="aviso-box">A isenção de <strong style="color:var(--text)">${mes}</strong> foi aprovada. Nada a pagar neste mês.</div>`;
+    cont.innerHTML = `
+      <div class="aviso-box" style="border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.07)">
+        <strong style="color:var(--green)">Este mês tá resolvido.</strong>
+        Você não precisa pagar a contribuição de ${mes}.
+        Não fica pendente e não acumula. No mês que vem segue normal.
+      </div>`;
     return;
   }
 
