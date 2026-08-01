@@ -235,8 +235,47 @@ textarea.fi{min-height:60px;resize:vertical}
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
-  query, where, orderBy, serverTimestamp, onSnapshot
+  query, where, orderBy, serverTimestamp, onSnapshot as _onSnapshotOriginal
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
+
+// ── LEITURA QUE FALHA TEM QUE APARECER ────────────────────────────────────
+//
+// Medido em 01/08: 48 `onSnapshot` no sistema inteiro e UM com callback de
+// erro. Os outros 47 falhavam calados — a tela desenhava vazio, e vazio parece
+// dado, não defeito. Foi assim que a despensa passou um dia sumida, e que o
+// reembolso do filho ficou invisível de junho a julho.
+//
+// Em vez de editar 47 chamadas (e esquecer a 48ª, e as futuras), o `onSnapshot`
+// é embrulhado aqui, uma vez. Quem não passa tratamento de erro ganha este.
+// Chamada nova nasce protegida sem ninguém lembrar de nada.
+function _nomeDaFonte(ref) {
+  try {
+    return ref?.path
+        || ref?._query?.path?.segments?.join('/')
+        || ref?._delegate?._query?.path?.segments?.join('/')
+        || 'uma parte dos dados';
+  } catch { return 'uma parte dos dados'; }
+}
+
+function _falhaDeLeitura(ref, e) {
+  const fonte = _nomeDaFonte(ref);
+  console.error('leitura falhou:', fonte, e);
+  let b = document.getElementById('faixa-erro-leitura');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'faixa-erro-leitura';
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:4000;background:#7f1d1d;color:#fff;'
+      + 'font:600 13px/1.45 -apple-system,system-ui,sans-serif;padding:10px 14px;text-align:center';
+    document.body.appendChild(b);
+  }
+  b.textContent = e?.code === 'permission-denied'
+    ? `Sem permissão pra ler ${fonte}. Não é você — avisa quem cuida do sistema.`
+    : `Não consegui carregar ${fonte}. Confere a internet e recarrega.`;
+}
+
+function onSnapshot(ref, aoReceber, aoFalhar) {
+  return _onSnapshotOriginal(ref, aoReceber, aoFalhar || ((e) => _falhaDeLeitura(ref, e)));
+}
 import * as Filhos from "./filhos.js";
 
 const firebaseConfig = {

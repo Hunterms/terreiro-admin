@@ -730,7 +730,7 @@ async function carregarEventos() {
   try {
     const evSnap = await getDocs(collection(dbCand,'eventos'));
     APP.eventos = evSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-  } catch(e) { console.warn('Erro eventos', e); APP.eventos = []; }
+  } catch(e) { Filhos.avisarFalha('as giras e eventos', e); APP.eventos = []; }
 }
 
 async function carregarAvisos() {
@@ -739,7 +739,7 @@ async function carregarAvisos() {
     APP.avisos = avSnap.docs.map(d => ({ id:d.id, ...d.data() }))
       .filter(a => !a.arquivado)
       .sort((a,b) => (b.publicadoEm?.seconds||0) - (a.publicadoEm?.seconds||0));
-  } catch(e) { console.warn('Erro avisos', e); APP.avisos = []; }
+  } catch(e) { Filhos.avisarFalha('o mural de avisos', e); APP.avisos = []; }
 }
 
 async function carregarRegasDiarias() {
@@ -754,7 +754,7 @@ async function carregarEventoInscricoes() {
   try {
     const iSnap = await getDocs(collection(dbPvd,'evento_inscricoes'));
     APP.eventoInscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-  } catch(e) { console.warn('Erro inscrições', e); APP.eventoInscricoes = []; }
+  } catch(e) { Filhos.avisarFalha('as inscrições em eventos', e); APP.eventoInscricoes = []; }
 }
 
 async function selecionarFilho(id) {
@@ -821,7 +821,7 @@ async function selecionarFilho(id) {
     const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
     APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
     APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
-  } catch(e) { console.warn('Erro tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
+  } catch(e) { Filhos.avisarFalha('suas tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
 
   // Perguntas: carrega ativas + respostas desse filho pra calcular pendentes
   //
@@ -836,7 +836,7 @@ async function selecionarFilho(id) {
     const lidas = await Promise.all(APP.perguntas.map(p =>
       getDoc(doc(dbPvd,'adm_respostas', `${p.id}__${id}`)).catch(() => null)));
     APP.minhasRespostas = lidas.filter(s => s?.exists()).map(s => ({ id:s.id, ...s.data() }));
-  } catch(e) { console.warn('Erro perguntas', e); APP.perguntas = []; APP.minhasRespostas = []; }
+  } catch(e) { Filhos.avisarFalha('as perguntas da casa', e); APP.perguntas = []; APP.minhasRespostas = []; }
 
   // Lojinha gerentes: carregam TODAS escalas de gira (mesmo padrão da aba "escala"
   // do admin). Cada doc é { tipo:'gira', evento_id, alocacoes:[{funcao_id,filho_id,...}] }.
@@ -846,7 +846,7 @@ async function selecionarFilho(id) {
       const lSnap = await getDocs(collection(dbPvd,'adm_escalas'));
       APP.lojinhaEscalas = lSnap.docs.map(d => ({ id:d.id, ...d.data() }))
         .filter(es => es.tipo === 'gira');
-    } catch(e) { console.warn('Erro escalas gira', e); APP.lojinhaEscalas = []; }
+    } catch(e) { Filhos.avisarFalha('a escala da lojinha', e); APP.lojinhaEscalas = []; }
   } else { APP.lojinhaEscalas = []; }
 
   // Despensa: atalho aparece pra quem gerencia
