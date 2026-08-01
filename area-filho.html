@@ -139,6 +139,33 @@ h1{font-size:17px;font-weight:700;letter-spacing:.01em;margin:0;line-height:1}
 .subtitle{font-size:10.5px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;line-height:1}
 
 .card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radlg);padding:22px;margin-bottom:18px}
+
+/* ── VOCABULÁRIO ──────────────────────────────────────────────────────────
+   Medido em 01/08: a página tinha 212 atributos `style=`. Só 20 eram o mesmo
+   estilo repetido; ~115 eram gordos e ÚNICOS, cada bloco inventando o próprio
+   espaçamento e o próprio tamanho de fonte.
+
+   O problema nunca foi duplicação, foi falta de vocabulário: quem escreve um
+   bloco novo não tem o que reusar, então inventa. Estas classes são o que
+   existe pra reusar. Bloco novo usa daqui; bloco velho migra quando for
+   tocado, não numa varredura só. */
+
+/* Caixa de recado dentro de uma seção. Fundo mais claro que o card, porque
+   ela mora DENTRO de um. */
+.aviso-box{padding:16px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text2);line-height:1.55}
+.aviso-box + .aviso-box,.aviso-box.espacada{margin-top:12px}
+/* Mesma caixa, quando o conteúdo é formulário em vez de frase. */
+.acao-box{margin-top:12px;padding:14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px}
+
+/* Escada de texto. Três degraus, e é pra ser difícil inventar um quarto. */
+.t-titulo{font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3}
+.t-corpo{font-size:12.5px;color:var(--text2);margin-top:5px;line-height:1.5}
+.t-nota{font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5}
+
+/* Linha de valor: rótulo à esquerda, número à direita. */
+.linha-valor{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0}
+/* Mensagem de erro de formulário, escondida até ter o que dizer. */
+.erro-campo{color:var(--red);font-size:12px;margin-top:6px;display:none}
 .card h2{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .card h2 svg{width:17px;height:17px;color:var(--gold)}
 
@@ -256,15 +283,15 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
             <span style="font-size:22px;line-height:1">🎂</span>
             <div style="flex:1;min-width:0">
-              <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">Quando você nasceu?</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45">A casa gosta de comemorar aniversário da galera. Cadastra sua data pra entrar na lista de aniversariantes do mês.</div>
+              <div class="t-titulo">Quando você nasceu?</div>
+              <div class="t-corpo">A casa gosta de comemorar aniversário da galera. Cadastra sua data pra entrar na lista de aniversariantes do mês.</div>
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <input class="fi" id="nc-data" type="date" max="2025-12-31" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
             <button class="btn btn-primary" id="nc-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
           </div>
-          <div id="nc-err" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+          <div id="nc-err" class="erro-campo"></div>
         </div>
 
         <!-- Aniversariantes do mês -->
@@ -331,15 +358,15 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
               <span style="font-size:22px;line-height:1">📧</span>
               <div style="flex:1;min-width:0">
-                <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">Cadastra seu email pra receber lembretes</div>
-                <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.45">Manda a véspera pra você não esquecer da rega, escala da gira ou tarefa que tá com você. Você pode parar quando quiser.</div>
+                <div class="t-titulo">Cadastra seu email pra receber lembretes</div>
+                <div class="t-corpo">Manda a véspera pra você não esquecer da rega, escala da gira ou tarefa que tá com você. Você pode parar quando quiser.</div>
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <input class="fi" id="ec-email" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>
               <button class="btn btn-primary" id="ec-save" style="white-space:nowrap;padding:10px 16px;font-size:13.5px">Salvar</button>
             </div>
-            <div id="ec-err" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>
+            <div id="ec-err" class="erro-campo"></div>
           </div>
 
           <!-- Action items: o que precisa da atenção agora -->
@@ -1049,8 +1076,8 @@ async function renderPushCard(filho) {
     card.innerHTML = `<div class="card" style="padding:16px">${dentro}</div>`;
   };
   const titulo = (t, sub) => `
-    <div style="font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3">${t}</div>
-    ${sub ? `<div style="font-size:12.5px;color:var(--text2);margin-top:5px;line-height:1.5">${sub}</div>` : ''}`;
+    <div class="t-titulo">${t}</div>
+    ${sub ? `<div class="t-corpo">${sub}</div>` : ''}`;
 
   // ── 1. Ainda não instalou ───────────────────────────────────────────────
   //
@@ -1087,7 +1114,7 @@ async function renderPushCard(filho) {
         <li>Role e toque em <strong style="color:var(--text)">Adicionar à Tela de Início</strong></li>
         <li>Abra o Candieiro pelo ícone novo</li>
       </ol>
-      <div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">O botão de ativar avisos aparece aqui assim que você abrir por lá.</div>`);
+      <div class="t-nota">O botão de ativar avisos aparece aqui assim que você abrir por lá.</div>`);
     return;
   }
 
@@ -1136,7 +1163,7 @@ async function renderPushCard(filho) {
       </div>
       <button class="btn${ligado ? '' : ' btn-primary'}" id="push-btn">${ligado ? 'Desligar' : 'Ativar'}</button>
     </div>
-    ${instaladoAgora ? '' : `<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Dica: instale o Candieiro na tela de início pelo menu do navegador. Os avisos chegam melhor, e você abre direto pelo ícone.</div>`}`);
+    ${instaladoAgora ? '' : `<div class="t-nota">Dica: instale o Candieiro na tela de início pelo menu do navegador. Os avisos chegam melhor, e você abre direto pelo ícone.</div>`}`);
 
   document.getElementById('push-btn').onclick = async () => {
     const btn = document.getElementById('push-btn');
@@ -1193,7 +1220,7 @@ async function renderMensalidade() {
     sec.style.display = '';
     cnt.textContent = 'isento';
     cnt.className = 'dash-badge muted';
-    cont.innerHTML = `<div style="padding:16px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text2);line-height:1.55">Sua mensalidade está <strong style="color:var(--text)">isenta</strong>. Nada a pagar.</div>`;
+    cont.innerHTML = `<div class="aviso-box">Sua mensalidade está <strong style="color:var(--text)">isenta</strong>. Nada a pagar.</div>`;
     return;
   }
 
@@ -1218,7 +1245,7 @@ async function renderMensalidade() {
   if (d.ajuste?.isencao_status === 'aprovada') {
     cnt.textContent = 'isento este mês';
     cnt.className = 'dash-badge muted';
-    cont.innerHTML = `<div style="padding:16px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text2);line-height:1.55">A isenção de <strong style="color:var(--text)">${mes}</strong> foi aprovada. Nada a pagar neste mês.</div>`;
+    cont.innerHTML = `<div class="aviso-box">A isenção de <strong style="color:var(--text)">${mes}</strong> foi aprovada. Nada a pagar neste mês.</div>`;
     return;
   }
 
@@ -1230,11 +1257,11 @@ async function renderMensalidade() {
     <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Mensalidade de ${mes}</div>
       <div style="padding:16px">
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0">
+        <div class="linha-valor">
           <span style="color:var(--text2)">Contribuição</span><span>${brl(d.base)}</span>
         </div>
         ${atrasado ? `
-          <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0">
+          <div class="linha-valor">
             <span style="color:var(--red)">Acréscimo por atraso</span><span style="color:var(--red)">+ ${brl(d.multa)}</span>
           </div>` : ''}
         <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:12px;display:flex;justify-content:space-between;align-items:baseline">
@@ -1242,7 +1269,7 @@ async function renderMensalidade() {
           <span style="font-size:24px;font-weight:800;color:var(--gold);line-height:1">${brl(d.valor)}</span>
         </div>
         ${d.vencimento ? `<div style="font-size:12px;color:${atrasado ? 'var(--red)' : 'var(--text3)'};text-align:right;margin-top:6px">${atrasado ? 'venceu' : 'vence'} em ${new Date(d.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</div>` : ''}
-        ${atrasado ? `<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Combinou o atraso com a administração? Fala com eles pra tirar o acréscimo.</div>` : ''}
+        ${atrasado ? `<div class="t-nota">Combinou o atraso com a administração? Fala com eles pra tirar o acréscimo.</div>` : ''}
       </div>
       <div style="padding:0 16px 16px">
         <button id="mens-pagar" class="btn btn-primary" style="width:100%">💳 Pagar ${brl(d.valor)}</button>
@@ -1273,7 +1300,7 @@ async function renderMensalidade() {
 
 function blocoAjuste(d) {
   const a = d.ajuste || {};
-  const cx = (txt, cor) => `<div id="aj-box" style="margin-top:12px;padding:12px 14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px;font-size:13px;color:${cor||'var(--text2)'};line-height:1.55">${txt}</div>`;
+  const cx = (txt) => `<div id="aj-box" class="aviso-box espacada">${txt}</div>`;
   const dia = iso => new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
 
   if (a.isencao_status === 'pedida') {
@@ -1296,7 +1323,7 @@ function blocoAjuste(d) {
   }
 
   return `
-    <div id="aj-box" style="margin-top:12px;padding:14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
+    <div id="aj-box" class="acao-box">
       <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Aperta o mês e não fecha? Até ${dia(a.prazo)} você resolve por aqui.</div>
       <button id="aj-data" class="btn" style="width:100%;margin-bottom:8px">Pagar em outro dia deste mês</button>
       <button id="aj-isencao" class="btn" style="width:100%">Não vou conseguir pagar este mês</button>
@@ -1313,7 +1340,7 @@ function ligarAjuste(d, f, worker, tel4) {
     const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     // Native date input: o min/max já barra o dedo torto antes do Worker ver.
     return `
-      <div id="aj-box" style="margin-top:12px;padding:14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
+      <div id="aj-box" class="acao-box">
         <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:6px">Que dia você consegue pagar?</label>
         <input type="date" id="aj-dt" class="fi" style="width:100%" min="${hoje}" max="${d.ciclo}-${String(ultimo).padStart(2,'0')}" value="${a.venc_combinado || ''}"/>
         <label style="font-size:12px;color:var(--text3);display:block;margin:12px 0 6px">Quer contar o motivo? (opcional)</label>
