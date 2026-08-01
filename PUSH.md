@@ -177,6 +177,31 @@ linha com o que rodou.
 
 ---
 
+## 5.1 O email saiu do jogo (01/08/2026)
+
+Decisão do Pai: **aviso não vai mais por email**. Tudo por push, com a caixa de
+avisos na área do filho como registro.
+
+O que isso mudou:
+
+- A área do filho **parou de pedir email**. Instalar o app e receber
+  notificação não precisa de email nenhum, então coletar um dado que não se usa
+  é só atrito. Quem já tem continua com ele no cadastro, e o admin continua
+  podendo escrever.
+- O lembrete de mensalidade passou a **empurrar push** junto do email. Antes
+  não empurrava, porque dois toques pelo mesmo assunto ensinam a ignorar os
+  dois — com o email fora, sobrou o push.
+- A caixa de avisos deixou de ser rede e virou **o chão**. Ela é o único canal
+  que alcança quem não instalou: 31 dos 56 não têm email, e o push depende de
+  instalação (no iPhone, obrigatoriamente).
+
+**O que ficou pendente de decisão**: o `/lembretes`, que manda o email de
+cobrança aprovado por você, continua existindo e continua mandando email. Ele
+não é "aviso", é cobrança — mas se a ideia é aposentar o email de vez, é ali que
+o assunto continua vivo.
+
+---
+
 ## 6. O que ficou de fora, de propósito
 
 - **Cache offline.** O service worker não guarda nada. Admin mostrando saldo e
