@@ -362,7 +362,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         <div id="eventos-filho-container"></div>
         <div id="giras-container"></div>
 
-        <details class="dash-secao" id="dash-sec-rega" data-aba="agenda">
+        <details class="dash-secao" id="dash-sec-rega" data-aba="agenda" style="display:none">
           <summary>
             <div class="dash-head-text">
               <h2>💧 Escala de rega <span class="dash-badge muted" id="dash-cnt-rega"></span></h2>
@@ -855,6 +855,7 @@ async function selecionarFilho(id) {
   }
 
   ligarAbas();
+  renderRega();   // agora com sessão: a escala aparece
   renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
   renderAvisosInbox(); // idem — e é a única coisa que alcança quem não tem email
   renderDisp();
@@ -1624,14 +1625,19 @@ async function renderMensalidade() {
   }
 
   const atrasado = d.multa > 0;
-  // "em atraso" acusa a pessoa; "vencida" descreve a data. A diferença é quem
-  // está errado na frase — e ninguém aqui está devendo favor a ninguém.
-  cnt.textContent = atrasado ? 'vencida' : 'em aberto';
-  cnt.className = 'dash-badge';
+  // Três estados, e a diferença entre os dois primeiros é a conversa toda:
+  // quem está DENTRO do prazo não deve nada, e a tela não pode dar a entender
+  // que deve. Do dia 1 até o vencimento, pagar é adiantar, não quitar.
+  //
+  // E "em atraso" acusa a pessoa; "vencida" descreve a data. A diferença é
+  // quem está errado na frase — ninguém aqui deve favor a ninguém.
+  const emDia = !atrasado && !!d.vencimento && hojeISO() <= d.vencimento;
+  cnt.textContent = atrasado ? 'vencida' : (emDia ? 'em dia' : 'em aberto');
+  cnt.className = atrasado ? 'dash-badge' : 'dash-badge muted';
 
   cont.innerHTML = `
     <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Sua contribuição de ${mes}</div>
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Sua contribuição de ${mes}${emDia ? ' · em dia' : ''}</div>
       <div style="padding:16px">
         <div class="linha-valor">
           <span style="color:var(--text2)">Contribuição</span><span>${brl(d.base)}</span>
@@ -1645,10 +1651,11 @@ async function renderMensalidade() {
           <span style="font-size:24px;font-weight:800;color:var(--gold);line-height:1">${brl(d.valor)}</span>
         </div>
         ${d.vencimento ? `<div style="font-size:12px;color:var(--text3);text-align:right;margin-top:6px">${atrasado ? 'venceu' : 'vence'} em ${new Date(d.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}</div>` : ''}
+        ${emDia ? `<div class="aviso-box" style="margin-top:12px;padding:11px 13px;font-size:12.5px">Você está <strong style="color:var(--green)">em dia</strong>. Pode pagar em qualquer dia até o vencimento — adiantar não é obrigação, e deixar pra depois não muda nada.</div>` : ''}
         ${atrasado ? `<div class="t-nota">Se você já tinha combinado outra data, o acréscimo sai. Avisa a administração que a gente acerta.</div>` : ''}
       </div>
       <div style="padding:0 16px 16px">
-        <button id="mens-pagar" class="btn btn-primary" style="width:100%">💳 Pagar ${brl(d.valor)}</button>
+        <button id="mens-pagar" class="btn btn-primary" style="width:100%">💳 ${emDia ? 'Adiantar' : 'Pagar'} ${brl(d.valor)}</button>
         <div style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:10px;line-height:1.5">Cartão ou PIX pela InfinitePay. Cai na hora — o terreiro não precisa conferir extrato.</div>
       </div>
     </div>`;
@@ -1658,7 +1665,7 @@ async function renderMensalidade() {
     b.disabled = true; b.textContent = 'Abrindo o pagamento...';
     const res = await criarCheckout(APP.cfgAgendamento, 'men', d.doc_id);
     if (res) { location.href = res.url; return; }
-    b.disabled = false; b.textContent = `💳 Pagar ${brl(d.valor)}`;
+    b.disabled = false; b.textContent = `💳 ${emDia ? 'Adiantar' : 'Pagar'} ${brl(d.valor)}`;
     alert('Não consegui abrir o pagamento agora. Tenta de novo em instantes, ou fala com a administração.');
   };
 
@@ -2842,6 +2849,14 @@ function renderAvisos() {
 function renderRega() {
   const cont = $('#rega-container');
   if(!cont) return;
+
+  // A escala de rega é interna. Ela mostra quem reservou cada dia — nome de
+  // gente da casa, dia a dia — e isso não é informação de página aberta.
+  // Ficava visível antes de entrar por herança de quando esta página era só
+  // um calendário público.
+  const sec = $('#dash-sec-rega');
+  if (sec) sec.style.display = APP.sessao ? '' : 'none';
+  if (!APP.sessao) { cont.innerHTML = ''; return; }
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const hojeStr = hoje.toISOString().slice(0,10);
 
@@ -3064,10 +3079,30 @@ function setSubTab(_t) { /* deprecated */ }
 async function renderReembolso() {
   const f = APP.filhoAtual;
   if(!f) return;
-  const tel = (f.tel||'').replace(/\D/g,'');
   const formC = $('#reemb-form-container');
-  const histC = $('#reemb-historico');
-  formC.innerHTML = `
+  if (formC) {
+    // Botão, e não o formulário aberto. Reembolso é evento raro — quem abre a
+    // aba quase sempre quer VER o que já pediu, não pedir de novo. Formulário
+    // sempre aberto empurra o histórico pra baixo da dobra e faz a tela
+    // parecer um pedido pendente que ninguém fez.
+    formC.innerHTML = `
+      <button class="btn btn-primary" id="reemb-abrir" style="width:100%;margin-top:14px">💸 Pedir reembolso</button>
+      <div class="t-nota" style="text-align:center">Comprou algo pra casa do seu bolso? A administração devolve por PIX.</div>`;
+    $('#reemb-abrir').onclick = abrirModalReembolso;
+  }
+  carregarHistoricoReemb();
+}
+
+function abrirModalReembolso() {
+  const f = APP.filhoAtual;
+  if(!f) return;
+  const tel = (f.tel||'').replace(/\D/g,'');
+  abrirModal(`
+    <div class="modal-pq-h">
+      <h3 style="font-size:16px;font-weight:700">Pedir reembolso</h3>
+      <button class="modal-x" onclick="fecharModal()" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-pq-b">
     <form id="reemb-form" class="card" novalidate style="margin-top:14px">
       <div class="fi-group" style="margin-bottom:10px">
         <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Solicitante</label>
@@ -3109,7 +3144,8 @@ async function renderReembolso() {
       <button type="submit" class="btn btn-primary btn-block">Enviar pedido de reembolso</button>
       <div id="re-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
     </form>
-  `;
+    </div>`);
+
   $('#reemb-form').addEventListener('submit', async e => {
     e.preventDefault();
     const desc = $('#re-desc').value.trim();
@@ -3153,7 +3189,6 @@ async function renderReembolso() {
       btn.disabled = false; btn.textContent = 'Enviar pedido de reembolso';
     }
   });
-  carregarHistoricoReemb();
 }
 
 function mostraErr(msg, el) {
@@ -3166,8 +3201,12 @@ function mostrarSucessoReemb(valor, desc, id) {
   const f = APP.filhoAtual;
   const msg = `Olá! Acabei de pedir reembolso:\n\n💸 R$ ${valor.toFixed(2).replace('.',',')}\n📝 ${desc}\n👤 ${f.nome}\n\nSegue o comprovante:`;
   const wa = `https://wa.me/5519992494267?text=${encodeURIComponent(msg)}`;
-  $('#reemb-form-container').innerHTML = `
-    <div class="card" style="text-align:center;margin-top:14px">
+  // O sucesso mora DENTRO do modal, que é onde a pessoa está olhando. Escrever
+  // no `#reemb-form-container` mandaria a confirmação pra trás do modal aberto,
+  // e ela veria o formulário limpo achando que não enviou.
+  const alvo = document.getElementById('modal-content-geral') || $('#reemb-form-container');
+  alvo.innerHTML = `
+    <div class="card" style="text-align:center;margin:0;border:none;background:none">
       <div style="font-size:36px;color:var(--green);margin-bottom:10px">✓</div>
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">Pedido enviado!</div>
       <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:18px">
@@ -3175,7 +3214,7 @@ function mostrarSucessoReemb(valor, desc, id) {
         <strong style="color:var(--green)">Agora envia o comprovante pelo WhatsApp.</strong> Sem ele, o reembolso fica pendente.
       </div>
       <a class="btn" style="background:#25d366;color:#fff;border-color:transparent;display:inline-flex;justify-content:center;gap:8px;padding:12px 22px;font-weight:700;border-radius:8px;text-decoration:none" href="${wa}" target="_blank" rel="noopener">💬 Enviar comprovante pelo WhatsApp</a>
-      <div style="margin-top:14px"><button class="btn" onclick="renderReembolso()" style="padding:8px 16px;font-size:12.5px">Fazer outro pedido</button></div>
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center"><button class="btn" onclick="fecharModal();renderReembolso()" style="padding:8px 16px;font-size:12.5px">Fechar</button><button class="btn" onclick="abrirModalReembolso()" style="padding:8px 16px;font-size:12.5px">Pedir outro</button></div>
       <div style="font-size:10.5px;color:var(--text3);margin-top:10px;font-family:monospace">Protocolo: ${id.slice(0,8)}</div>
     </div>
   `;
@@ -3270,6 +3309,7 @@ function trocarFilho() {
 
 window.trocarFilho = trocarFilho;
 window.renderReembolso = renderReembolso;
+window.abrirModalReembolso = abrirModalReembolso;  // usado no onclick do modal de sucesso
 window.setTab = setTab;
 window.setSubTab = setSubTab;
 window._app = { salvar, toggleDiaRega, confirmarRega, limparCarrinho };
