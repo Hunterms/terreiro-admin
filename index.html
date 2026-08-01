@@ -750,7 +750,13 @@ async function togglePush() {
     return pintarBotaoPush();
   }
   const r = await Push.ativar(appPvd, dbPvd, { papel: 'admin', nome: S.user?.email || '', uid: S.user?.uid });
-  toast(r.ok ? '🔔 Notificações ligadas neste aparelho' : (Push.EXPLICACAO[r.motivo] || 'Não deu'), r.ok ? 'ok' : 'err');
+  // O `detalhe` entra na mensagem quando existe. Sem ele, uma falha de FCM vira
+  // "Não consegui registrar" — frase que não deixa ninguém consertar nada. O
+  // texto do Google costuma nomear a API que falta habilitar.
+  toast(r.ok ? '🔔 Notificações ligadas neste aparelho'
+             : `${Push.EXPLICACAO[r.motivo] || 'Não deu'}${r.detalhe ? ` — ${r.detalhe}` : ''}`,
+        r.ok ? 'ok' : 'err');
+  if (!r.ok) console.error('push: ativar falhou', r);
   pintarBotaoPush();
 }
 

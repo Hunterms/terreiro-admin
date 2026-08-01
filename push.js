@@ -173,7 +173,22 @@ export async function ativar(app, db, quem) {
     if (permissao !== 'granted') return { ok: false, motivo: 'recusado' };
 
     const registration = await registrarSW();
-    const token = await getToken(getMessaging(app), { vapidKey: VAPID, serviceWorkerRegistration: registration });
+    // O erro do getToken é o único lugar que nomeia a causa real: API não
+    // habilitada, VAPID de outro projeto, service worker fora de escopo. Deixar
+    // ele cair no catch genérico foi o que fez "não chega push" virar mistério.
+    let token;
+    try {
+      token = await getToken(getMessaging(app), { vapidKey: VAPID, serviceWorkerRegistration: registration });
+    } catch (e) {
+      const m = String(e?.message || e);
+      if (/fcmregistrations|SERVICE_DISABLED|has not been used/i.test(m)) {
+        return { ok: false, motivo: 'api_desligada', detalhe: m.slice(0, 300) };
+      }
+      if (/applicationServerKey|InvalidAccessError|VAPID/i.test(m)) {
+        return { ok: false, motivo: 'vapid_errada', detalhe: m.slice(0, 300) };
+      }
+      return { ok: false, motivo: 'erro', detalhe: m.slice(0, 300) };
+    }
     if (!token) return { ok: false, motivo: 'sem_token' };
 
     await setDoc(doc(db, COLECAO, token), {
@@ -217,4 +232,6 @@ export const EXPLICACAO = {
   recusado: 'Sem permissão, sem notificação.',
   sem_token: 'O navegador não devolveu o token. Tente de novo.',
   erro: 'Não consegui registrar.',
+  api_desligada: 'Falta habilitar a "Firebase Cloud Messaging API" ou a "FCM Registration API" no Google Cloud do projeto terreiro-pvd (ver PUSH.md §1.2).',
+  vapid_errada: 'A chave VAPID em push.js não bate com o projeto do Firebase. Gere de novo em Cloud Messaging → Certificados push da Web.',
 };
