@@ -149,6 +149,10 @@
       </button>
 
       <div class="section-label">Sistema</div>
+      <button data-route="grupos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Grupos de envio
+      </button>
       <button data-route="importar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Importar calendário
@@ -353,6 +357,7 @@ const S = {
   filhoDoc: null,        // doc do filho logado (se role=filho)
   filhos: [],
   funcoes: [],
+  grupos: [],           // adm_grupos — listas de envio pros avisos
   kanban: [],
   eventos: [],
   avisos: [],
@@ -861,6 +866,10 @@ function attachListeners() {
   }));
 
   // Funções
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_grupos'), snap => {
+    S.grupos = snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(g => !g.arquivado);
+    if(S.route === 'grupos') renderRoute();
+  }));
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_funcoes'), snap => {
     S.funcoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route) renderRoute();
@@ -1038,6 +1047,7 @@ function renderRoute() {
   const c = $('#route-content');
   switch(S.route) {
     case 'dashboard':     return renderDashboard(c);
+    case 'grupos':        return renderGrupos(c);
     case 'links':         return renderLinks(c);
     case 'importar':      return renderImportar(c);
     case 'filhos':        return renderFilhos(c);
@@ -1508,6 +1518,129 @@ async function gravarCalendario(lista) {
   btn.textContent = 'Gravar';
   renderRoute();
 }
+
+// ── GRUPOS DE ENVIO ──────────────────────────────────────────────────────
+//
+// Pedido do Pai: poder mandar um aviso só pra parte da casa. Só as filhas, só
+// os médiuns de atendimento, só quem cuida da cozinha.
+//
+// Grupo é LISTA DE GENTE, não critério. Foi escolha, e ela evita uma coisa: um
+// grupo "só meninas" definido por critério exigiria guardar o gênero de cada
+// pessoa no cadastro. A casa não precisa desse dado pra funcionar, e dado que
+// não é preciso não deveria ser guardado. Com lista, o Pai marca quem é, e o
+// sistema não fica sabendo por quê.
+//
+// O atalho "juntar todo mundo de uma função" existe porque médiuns de
+// atendimento JÁ são um posto. Ele preenche a lista uma vez; depois a lista é
+// dela mesma, e entra gente nova na mão.
+function renderGrupos(c) {
+  const grupos = (S.grupos || []).slice().sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Grupos de envio</div>
+        <div class="page-sub">Pra mandar aviso só pra parte da casa. ${grupos.length} grupo${grupos.length===1?'':'s'}.</div>
+      </div>
+      <button class="btn btn-primary" onclick="modalGrupo()">Novo grupo</button>
+    </div>
+    ${grupos.length ? grupos.map(g => {
+      const n = (g.filho_ids||[]).length;
+      const nomes = (g.filho_ids||[]).map(id => (S.filhos.find(f => f.id===id)?.nome||'').split(' ')[0]).filter(Boolean);
+      return `
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="modalGrupo('${g.id}')">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:15.5px;font-weight:700">${g.nome||'(sem nome)'}</div>
+          <div style="font-size:12.5px;color:var(--text3)">${n} pessoa${n===1?'':'s'}</div>
+        </div>
+        ${nomes.length ? `<div style="font-size:12.5px;color:var(--text2);margin-top:6px;line-height:1.5">${nomes.slice(0,12).join(', ')}${nomes.length>12?` e mais ${nomes.length-12}`:''}</div>` : '<div style="font-size:12.5px;color:var(--red);margin-top:6px">Vazio. Aviso mandado pra ele não chega em ninguém.</div>'}
+      </div>`;
+    }).join('') : '<div class="empty"><div class="empty-t">Nenhum grupo ainda</div><div>Crie um pra poder mandar aviso só pra parte da casa.</div></div>'}
+  `;
+}
+
+window.modalGrupo = function(id) {
+  const g = id ? (S.grupos||[]).find(x => x.id===id) : null;
+  const sel = new Set(g?.filho_ids || []);
+  const ativos = S.filhos.filter(f => !f.status || f.status === 'ativo')
+    .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+
+  openModal(`
+    <div class="modal-h"><h3>${g?'Editar grupo':'Novo grupo'}</h3><button class="btn-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome do grupo *</label><input class="fi" id="gr-nome" value="${g?.nome||''}" placeholder="Médiuns de atendimento"/></div>
+      <div class="fi-group">
+        <label>Juntar todo mundo de uma função</label>
+        <select class="fi" id="gr-funcao">
+          <option value="">escolher...</option>
+          ${S.funcoes.filter(fn=>!fn.arquivada).map(fn=>`<option value="${fn.id}">${fn.nome}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Marca todo mundo que tem essa função. Depois dá pra ajustar na mão — a lista é dela mesma, não fica presa à função.</div>
+      </div>
+      <div class="fi-group">
+        <label>Quem está no grupo <span id="gr-conta" style="color:var(--gold)"></span></label>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input class="fi" id="gr-busca" placeholder="filtrar por nome..." style="flex:1"/>
+          <button class="btn" onclick="grupoTodos(true)" style="width:auto;font-size:12.5px;padding:8px 12px">Todos</button>
+          <button class="btn" onclick="grupoTodos(false)" style="width:auto;font-size:12.5px;padding:8px 12px">Nenhum</button>
+        </div>
+        <div id="gr-lista" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px"></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      ${g?`<button class="btn btn-danger" onclick="apagarGrupo('${g.id}')">Excluir</button>`:''}
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="gr-save">${g?'Salvar':'Criar'}</button>
+    </div>
+  `, { lg: true });
+
+  const pintar = () => {
+    const busca = ($('#gr-busca').value||'').toLowerCase();
+    $('#gr-conta').textContent = `· ${sel.size} marcad${sel.size===1?'o':'os'}`;
+    $('#gr-lista').innerHTML = ativos
+      .filter(f => !busca || (f.nome||'').toLowerCase().includes(busca))
+      .map(f => `
+        <label class="checkbox-row" style="padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" data-fid="${f.id}" ${sel.has(f.id)?'checked':''}/>
+          ${f.nome}
+        </label>`).join('') || '<div style="padding:14px;color:var(--text3);font-size:13px">Ninguém com esse nome.</div>';
+    $$('#gr-lista input[type=checkbox]').forEach(cb => {
+      cb.onchange = () => { cb.checked ? sel.add(cb.dataset.fid) : sel.delete(cb.dataset.fid); $('#gr-conta').textContent = `· ${sel.size} marcad${sel.size===1?'o':'os'}`; };
+    });
+  };
+  pintar();
+  $('#gr-busca').oninput = pintar;
+  window.grupoTodos = (marcar) => {
+    const busca = ($('#gr-busca').value||'').toLowerCase();
+    ativos.filter(f => !busca || (f.nome||'').toLowerCase().includes(busca))
+      .forEach(f => marcar ? sel.add(f.id) : sel.delete(f.id));
+    pintar();
+  };
+  $('#gr-funcao').onchange = (e) => {
+    const fid = e.target.value; if(!fid) return;
+    ativos.filter(f => (f.postos||[]).includes(fid)).forEach(f => sel.add(f.id));
+    e.target.value = '';
+    pintar();
+  };
+
+  $('#gr-save').onclick = async () => {
+    const nome = $('#gr-nome').value.trim();
+    if(!nome) { toast('Dá um nome pro grupo','err'); return; }
+    const dados = { nome, filho_ids: [...sel], arquivado:false, atualizadoEm: serverTimestamp() };
+    try {
+      if(g) await updateDoc(doc(dbPvd,'adm_grupos',g.id), dados);
+      else await addDoc(collection(dbPvd,'adm_grupos'), { ...dados, criadoEm: serverTimestamp() });
+      toast(g?'Grupo salvo':'Grupo criado','ok');
+      closeModal();
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+};
+
+window.apagarGrupo = function(id) {
+  confirmar('Excluir este grupo? Os avisos já enviados pra ele continuam onde estão.', async () => {
+    try { await updateDoc(doc(dbPvd,'adm_grupos',id), { arquivado:true }); toast('Grupo excluído','ok'); closeModal(); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+};
 
 // ── TODOS OS LINKS, NUM LUGAR SÓ ─────────────────────────────────────────
 //
@@ -4521,7 +4654,15 @@ function openAvisoForm(id=null) {
       <label class="checkbox-row"><input type="checkbox" id="av-imp" ${a?.importante?'checked':''}/> Marcar como importante</label>
       ${isEdit ? statusPushAviso(a) : `
         <label class="checkbox-row"><input type="checkbox" id="av-push"/> Avisar no celular dos filhos</label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Vai pra quem tem a área do filho instalada. Sai em lotes de 15 aparelhos, um lote por batida do cron. A casa inteira leva até meia hora.</div>
+        <div class="fi-group" style="margin-top:10px">
+          <label>Pra quem</label>
+          <select class="fi" id="av-grupo">
+            <option value="">A casa inteira</option>
+            ${(S.grupos||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(g=>`<option value="${g.id}">${g.nome} · ${(g.filho_ids||[]).length}</option>`).join('')}
+          </select>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">O grupo vale pro push E pra caixa de avisos: quem está fora não recebe e não vê. Grupos se criam em Sistema → Grupos de envio.</div>
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-top:8px">Sai em lotes de 15 aparelhos, um lote por batida do cron. A casa inteira leva até meia hora.</div>
       `}
     </div>
     <div class="modal-f">
@@ -4546,13 +4687,23 @@ function openAvisoForm(id=null) {
         // push_status é o que o cron procura. Só existe se você pediu — sem o
         // campo o Worker nem enxerga o aviso, que é o comportamento de antes.
         const push = $('#av-push')?.checked;
+        // A lista é congelada aqui, e não guardada como referência ao grupo:
+        // mexer no grupo em dezembro não pode mudar quem podia ler o recado de
+        // agosto. Ver `avisar()` no worker.js.
+        const grupoId = $('#av-grupo')?.value || null;
+        const grupo = grupoId ? (S.grupos||[]).find(g => g.id === grupoId) : null;
+        if (grupoId && !grupo?.filho_ids?.length) {
+          toast('Esse grupo está vazio — o aviso não chegaria em ninguém','err');
+          return;
+        }
         await addDoc(collection(dbPvd,'adm_avisos'), {
           ...data,
+          ...(grupo && { grupo_id: grupo.id, grupo_nome: grupo.nome, filho_ids: grupo.filho_ids }),
           ...(push && { push_status:'pendente', push_enviados:0 }),
           publicadoEm: serverTimestamp(), criadoEm: serverTimestamp()
         });
-        if(push) toast('Aviso publicado — o push começa na próxima batida','ok');
-        else toast('Aviso publicado','ok');
+        const pra = grupo ? `pra ${grupo.nome} (${grupo.filho_ids.length})` : 'pra casa inteira';
+        toast(push ? `Aviso publicado ${pra} — o push começa na próxima batida` : `Aviso publicado ${pra}`, 'ok');
         closeModal();
         return;
       }

@@ -229,7 +229,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # adm_despensa. O filho relatou "a despensa está vazia" e nada no sistema
   # tinha reclamado. Toda collection que uma página sem login lê entra aqui.
   for c in vendas_produtos adm_servicos adm_despensa adm_perguntas \
-           adm_avisos adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
+           adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"
   done
   # E estas NÃO podem abrir. fin_reembolsos e adm_respostas carregam dado de
@@ -241,7 +241,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # telefone É a credencial da área do filho: quem lia a collection entrava como
   # qualquer pessoa da casa. O elenco agora vem do Worker, sem esses campos.
   for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas fin_filhos \
-           adm_notificacoes adm_avisos_lidos adm_tentativas; do
+           adm_notificacoes adm_avisos_lidos adm_tentativas adm_avisos adm_grupos; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
   # adm_config: o doc 'agendamento' abre por get, a collection não abre por list
