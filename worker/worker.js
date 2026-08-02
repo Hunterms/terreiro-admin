@@ -1101,13 +1101,17 @@ async function rotaMural(body, env) {
  *
  * `filho_id` ausente com `para: 'filho'` é recado pra casa inteira.
  */
-async function avisar(env, token, { para, filho_id, titulo, corpo, url, tag, push = true }) {
-  // 'admin' | 'filho' (com filho_id) | 'todos' (a casa inteira)
-  const alvo = para || (filho_id ? 'filho' : 'todos');
+async function avisar(env, token, { para, filho_id, filho_ids, titulo, corpo, url, tag, push = true }) {
+  // 'admin' | 'filho' (com filho_id) | 'grupo' (com filho_ids) | 'todos'
+  const alvo = para || (filho_id ? 'filho' : (filho_ids ? 'grupo' : 'todos'));
   try {
     await fsCreate(PROJETO_PVD, 'adm_notificacoes', token, {
       para: alvo,
       filho_id: filho_id || null,
+      // A lista é gravada no aviso, e não uma referência ao grupo. É snapshot
+      // de propósito: mudar quem está no grupo em dezembro não pode mudar quem
+      // podia ler o recado de agosto.
+      filho_ids: Array.isArray(filho_ids) ? filho_ids : null,
       titulo: String(titulo || '').slice(0, 140),
       corpo: String(corpo || '').slice(0, 400),
       url: url || null,
@@ -1135,15 +1139,19 @@ async function rotaAvisos(body, env) {
   // Duas queries em vez de um OR: o `compositeFilter` com OR existe no
   // Firestore, mas exige índice composto pra ordenar junto. Duas leituras
   // simples usam o índice automático e não pedem nada de ninguém.
-  const [meus, daCasa] = await Promise.all([
+  const [meus, daCasa, deGrupo] = await Promise.all([
     fsQuery(PROJETO_PVD, 'adm_notificacoes', token, { campo: 'filho_id', valor: quem.id }, 60),
     fsQuery(PROJETO_PVD, 'adm_notificacoes', token, { campo: 'para', valor: 'todos' }, 60),
+    // Aviso mandado pra um grupo do qual esta pessoa fazia parte na hora do
+    // envio. `ARRAY_CONTAINS` usa índice automático, sem pedir índice composto.
+    fsQuery(PROJETO_PVD, 'adm_notificacoes', token,
+      { campo: 'filho_ids', op: 'ARRAY_CONTAINS', valor: quem.id }, 60),
   ]);
 
   const lidos = await fsGet(PROJETO_PVD, 'adm_avisos_lidos', quem.id, { token });
   const ate = lidos?.ate || '';
 
-  const lista = [...meus, ...daCasa]
+  const lista = [...meus, ...daCasa, ...deGrupo]
     .sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')))
     .slice(0, 50)
     .map((n) => ({
@@ -1153,7 +1161,7 @@ async function rotaAvisos(body, env) {
       url: n.url || null,
       criadoEm: n.criadoEm || null,
       lido: !!ate && String(n.criadoEm || '') <= ate,
-      da_casa: !n.filho_id,
+      da_casa: n.para === 'todos',
     }));
 
   return json({ avisos: lista, nao_lidos: lista.filter((n) => !n.lido).length });
@@ -1205,13 +1213,20 @@ async function drenarFilaDeAvisos(env, token) {
   // fila nunca fecharia.
   let restantes = Array.isArray(aviso.push_restantes) ? aviso.push_restantes : null;
   if (!restantes) {
+    // Grupo escolhido no momento de publicar. Sem grupo, é a casa inteira.
+    const doGrupo = Array.isArray(aviso.filho_ids) && aviso.filho_ids.length
+      ? new Set(aviso.filho_ids) : null;
+
     restantes = (await fsQuery(PROJETO_PVD, 'adm_push_tokens', token, { campo: 'papel', valor: 'filho' }))
+      .filter((t) => !doGrupo || doGrupo.has(t.filho_id))
       .map((t) => t.id);
-    // O registro sai UMA vez, na largada, e alcança a casa inteira — inclusive
-    // quem não tem celular registrado e nunca receberia o push. É o ponto todo
-    // da caixa de avisos: entrega falha, registro não.
+
+    // O registro sai UMA vez, na largada, e alcança quem foi escolhido —
+    // inclusive quem não tem celular registrado e nunca receberia o push. É o
+    // ponto todo da caixa de avisos: entrega falha, registro não.
     await avisar(env, token, {
-      para: 'todos',
+      para: doGrupo ? 'grupo' : 'todos',
+      filho_ids: doGrupo ? aviso.filho_ids : null,
       titulo: aviso.titulo || 'Aviso do terreiro',
       corpo: (aviso.corpo || '').replace(/\s+/g, ' ').trim().slice(0, 400),
       url: 'area-filho.html',

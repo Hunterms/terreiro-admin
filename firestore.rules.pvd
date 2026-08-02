@@ -257,9 +257,20 @@ service cloud.firestore {
       allow update: if resource.data.tipo in ['gira','lojinha']
                     && request.resource.data.tipo == resource.data.tipo;
     }
-    match /adm_avisos/{id} {
-      allow read: if true;
-    }
+    // ── adm_avisos e adm_grupos: NADA público ─────────────────────────────
+    //
+    // O mural era `allow read: if true` desde que a área do filho lia ele
+    // direto. Ela não lê mais — vai pelo `POST /mural`, que confere a sessão —
+    // e o recado da casa não é de rua.
+    //
+    // Fechar virou obrigatório com os grupos de envio: o aviso passou a
+    // carregar `filho_ids`, a lista de quem pode ler. Aberto, ele entregaria
+    // quem está em "só as filhas" ou "médiuns de atendimento" pra qualquer um
+    // que consultasse a API.
+    //
+    // `adm_grupos` nunca foi público e não vai ser: é lista de gente.
+    match /adm_avisos/{id} { allow read, write: if ehAdmin(); }
+    match /adm_grupos/{id} { allow read, write: if ehAdmin(); }
 
     // ── PERGUNTAS DA CASA ─────────────────────────────────────────────────
     // A pergunta é pública: é conteúdo de ensino, igual ao mural de avisos.
