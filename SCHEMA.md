@@ -145,7 +145,8 @@ Funções/cargos da casa. CRUD restrito a `admin`.
   nome_publico:     string|null   // o que o SITE mostra. Vazio = usa `nome`.
                     // Resolve os dois casos que o tipo sozinho não cobre:
                     //   sábado interno em que o público precisa saber que não
-                    //   tem gira → 'Sem atividade'
+                    //   tem gira → 'O terreiro estará fechado'
+                    //   (o filho continua vendo o nome real do trabalho)
                     //   gira aberta com parte só pros filhos → só a parte pública
                     // Preenchido, o Worker também NÃO manda hora, local nem
                     // descrição pro site (ver paraOPublico).

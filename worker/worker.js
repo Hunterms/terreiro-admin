@@ -985,8 +985,9 @@ export function ehAtividadePublica(ev) {
   if (ev.publico === false) return false;                 // marca manual do admin
   // `nome_publico` é a saída pro caso que o tipo sozinho não resolve: sábado
   // que tem coisa interna, mas em que a casa precisa dizer ao público que NÃO
-  // tem gira aberta. Sem isso, o site mostraria "Função de barco" ou não
-  // mostraria nada — e quem vem todo sábado merece saber que não tem.
+  // tem gira aberta ("O terreiro estará fechado"). Sem isso, o site mostraria
+  // "Função de barco" ou não mostraria nada — e quem vem todo sábado merece
+  // saber que não tem.
   if (ev.nome_publico) return true;
   return !TIPOS_INTERNOS.has(ev.tipo);
 }
