@@ -142,6 +142,13 @@ Funções/cargos da casa. CRUD restrito a `admin`.
   // novos
   tipo:             'gira_aberta' | 'gira_fechada' | 'desenvolvimento' | 'trabalho_interno' | 'ensaio_curimba' | 'reuniao' | 'mutirao' | 'obrigacao_coletiva' | 'festa' | 'apresentacao_cultural' | 'outro'
                     // 'desenvolvimento' = o trabalho de segunda, dos médiuns. INTERNO.
+  nome_publico:     string|null   // o que o SITE mostra. Vazio = usa `nome`.
+                    // Resolve os dois casos que o tipo sozinho não cobre:
+                    //   sábado interno em que o público precisa saber que não
+                    //   tem gira → 'Sem atividade'
+                    //   gira aberta com parte só pros filhos → só a parte pública
+                    // Preenchido, o Worker também NÃO manda hora, local nem
+                    // descrição pro site (ver paraOPublico).
   // apresentacao_cultural: coco de roda (Bloco Quebra Coco), Samba do Candieiro, CineMakumba — manifestações culturais. Aparece no site público e na área do filho com label "Apresentação cultural" em laranja.
   publico:          boolean                             // true → aparece no site público; false → só admin
   hora_fim:         string|null

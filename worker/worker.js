@@ -983,7 +983,33 @@ const TIPOS_INTERNOS = new Set([
 export function ehAtividadePublica(ev) {
   if (!ev || ev.arquivado === true) return false;
   if (ev.publico === false) return false;                 // marca manual do admin
+  // `nome_publico` é a saída pro caso que o tipo sozinho não resolve: sábado
+  // que tem coisa interna, mas em que a casa precisa dizer ao público que NÃO
+  // tem gira aberta. Sem isso, o site mostraria "Função de barco" ou não
+  // mostraria nada — e quem vem todo sábado merece saber que não tem.
+  if (ev.nome_publico) return true;
   return !TIPOS_INTERNOS.has(ev.tipo);
+}
+
+/**
+ * O evento como o site pode vê-lo.
+ *
+ * Projeta campo a campo em vez de devolver o doc inteiro: o nome interno, a
+ * descrição e o que mais o admin escrever ali NÃO atravessam. Antes eu mandava
+ * o documento como veio, e bastava alguém pôr uma observação interna na
+ * descrição pra ela ir junto.
+ */
+export function paraOPublico(ev) {
+  return {
+    id: ev.id,
+    nome: ev.nome_publico || ev.nome || '',
+    data: ev.data || null,
+    hora: ev.nome_publico ? '' : (ev.hora || ''),
+    tipo: ev.nome_publico ? 'outro' : (ev.tipo || null),
+    local: ev.nome_publico ? '' : (ev.local || ''),
+    descricao: ev.nome_publico ? '' : (ev.descricao || ''),
+    ingresso_slug: ev.nome_publico ? null : (ev.ingresso_slug || null),
+  };
 }
 
 /**
@@ -1005,6 +1031,7 @@ async function rotaAgenda(env) {
   const token = await tokenGoogle(env);
   const eventos = await fsList(PROJETO_CAND, 'eventos', token);
   const publicas = eventos.filter(ehAtividadePublica)
+    .map(paraOPublico)
     .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
   return json({ eventos: publicas });
 }

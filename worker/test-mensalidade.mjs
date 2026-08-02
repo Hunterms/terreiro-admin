@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   mensalidadeReais, vencimentoMensalidade, ultimoDiaDoCiclo, precoCentavos, MULTA_ATRASO,
-  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora, ehAtividadePublica,
+  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora, ehAtividadePublica, paraOPublico,
 } from './worker.js';
 
 // ── vencimento por prazo ───────────────────────────────────────────────────
@@ -152,7 +152,7 @@ assert.equal(precoCentavos('men', { ...jul, valor_cobrado: 1 }, f200, '2026-07-0
 
 assert.equal(MULTA_ATRASO, 10);
 
-console.log('ok — 81 asserts de mensalidade passaram');
+console.log('ok — 95 asserts de mensalidade passaram');
 
 // ── o que é de dentro não sai na agenda pública ────────────────────────────
 // Esta lista decide o que a internet vê da casa. Ela morava num Set dentro do
@@ -177,3 +177,44 @@ assert.equal(ehAtividadePublica({ tipo: 'gira_aberta', arquivado: true }), false
 // inteira do site num deploy é pior que mostrar um evento a mais.
 assert.equal(ehAtividadePublica({ data: '2026-09-01' }), true);
 assert.equal(ehAtividadePublica(null), false);
+
+// ── o nome que o site vê é outro campo ─────────────────────────────────────
+// Sábado com coisa interna, mas em que o público precisa saber que não tem
+// gira aberta. O tipo sozinho não dá conta: ou some do site, ou entrega o
+// nome de dentro.
+const sabadoInterno = {
+  id: 'x1', tipo: 'trabalho_interno', data: '2026-11-28',
+  nome: 'Função de barco', nome_publico: 'Sem atividade',
+  hora: '17:30', local: 'Terreiro', descricao: 'só médiuns de barco',
+};
+assert.equal(ehAtividadePublica(sabadoInterno), true);   // aparece
+const p1 = paraOPublico(sabadoInterno);
+assert.equal(p1.nome, 'Sem atividade');                  // com o outro nome
+assert.equal(p1.descricao, '');                          // e sem a descrição interna
+assert.equal(p1.hora, '');                               // nem a hora, que denuncia
+assert.equal(p1.local, '');
+
+// Interno SEM nome_publico continua sumindo do site.
+assert.equal(ehAtividadePublica({ tipo: 'desenvolvimento', nome: 'Catimbó' }), false);
+
+// Gira aberta com nome_publico: aparece com o nome curto, e o resto passa.
+const giraComBatismo = {
+  id: 'x2', tipo: 'gira_aberta', data: '2026-12-12',
+  nome: 'Exu e Pombogira (antes tem batismo)', nome_publico: 'Exu e Pombogira',
+  hora: '17:30',
+};
+assert.equal(ehAtividadePublica(giraComBatismo), true);
+assert.equal(paraOPublico(giraComBatismo).nome, 'Exu e Pombogira');
+
+// Sem nome_publico, o nome real é o que sai — que é o caso da maioria.
+assert.equal(paraOPublico({ id:'x3', tipo:'gira_aberta', nome:'Caboclos', hora:'17:30' }).nome, 'Caboclos');
+assert.equal(paraOPublico({ id:'x3', tipo:'gira_aberta', nome:'Caboclos', hora:'17:30' }).hora, '17:30');
+
+// A descrição NUNCA atravessa sem passar por aqui: antes eu devolvia o doc
+// inteiro, e bastava uma observação interna na descrição pra ela ir junto.
+assert.equal(paraOPublico({ id:'x4', nome:'Gira', descricao:'levar ebó do fulano' }).descricao, 'levar ebó do fulano');
+assert.equal(paraOPublico({ id:'x4', nome:'Gira', nome_publico:'Sem atividade', descricao:'levar ebó do fulano' }).descricao, '');
+
+// arquivado e publico:false vencem o nome_publico
+assert.equal(ehAtividadePublica({ ...sabadoInterno, arquivado: true }), false);
+assert.equal(ehAtividadePublica({ ...sabadoInterno, publico: false }), false);
