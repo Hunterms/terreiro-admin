@@ -1447,6 +1447,37 @@ async function renderPushCard(filho) {
   };
 }
 
+// ── O NOME E A COR DE CADA TIPO DE ATIVIDADE ──────────────────────────────
+//
+// UM mapa. Havia dois — um objeto curto com três tipos e uma escada de `if`
+// com nove — e nenhum dos dois conhecia `desenvolvimento`, criado hoje. As
+// segundas apareciam como "Atividade", que é o texto de quando o mapa não sabe
+// responder.
+//
+// Dois mapas da mesma coisa divergem sempre; a única dúvida é quando. Este
+// divergiu no primeiro tipo novo.
+//
+// Dourado é a cor do que é de dentro. Não é decoração: quem bate o olho na
+// agenda sabe pela cor se aquilo é da casa ou é convite, antes de ler.
+const TIPO_ATIVIDADE = {
+  gira_aberta:           { label: 'Gira aberta',           cor: 'var(--green)',  bg: 'var(--green-bg)' },
+  festa:                 { label: 'Festa',                 cor: '#9b59b6',       bg: 'rgba(155,89,182,0.1)' },
+  apresentacao_cultural: { label: 'Apresentação cultural', cor: '#e67e22',       bg: 'rgba(230,126,34,0.12)' },
+  desenvolvimento:       { label: 'Desenvolvimento',       cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  trabalho_interno:      { label: 'Trabalho interno',      cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  gira_fechada:          { label: 'Gira fechada',          cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  mutirao:               { label: 'Mutirão',               cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  obrigacao_coletiva:    { label: 'Obrigação coletiva',    cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  ensaio_curimba:        { label: 'Ensaio de curimba',     cor: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  reuniao:               { label: 'Reunião',               cor: 'var(--text2)',  bg: 'var(--glass2)' },
+};
+
+// Sem tipo é gira aberta: os documentos antigos não têm o campo, e quase todos
+// são gira. "Atividade" só sobra pra tipo que alguém inventar e não mapear.
+const tipoDaAtividade = (t) =>
+  TIPO_ATIVIDADE[t] || (t ? { label: 'Atividade', cor: 'var(--text2)', bg: 'var(--glass2)' }
+                          : TIPO_ATIVIDADE.gira_aberta);
+
 // ── AS ABAS ───────────────────────────────────────────────────────────────
 //
 // A barra só aparece depois de entrar: antes disso a página é o seletor de
@@ -2731,14 +2762,14 @@ function renderLojinha() {
     else { badge.textContent = `${giraState.length} gira${giraState.length===1?'':'s'} cobertas`; badge.classList.add('muted'); }
   }
 
-  const tipoLabel = { gira_aberta:'Gira aberta', gira_fechada:'Gira fechada', festa:'Festa' };
+
 
   const cardGira = (st) => {
     const { ev, esc, lojinhaIds } = st;
     const escId = esc?.id || '';
     const editorId = `lj-ed-${ev.id.replace(/[^a-z0-9]/gi,'')}`;
     const nomeEv = ev.nome || ev.titulo || 'Evento';
-    const tipoEv = tipoLabel[ev.tipo] || 'Atividade';
+    const tipoEv = tipoDaAtividade(ev.tipo).label;
     const dataLabel = ev.data ? new Date(ev.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
     const responsaveisLabel = lojinhaIds.length > 0
       ? lojinhaIds.map(fid => (APP.filhos.find(x=>x.id===fid)?.nome || '?').split(' ')[0]).join(', ')
@@ -2903,26 +2934,11 @@ function renderGiras() {
     .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora))
     .slice(0,50);
 
-  // Helper: tipo visual + label legível
-  const tipoLabel = ev => {
-    const t = ev.tipo;
-    if(!t || t === 'gira_aberta') return { label:'Gira aberta', cor:'var(--green)', bg:'var(--green-bg)' };
-    if(t === 'gira_fechada') return { label:'Gira fechada', cor:'var(--blue)', bg:'rgba(52,152,219,0.1)' };
-    if(t === 'festa') return { label:'Festa', cor:'#9b59b6', bg:'rgba(155,89,182,0.1)' };
-    if(t === 'trabalho_interno') return { label:'Trabalho interno', cor:'var(--gold)', bg:'var(--gold-bg)' };
-    if(t === 'mutirao') return { label:'Mutirão', cor:'var(--gold)', bg:'var(--gold-bg)' };
-    if(t === 'reuniao') return { label:'Reunião', cor:'var(--text2)', bg:'var(--glass2)' };
-    if(t === 'obrigacao_coletiva') return { label:'Obrigação coletiva', cor:'#9b59b6', bg:'rgba(155,89,182,0.1)' };
-    if(t === 'ensaio_curimba') return { label:'Ensaio de curimba', cor:'var(--red)', bg:'var(--red-bg)' };
-    if(t === 'apresentacao_cultural') return { label:'Apresentação cultural', cor:'#e67e22', bg:'rgba(230,126,34,0.12)' };
-    return { label:'Atividade', cor:'var(--text2)', bg:'var(--glass2)' };
-  };
-
   cont.innerHTML = `
     <div class="card">
       <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>Próximas atividades</h2>
       ${atividades.length === 0 ? '<div class="empty">Nenhuma atividade programada por enquanto.</div>' : atividades.map(e => {
-        const tipo = tipoLabel(e);
+        const tipo = tipoDaAtividade(e.tipo);
         return `
         <div class="list-item">
           <div class="li-date" style="background:${tipo.bg};color:${tipo.cor}">
