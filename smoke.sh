@@ -207,7 +207,8 @@ if [[ "$alvo" == "tudo" || "$alvo" == "calado" ]]; then
   # onSnapshot em cada superfície — esta checagem é o que impede alguém desfazer
   # o embrulho sem perceber que está reabrindo os 47.
   for par in "index.html:_onSnapshotOriginal" "despensa.html:_onSnapshotOriginal" \
-             "area-filho.html:avisarFalha" "filhos.js:avisarFalha"; do
+             "area-filho.html:avisarFalha" "filhos.js:avisarFalha" \
+             "area-filho.html:pintarAcesso"; do
     arq="${par%%:*}"; marca="${par##*:}"
     if grep -q "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
       ok "$arq protege leitura que falha"

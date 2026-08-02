@@ -706,6 +706,7 @@ function dataEfetivaAloc(es, aloc, funcoes) {
 
     $('#loading').style.display = 'none';
     $('#content').style.display = '';
+    pintarAcesso();   // deslogado, só o "quem é você" fica na tela
 
     renderAvisos();
     renderEventosFilho();
@@ -722,8 +723,8 @@ function dataEfetivaAloc(es, aloc, funcoes) {
       if (!APP.sessao) return;
       APP.sessao = null;
       APP.filhoAtual = null;
-      $('#filho-area').style.display = 'none';
-      $('#filho-sel-card').style.display = '';
+      APP.eventos = []; APP.avisos = []; APP.eventoInscricoes = [];
+      pintarAcesso();
       toast('Sua sessão expirou. Entra de novo com o seu PIN.','err');
     });
 
@@ -787,7 +788,7 @@ async function carregarMural() {
 async function selecionarFilho(id) {
   if(!id) {
     APP.filhoAtual = null;
-    $('#filho-area').style.display = 'none';
+    pintarAcesso();
     return;
   }
   const filho = APP.filhos.find(f => f.id === id);
@@ -816,7 +817,7 @@ async function selecionarFilho(id) {
   }
 
   APP.filhoAtual = filho;
-  $('#filho-area').style.display = '';
+  pintarAcesso();   // entrou: a casa aparece
   renderIdentityHero(filho);
   renderPushCard(filho);
   renderCadastro(filho);
@@ -1478,6 +1479,33 @@ const tipoDaAtividade = (t) =>
   TIPO_ATIVIDADE[t] || (t ? { label: 'Atividade', cor: 'var(--text2)', bg: 'var(--glass2)' }
                           : TIPO_ATIVIDADE.gira_aberta);
 
+// ── O QUE APARECE ANTES DE ENTRAR ─────────────────────────────────────────
+//
+// Nada, além do "quem é você".
+//
+// Isso não era verdade: a coluna da comunidade (mural, próximas atividades,
+// rega) vive FORA do `#filho-area`, então nunca foi escondida — ela só ficava
+// vazia depois que o mural virou interno. E a barra de abas continuava na tela
+// depois de sair, porque `trocarFilho` não desfazia o que `ligarAbas` tinha
+// feito.
+//
+// Uma função só decide isso, e ela é chamada nos três momentos em que o estado
+// muda: ao abrir, ao entrar e ao sair. Três lugares mexendo em `display` por
+// conta própria é como se chega numa tela meio logada.
+function pintarAcesso() {
+  const dentro = !!APP.sessao;
+
+  document.querySelector('.col-comunidade')?.classList.toggle('fora-da-aba', !dentro);
+  document.getElementById('topo-pendencias')?.classList.toggle('fora-da-aba', !dentro);
+  document.getElementById('filho-area')?.style.setProperty('display', dentro ? '' : 'none');
+  document.getElementById('filho-sel-card')?.style.setProperty('display', dentro ? 'none' : '');
+  document.querySelector('.col-pessoal .col-titulo')?.classList.toggle('fora-da-aba', !dentro);
+
+  const abas = document.getElementById('abas');
+  if (abas) abas.style.display = dentro ? 'flex' : 'none';
+  document.body.classList.toggle('com-abas', dentro);
+}
+
 // ── AS ABAS ───────────────────────────────────────────────────────────────
 //
 // A barra só aparece depois de entrar: antes disso a página é o seletor de
@@ -1564,8 +1592,7 @@ function ligarAbas() {
   document.querySelectorAll('.aba-btn').forEach((b) => {
     b.onclick = () => mostrarAba(b.dataset.ir);
   });
-  $('#abas').style.display = 'flex';
-  document.body.classList.add('com-abas');
+  pintarAcesso();
   mostrarAba('inicio');
 }
 
@@ -3411,13 +3438,13 @@ function trocarFilho() {
   // próximo a pegar o celular entrava como a pessoa anterior.
   APP.sessao = null;
   Filhos.esquecerSessao();
+  APP.eventos = []; APP.avisos = []; APP.eventoInscricoes = [];
+  pintarAcesso();
   if(APP.filhoAtual) {
     try { sessionStorage.removeItem(`auth_${APP.filhoAtual.id}`); } catch(e) {}
   }
   APP.filhoAtual = null;
-  $('#filho-area').style.display = 'none';
-  const selectorCard = $('#filho-sel-card');
-  if(selectorCard) selectorCard.style.display = '';
+  pintarAcesso();
   resetSearchSelect();
   // Fecha todos os chevrons da área pessoal (reset visual)
   ['dash-sec-afilhados','dash-sec-escalas','dash-sec-tarefas','dash-sec-disp','dash-sec-reemb','dash-sec-lojinha','dash-sec-afazeres','dash-sec-perguntas'].forEach(id => {
