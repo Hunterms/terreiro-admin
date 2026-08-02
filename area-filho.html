@@ -697,7 +697,10 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     }
 
     // Carrega dados PÚBLICOS (sem precisar selecionar nome)
-    await Promise.all([carregarEventos(), carregarAvisos(), carregarRegasDiarias(), carregarEventoInscricoes()]);
+    // O mural NÃO entra aqui: ele é interno e depende de sessão. A rega
+    // também some da tela pública desde 01/08, mas o carregamento fica porque
+    // o calendário dela é montado no render, com ou sem sessão.
+    await carregarRegasDiarias();
 
     initSearchSelect();
 
@@ -731,36 +734,39 @@ function dataEfetivaAloc(es, aloc, funcoes) {
   }
 })();
 
-async function carregarEventos() {
+// ── O MURAL, QUE AGORA É INTERNO ──────────────────────────────────────────
+//
+// Eram três leituras diretas do Firestore, feitas ANTES de qualquer login:
+// `eventos` (as giras e trabalhos), `adm_avisos` (o mural) e
+// `evento_inscricoes` (quem vai em quê).
+//
+// Em 01/08 o Pai decidiu que isso é de dentro. A agenda do filho mostra os
+// trabalhos internos, não só as giras abertas, e o mural é conversa da casa.
+// A listagem de `eventos` fechou no mesmo dia — e foi ela que passou a
+// devolver "não consegui carregar as giras e eventos" na tela, porque este
+// carregamento continuava batendo direto na collection.
+//
+// Agora vem numa chamada só, atrás da sessão. Uma e não três: são coisas que a
+// tela sempre pede juntas, e três viagens na abertura em 3G é a diferença
+// entre abrir e parecer travado.
+async function carregarMural() {
+  if (!APP.sessao) {
+    // Sem sessão não há mural. Não é erro: é a área ainda fechada.
+    APP.eventos = []; APP.avisos = []; APP.eventoInscricoes = [];
+    return;
+  }
   try {
-    const evSnap = await getDocs(collection(dbCand,'eventos'));
-    APP.eventos = evSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-  } catch(e) { Filhos.avisarFalha('as giras e eventos', e); APP.eventos = []; }
+    const d = await Filhos.mural(APP.cfgAgendamento, APP.sessao);
+    APP.eventos = d.eventos || [];
+    APP.avisos = (d.avisos || [])
+      .sort((a, b) => String(b.publicadoEm || '').localeCompare(String(a.publicadoEm || '')));
+    APP.eventoInscricoes = d.inscricoes || [];
+  } catch (e) {
+    Filhos.avisarFalha('o mural e a agenda da casa', e);
+    APP.eventos = []; APP.avisos = []; APP.eventoInscricoes = [];
+  }
 }
 
-async function carregarAvisos() {
-  try {
-    const avSnap = await getDocs(collection(dbPvd,'adm_avisos'));
-    APP.avisos = avSnap.docs.map(d => ({ id:d.id, ...d.data() }))
-      .filter(a => !a.arquivado)
-      .sort((a,b) => (b.publicadoEm?.seconds||0) - (a.publicadoEm?.seconds||0));
-  } catch(e) { Filhos.avisarFalha('o mural de avisos', e); APP.avisos = []; }
-}
-
-async function carregarRegasDiarias() {
-  try {
-    const rSnap = await getDocs(collection(dbPvd,'adm_rega_diaria'));
-    APP.regasDiarias = {};
-    rSnap.docs.forEach(d => { APP.regasDiarias[d.id] = { id:d.id, ...d.data() }; });
-  } catch(e) { console.warn('Erro regas diárias', e); APP.regasDiarias = {}; }
-}
-
-async function carregarEventoInscricoes() {
-  try {
-    const iSnap = await getDocs(collection(dbPvd,'evento_inscricoes'));
-    APP.eventoInscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-  } catch(e) { Filhos.avisarFalha('as inscrições em eventos', e); APP.eventoInscricoes = []; }
-}
 
 async function selecionarFilho(id) {
   if(!id) {
@@ -867,6 +873,8 @@ async function selecionarFilho(id) {
   }
 
   ligarAbas();
+  // Com sessão na mão, o mural interno pode vir.
+  carregarMural().then(() => { renderAvisos(); renderEventosFilho(); renderGiras(); });
   renderRega();   // agora com sessão: a escala aparece
   renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
   renderAvisosInbox(); // idem — e é a única coisa que alcança quem não tem email
