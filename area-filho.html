@@ -182,7 +182,14 @@ textarea.fi{min-height:60px;resize:vertical}
 select.fi{appearance:none;-webkit-appearance:none;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a89880' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
 select.fi option{background:#1a1a1a;color:var(--text)}
 
-.btn{display:inline-flex;align-items:center;gap:7px;padding:11px 18px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)}
+/* `justify-content:center` no .btn, e não só no .btn-block: existiam 21
+   botões com largura cheia por `style` inline, e em todos eles o texto ficava
+   colado na esquerda. Botão com rótulo fora do centro parece quebrado, e
+   estava — foi o que o Pai viu na tela de reembolso.
+
+   Centralizar é o certo pra todo botão. `.btn-block` continua valendo, só
+   deixou de ser a única forma de acertar. */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:11px 18px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);justify-content:center;text-align:center}
 .btn-primary{background:linear-gradient(135deg,var(--gold),var(--gold2));border-color:transparent;color:#1a1209}
 .btn-primary:hover{transform:translateY(-1px);filter:brightness(1.05)}
 .btn-primary:disabled{opacity:.55;cursor:wait}

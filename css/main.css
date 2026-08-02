@@ -76,7 +76,10 @@ main{flex:1;padding:28px 32px;min-width:0;overflow-x:hidden}
 .page-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .14s}
+/* Centralizado por padrão. Botão que ganha largura cheia por `style` inline
+   ficava com o rótulo colado na esquerda, e rótulo fora do centro parece
+   quebrado. Mesmo conserto feito no area-filho.html em 02/08. */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--rad);border:1px solid var(--border2);background:var(--glass);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .14s;justify-content:center;text-align:center}
 .btn:hover{background:var(--glass2);border-color:var(--text3)}
 .btn-primary{background:linear-gradient(135deg,var(--red),var(--red2));border-color:transparent;color:white;font-weight:600}
 .btn-primary:hover{transform:translateY(-1px);background:linear-gradient(135deg,var(--red),var(--red2))}
