@@ -109,6 +109,11 @@ export async function criarPin(cfg, filhoId, prova, novoPin) {
   return chamar(cfg, '/criar-pin', { filho_id: filhoId, tel4: prova, pin: novoPin });
 }
 
+/** O mural interno: avisos, próximas atividades e as inscrições da pessoa. */
+export async function mural(cfg, quem) {
+  return chamar(cfg, '/mural', quem);
+}
+
 /** A caixa de avisos de quem está logado. */
 export async function avisos(cfg, quem) {
   return chamar(cfg, '/avisos', quem);
