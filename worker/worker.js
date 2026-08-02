@@ -17,6 +17,9 @@
  *                       contra dado que o navegador tinha baixado.
  *   POST /agenda     → a agenda que o SITE mostra. Pública, e já filtrada:
  *                       gira aberta é convite, desenvolvimento não é.
+ *   POST /reembolso  → o filho pede reembolso. Nome e telefone saem do
+ *                       cadastro, não da tela.
+ *   POST /meus-reembolsos → o histórico dele.
  *   POST /mural      → quadro de avisos e próximas atividades. Interno: não
  *                       existe mais área externa (decisão de 01/08).
  *   POST /avisar-filho → o admin responde alguém. Push + caixa de avisos.
@@ -188,6 +191,8 @@ export default {
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
       if (rota === '/agenda') return await rotaAgenda(env);
+      if (rota === '/reembolso') return await rotaReembolso(body, env);
+      if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2122,6 +2127,86 @@ async function rotaZerarPin(body, request, env) {
   return json({ ok: true, nome: filho.nome || '', voltou_pro_telefone: true });
 }
 
+// ── REEMBOLSO PEDIDO PELO FILHO ────────────────────────────────────────────
+//
+// Era escrita direta em `fin_reembolsos`, e quebrou por duas regras que a
+// própria collection impõe pro público: `tel` e `pix_chave` precisam ser string
+// não vazia.
+//
+//   O PIX virou OPCIONAL em 01/08, a pedido do Pai. Sem chave, a regra recusa.
+//   O TELEFONE só existia na tela se a pessoa tivesse acabado de digitar o PIN.
+//   Quem entra por sessão salva — o caso normal, 30 dias — não tem, e mandava
+//   string vazia.
+//
+// Consertar as rules seria afrouxar o que protege o formulário PÚBLICO, que
+// continua precisando dos dois campos. Então o pedido do filho passa por aqui:
+// o Worker sabe quem é pela sessão, pega nome e telefone do cadastro, e grava
+// por service account. A tela para de precisar saber o telefone de alguém pra
+// pedir reembolso.
+async function rotaReembolso(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const descricao = String(body?.descricao || '').trim();
+  const valor = Number(body?.valor);
+  const pix = String(body?.pix_chave || '').trim();
+
+  if (descricao.length < 2 || descricao.length > 1000) {
+    return json({ error: 'conta o que você comprou' }, 400);
+  }
+  if (!(valor > 0) || valor >= 100000) return json({ error: 'valor inválido' }, 400);
+  if (pix.length > 200) return json({ error: 'chave PIX longa demais' }, 400);
+
+  const f = quem.filho;
+  const ref = await fsCreate(PROJETO_PVD, 'fin_reembolsos', token, {
+    nome: f.nome || '',
+    tel: f.tel || '',
+    email: f.auth_email || null,
+    filho_id: quem.id,
+    descricao,
+    valor,
+    // Mantidos como null: o financeiro lê os três de forma condicional, e
+    // sumir com a chave quebraria a linha do lançamento.
+    data_compra: hojeSP(),
+    onde_comprou: null,
+    finalidade: null,
+    pix_chave: pix || null,
+    pix_titular: null,
+    status: 'pendente',
+    origem: 'area_filho',
+    criadoEm: new Date().toISOString(),
+  });
+
+  await avisar(env, token, {
+    para: 'admin',
+    titulo: 'Pedido de reembolso',
+    corpo: `${f.nome || 'alguém'} — ${brl(valor)} · ${descricao.slice(0, 80)}`,
+    url: 'index.html#pedidos',
+    tag: 'reembolso',
+  });
+
+  return json({ ok: true, id: ref?.id || null });
+}
+
+/** O histórico de reembolso de quem pediu. A collection é fechada de propósito:
+ *  o doc carrega chave PIX e telefone, e as rules não conseguem limitar uma
+ *  query por filho sem login de verdade. Aqui a sessão resolve. */
+async function rotaMeusReembolsos(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const lista = (await fsQuery(PROJETO_PVD, 'fin_reembolsos', token, { campo: 'filho_id', valor: quem.id }, 30))
+    .sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')))
+    .slice(0, 10)
+    .map((r) => ({
+      id: r.id, descricao: r.descricao || '', valor: Number(r.valor) || 0,
+      status: r.status || 'pendente', criadoEm: r.criadoEm || null, obs_admin: r.obs_admin || null,
+    }));
+  return json({ reembolsos: lista });
+}
+
 // ── O FILHO EDITANDO O PRÓPRIO CADASTRO ────────────────────────────────────
 //
 // Dois campos, e os dois a página pedia direto ao Firestore: data de nascimento
@@ -2340,6 +2425,8 @@ async function rotaStatus(body, env) {
   if (pedido.pago_automatico === true || pedido.pagamento_suspeito) return responder(pedido);
   if (!transaction_nsu || !slug) return responder(pedido);
 
+  // O log não pode derrubar o webhook: `fsCreate` agora lança, e um log
+  // perdido é infinitamente melhor que um pagamento recusado por causa dele.
   const registrar = (resultado, detalhe) =>
     fsCreate(PROJETO_PVD, 'adm_webhook_log', token, {
       recebidoEm: new Date().toISOString(),
@@ -2382,6 +2469,8 @@ async function rotaWebhook(body, env) {
   // não mostra o erro e o log do Cloudflare expira. Dá pra ler no Firebase
   // Console → Firestore → adm_webhook_log.
   const token = await tokenGoogle(env);
+  // O log não pode derrubar o webhook: `fsCreate` agora lança, e um log
+  // perdido é infinitamente melhor que um pagamento recusado por causa dele.
   const registrar = (resultado, detalhe) =>
     fsCreate(PROJETO_PVD, 'adm_webhook_log', token, {
       recebidoEm: new Date().toISOString(),
@@ -2679,6 +2768,18 @@ async function fsCreateComId(projeto, colecao, id, token, campos) {
 }
 
 // Cria doc com id automático. Usado só pelo log de webhook.
+/**
+ * Cria doc com id automático. Devolve `{ id }`.
+ *
+ * LANÇA quando falha. Antes só imprimia no console e seguia como se tivesse
+ * gravado — e isso passou a importar quando o pedido de reembolso do filho
+ * começou a vir por aqui: uma escrita que falha em silêncio devolveria "ok"
+ * pra alguém que ficaria esperando o dinheiro.
+ *
+ * Quem chama por conveniência (log de webhook, registro de aviso) já envolve
+ * em try/catch ou em `.catch()`, porque falhar ali não pode derrubar o que
+ * veio antes.
+ */
 async function fsCreate(projeto, colecao, token, campos) {
   const url = `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents/${colecao}`;
   const resp = await fetch(url, {
@@ -2686,7 +2787,9 @@ async function fsCreate(projeto, colecao, token, campos) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: embrulha(campos).mapValue.fields }),
   });
-  if (!resp.ok) console.error(`Firestore CREATE ${colecao}: ${resp.status} ${await resp.text()}`);
+  if (!resp.ok) throw new Error(`Firestore CREATE ${colecao}: ${resp.status} ${await resp.text()}`);
+  const doc = await resp.json().catch(() => ({}));
+  return { id: String(doc.name || '').split('/').pop() || null };
 }
 
 async function fsPatch(projeto, colecao, id, token, campos) {

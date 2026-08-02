@@ -192,6 +192,9 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   else
     ok "agenda pública sem os trabalhos de dentro"
   fi
+  # O pedido de reembolso passou a exigir sessão. Sem ela, filho_id inválido.
+  r=$(curl -s -X POST "$W/reembolso" -H 'Content-Type: application/json' -d '{"descricao":"x","valor":10}')
+  echo "$r" | grep -q 'inválido' && ok "reembolso exige sessão" || erro "reembolso: $(head -c 90 <<< "$r")"
   r=$(curl -s -X POST "$W/avisar-filho" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')

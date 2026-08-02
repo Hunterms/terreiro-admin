@@ -109,6 +109,16 @@ export async function criarPin(cfg, filhoId, prova, novoPin) {
   return chamar(cfg, '/criar-pin', { filho_id: filhoId, tel4: prova, pin: novoPin });
 }
 
+/** Pede reembolso. Nome e telefone saem do cadastro, não da tela. */
+export async function pedirReembolso(cfg, quem, { descricao, valor, pix_chave }) {
+  return chamar(cfg, '/reembolso', { ...quem, descricao, valor, pix_chave });
+}
+
+/** O histórico de reembolso de quem está logado. */
+export async function meusReembolsos(cfg, quem) {
+  return chamar(cfg, '/meus-reembolsos', quem);
+}
+
 /** O mural interno: avisos, próximas atividades e as inscrições da pessoa. */
 export async function mural(cfg, quem) {
   return chamar(cfg, '/mural', quem);

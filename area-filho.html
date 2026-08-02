@@ -3337,29 +3337,25 @@ function abrirModalReembolso() {
     const btn = document.querySelector('button[form=reemb-form]');
     btn.disabled = true; btn.textContent = 'Enviando...';
     try {
-      const ref = await addDoc(collection(dbPvd,'fin_reembolsos'), {
-        nome: f.nome,
-        tel: tel || '',
-        email: f.auth_email || null,
-        filho_id: f.id,
-        descricao: desc,
-        valor,
-        // Continuam no doc como null: o financeiro lê os três de forma
-        // condicional, e sumir com a chave quebraria a linha do lançamento.
-        data_compra: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }),
-        onde_comprou: null,
-        finalidade: null,
-        pix_chave: pix || null,
-        pix_titular: null,
-        status: 'pendente',
-        origem: 'reembolso_publico',
-        criadoEm: serverTimestamp()
+      // Pelo Worker, e não direto no Firestore.
+      //
+      // A escrita direta batia nas rules de `fin_reembolsos`, que exigem `tel`
+      // e `pix_chave` como string NÃO VAZIA. O PIX virou opcional, e o telefone
+      // só existia na tela pra quem tinha acabado de digitar o PIN — quem entra
+      // por sessão salva, que é o caso normal, mandava string vazia.
+      //
+      // Afrouxar a regra estragaria o formulário PÚBLICO, que continua
+      // precisando dos dois. Então o Worker pega nome e telefone do cadastro:
+      // esta tela deixou de precisar saber o telefone de alguém pra pedir
+      // reembolso.
+      const r = await Filhos.pedirReembolso(APP.cfgAgendamento, APP.sessao, {
+        descricao: desc, valor, pix_chave: pix,
       });
-      mostrarSucessoReemb(valor, desc, ref.id);
+      mostrarSucessoReemb(valor, desc, r.id || '');
       carregarHistoricoReemb();
     } catch(ex) {
       console.error(ex);
-      mostraErr('Erro ao enviar. Tenta de novo.', err);
+      mostraErr(Filhos.explicar(ex.message), err);
       btn.disabled = false; btn.textContent = 'Enviar pedido';
     }
   });
@@ -3397,56 +3393,50 @@ function mostrarSucessoReemb(valor, desc, id) {
 
 async function carregarHistoricoReemb() {
   const f = APP.filhoAtual;
-  if(!f) return;
   const histC = $('#reemb-historico');
+  if(!f || !histC || !APP.sessao) return;
   histC.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:10px 0">Carregando seus pedidos anteriores...</div>';
+
+  let lista;
   try {
-    const q1 = query(collection(dbPvd,'fin_reembolsos'), where('filho_id','==',f.id));
-    const snap = await getDocs(q1);
-    const lista = snap.docs.map(d => ({id:d.id, ...d.data()}))
-      .sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0))
-      .slice(0,10);
-    // Atualiza badge da seção: pedidos pendentes/aprovados (aguardando)
-    const aguardando = lista.filter(r => (r.status||'pendente') === 'pendente' || r.status === 'aprovado').length;
-    const badge = $('#dash-cnt-reemb');
-    if(badge) badge.textContent = aguardando > 0 ? `${aguardando} pendente${aguardando===1?'':'s'}` : '';
-    if(lista.length === 0) { histC.innerHTML = ''; return; }
-    const stChip = {
-      pendente: ['Pendente','color:#d4a843;background:rgba(212,168,67,.12)'],
-      aprovado: ['Aprovado','color:#3498db;background:rgba(52,152,219,.12)'],
-      pago: ['Pago','color:#2ecc71;background:rgba(46,204,113,.12)'],
-      rejeitado: ['Rejeitado','color:#888;background:rgba(255,255,255,.05)']
-    };
-    histC.innerHTML = `
-      <div style="margin-top:18px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Meus pedidos anteriores</div>
-      ${lista.map(r => {
-        const st = stChip[r.status||'pendente'] || stChip.pendente;
-        const dt = r.criadoEm?.toDate ? r.criadoEm.toDate() : new Date(r.criadoEm?.seconds*1000 || Date.now());
-        return `<div style="padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-          <div style="flex:1;min-width:180px">
-            <div style="font-size:13px;color:var(--text)">${r.descricao||''}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">${dt.toLocaleDateString('pt-BR')}${r.obs_admin?` · <span style="font-style:italic">${r.obs_admin}</span>`:''}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:14px;font-weight:700;color:var(--gold)">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</div>
-            <span style="font-size:10px;padding:2px 7px;border-radius:9px;${st[1]};font-weight:600;margin-top:3px;display:inline-block">${st[0]}</span>
-          </div>
-        </div>`;
-      }).join('')}
-    `;
-  } catch(e) {
-    console.warn('Erro hist reemb', e);
-    // `fin_reembolsos` não tem leitura pública, e não vai ter: o doc carrega
-    // chave PIX, telefone e email de quem pediu, e as rules não conseguem
-    // limitar uma query por filho sem login de verdade. Até existir uma rota no
-    // Worker (com a prova dos 4 dígitos, igual à mensalidade), o histórico não
-    // carrega — e dizer isso é melhor que mostrar lista vazia, que o filho lê
-    // como "meu pedido sumiu".
-    histC.innerHTML = e.code === 'permission-denied'
-      ? `<div style="font-size:12px;color:var(--text3);padding:10px 0;line-height:1.5">O histórico dos seus pedidos ainda não abre por aqui. O pedido que você enviou <strong style="color:var(--text2)">foi recebido</strong> — a administração acompanha por dentro.</div>`
-      : '';
+    // Passou a vir do Worker. A collection continua fechada — o doc carrega
+    // chave PIX e telefone, e as rules não sabem limitar uma query por filho
+    // sem login de verdade. Com a sessão, o Worker sabe e devolve só o dele.
+    lista = (await Filhos.meusReembolsos(APP.cfgAgendamento, APP.sessao)).reembolsos || [];
+  } catch (e) {
+    histC.innerHTML = `<div style="font-size:12.5px;color:var(--text3);padding:10px 0">Não consegui carregar seus pedidos anteriores. ${escapaHtml(Filhos.explicar(e.message))}</div>`;
+    return;
   }
+
+  const aguardando = lista.filter(r => (r.status||'pendente') === 'pendente' || r.status === 'aprovado').length;
+  const badge = $('#dash-cnt-reemb');
+  if(badge) badge.textContent = aguardando > 0 ? `${aguardando} pendente${aguardando===1?'':'s'}` : '';
+  if(!lista.length) { histC.innerHTML = ''; return; }
+
+  const chip = {
+    pendente:  ['Pendente','color:#d4a843;background:rgba(212,168,67,.12)'],
+    aprovado:  ['Aprovado','color:#3498db;background:rgba(52,152,219,.12)'],
+    pago:      ['Pago','color:#2ecc71;background:rgba(46,204,113,.12)'],
+    rejeitado: ['Rejeitado','color:#888;background:rgba(255,255,255,.05)'],
+  };
+  histC.innerHTML = `
+    <div style="margin-top:18px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Meus pedidos anteriores</div>
+    ${lista.map(r => {
+      const st = chip[r.status||'pendente'] || chip.pendente;
+      const dt = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '';
+      return `<div style="padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:13px;color:var(--text)">${escapaHtml(r.descricao)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${dt}${r.obs_admin?` · <span style="font-style:italic">${escapaHtml(r.obs_admin)}</span>`:''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:14px;font-weight:700;color:var(--gold)">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</div>
+          <span style="font-size:10px;padding:2px 7px;border-radius:9px;${st[1]};font-weight:600;margin-top:3px;display:inline-block">${st[0]}</span>
+        </div>
+      </div>`;
+    }).join('')}`;
 }
+
 
 function trocarFilho() {
   // Sair apaga a sessão do disco. Sem isto, "sair" só escondia a tela e o
