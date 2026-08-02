@@ -2507,6 +2507,11 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
     <div class="modal-h"><h3>${isEdit?'Editar evento':'Novo evento'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div class="fi-group"><label>Título *</label><input class="fi" id="ev-nome" value="${e?.nome||e?.titulo||''}" placeholder="Gira de Pretos-Velhos"/></div>
+      <div class="fi-group">
+        <label>Como aparece no site (opcional)</label>
+        <input class="fi" id="ev-nome-publico" value="${e?.nome_publico||''}" placeholder="deixe vazio pra usar o título acima"/>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Serve pros dois casos que o tipo sozinho não resolve. Sábado com trabalho interno em que o público precisa saber que não tem gira: escreve <strong>Sem atividade</strong>. Gira aberta com parte só pros filhos: escreve só a parte pública. Preenchido, o site mostra ESTE nome e não recebe hora, local nem descrição.</div>
+      </div>
       <div class="row-2">
         <div class="fi-group"><label>Data *</label><input type="date" class="fi" id="ev-data" value="${e?.data||dataInicial||''}"/></div>
         <div class="fi-group"><label>Hora</label><input type="time" class="fi" id="ev-hora" value="${e?.hora||''}"/></div>
@@ -2570,6 +2575,7 @@ function openEventoForm(id=null, dataInicial=null, tipoDefault=null) {
     if(!data) { toast('Informe a data','err'); return; }
     const payload = {
       nome,
+      nome_publico: $('#ev-nome-publico').value.trim() || null,
       data,
       hora: $('#ev-hora').value || '',
       tipo: $('#ev-tipo').value,

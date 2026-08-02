@@ -187,6 +187,8 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
     erro "agenda VAZIA — o site perdeu o calendário. Service account alcança o terreiro-candieiro?"
   elif grep -qE '"tipo":"(desenvolvimento|gira_fechada|trabalho_interno|obrigacao_coletiva|reuniao|mutirao|ensaio_curimba)"' <<< "$r"; then
     erro "VAZAMENTO: a agenda pública devolveu atividade interna"
+  elif grep -q '"nome_publico"' <<< "$r"; then
+    erro "VAZAMENTO: a agenda pública devolveu o nome INTERNO junto do público"
   else
     ok "agenda pública sem os trabalhos de dentro"
   fi
