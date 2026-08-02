@@ -149,6 +149,10 @@
       </button>
 
       <div class="section-label">Sistema</div>
+      <button data-route="importar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Importar calendário
+      </button>
       <button data-route="links">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
         Links
@@ -1035,6 +1039,7 @@ function renderRoute() {
   switch(S.route) {
     case 'dashboard':     return renderDashboard(c);
     case 'links':         return renderLinks(c);
+    case 'importar':      return renderImportar(c);
     case 'filhos':        return renderFilhos(c);
     case 'funcoes':       return renderFuncoes(c);
     case 'kanban':        return renderKanban(c);
@@ -1262,6 +1267,164 @@ async function limparKanbanAntigos() {
 }
 
 // ── DASHBOARD (admin) ──────────────────────────────────────────────────────
+// ── IMPORTAR O CALENDÁRIO DO SEMESTRE ────────────────────────────────────
+//
+// O Pai manda o calendário do semestre numa imagem, duas colunas: segundas e
+// sábados. São ~40 eventos, e cadastrar um por um é o tipo de trabalho que
+// ninguém faz — então o calendário fica só na imagem, e o sistema não sabe
+// dele.
+//
+// Isto lê o texto colado. Uma linha por evento, "data" e "nome" separados por
+// espaço, e a data no formato que o Pai escreve: "03 Ago", "10 Ago".
+//
+// Um bloco por vez, porque cada coluna tem tipo e hora próprios: segunda é
+// desenvolvimento às 19h15, sábado é gira às 17h30. Misturar as duas numa
+// caixa só exigiria adivinhar o tipo pela data, e adivinhar tipo é como um
+// trabalho interno vai parar no site.
+const MESES_PT = { jan:1, fev:2, mar:3, abr:4, mai:5, jun:6, jul:7, ago:8, set:9, out:10, nov:11, dez:12 };
+
+// "03 Ago  Gira só com as filhas" → { data: '2026-08-03', nome: 'Gira só com as filhas' }
+// Devolve `erro` em vez de pular a linha: linha que some sem avisar é como
+// metade do semestre entra e ninguém percebe.
+function lerLinhaDeCalendario(linha, ano) {
+  const t = linha.trim();
+  if (!t) return null;
+  const m = /^(\d{1,2})\s*[\/\-\s]?\s*([A-Za-zçÇ]{3,})\.?\s+(.+)$/.exec(t);
+  if (!m) return { erro: `não entendi: "${t.slice(0, 40)}"` };
+  const dia = Number(m[1]);
+  const mes = MESES_PT[m[2].slice(0, 3).toLowerCase()];
+  if (!mes) return { erro: `mês desconhecido em "${t.slice(0, 40)}"` };
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  if (d.getUTCDate() !== dia) return { erro: `data que não existe: ${dia}/${mes}` };
+  return { data: d.toISOString().slice(0, 10), nome: m[3].trim() };
+}
+
+const DIA_SEMANA = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+
+function renderImportar(c) {
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Importar calendário</div>
+        <div class="page-sub">Cola uma coluna do calendário do semestre. Confere antes de gravar.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="fi-group">
+          <label>Tipo</label>
+          <select class="fi" id="imp-tipo">
+            <option value="desenvolvimento">Desenvolvimento (segunda)</option>
+            <option value="gira_aberta">Gira aberta (sábado)</option>
+            <option value="gira_fechada">Gira fechada</option>
+            <option value="festa">Festa</option>
+            <option value="trabalho_interno">Trabalho interno</option>
+          </select>
+        </div>
+        <div class="fi-group">
+          <label>Hora</label>
+          <input class="fi" id="imp-hora" placeholder="19:15"/>
+        </div>
+      </div>
+      <div class="fi-group">
+        <label>Ano</label>
+        <input class="fi" id="imp-ano" type="number" value="${new Date().getFullYear()}" style="max-width:140px"/>
+      </div>
+      <div class="fi-group">
+        <label>Cola aqui, uma linha por evento</label>
+        <textarea class="fi" id="imp-texto" style="min-height:220px;font-family:ui-monospace,monospace;font-size:13px" placeholder="03 Ago  Gira só com as filhas
+10 Ago  Gira só com os filhos
+17 Ago  Encontro sobre gênero e espiritualidade"></textarea>
+      </div>
+      <button class="btn" id="imp-conferir" style="width:100%">Conferir</button>
+    </div>
+
+    <div id="imp-previa"></div>
+  `;
+
+  $('#imp-conferir').onclick = () => {
+    const ano = Number($('#imp-ano').value) || new Date().getFullYear();
+    const linhas = $('#imp-texto').value.split('\n');
+    const lidos = linhas.map(l => lerLinhaDeCalendario(l, ano)).filter(Boolean);
+    const erros = lidos.filter(x => x.erro);
+    const bons = lidos.filter(x => !x.erro);
+
+    // Já existe? Mesma data e mesmo nome. Sem isto, conferir duas vezes cria
+    // o semestre duas vezes, e limpar duplicata de calendário é pior que
+    // cadastrar na mão.
+    const existentes = new Set((S.eventos || []).map(e => `${e.data}|${(e.nome || '').trim().toLowerCase()}`));
+    const novos = bons.filter(x => !existentes.has(`${x.data}|${x.nome.toLowerCase()}`));
+    const repetidos = bons.length - novos.length;
+
+    $('#imp-previa').innerHTML = `
+      ${erros.length ? `
+        <div class="card" style="margin-bottom:14px;border-color:rgba(231,51,41,.35)">
+          <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:8px">${erros.length} linha${erros.length===1?'':'s'} que não entendi</div>
+          ${erros.map(e => `<div style="font-size:12.5px;color:var(--text2);padding:3px 0">${e.erro}</div>`).join('')}
+          <div style="font-size:12px;color:var(--text3);margin-top:8px">Essas não vão ser gravadas. Ajusta e confere de novo.</div>
+        </div>` : ''}
+
+      <div class="card">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="font-size:15px;font-weight:700">${novos.length} pra gravar</div>
+          ${repetidos ? `<div style="font-size:12.5px;color:var(--text3)">${repetidos} já existe${repetidos===1?'':'m'} e vão ser pulad${repetidos===1?'o':'os'}</div>` : ''}
+        </div>
+        ${novos.length ? novos.map(x => {
+          const dia = DIA_SEMANA[new Date(x.data + 'T12:00:00Z').getUTCDay()];
+          return `<div style="display:flex;gap:12px;padding:7px 0;border-top:1px solid var(--border);font-size:13.5px">
+            <span style="color:var(--gold);white-space:nowrap;font-variant-numeric:tabular-nums">${x.data.slice(8,10)}/${x.data.slice(5,7)}</span>
+            <span style="color:var(--text3);white-space:nowrap;min-width:60px">${dia}</span>
+            <span style="flex:1;min-width:0">${x.nome}</span>
+          </div>`;
+        }).join('') : '<div style="font-size:13.5px;color:var(--text3)">Nada novo pra gravar.</div>'}
+        ${novos.length ? `<button class="btn btn-primary" id="imp-gravar" style="width:100%;margin-top:14px">Gravar ${novos.length} eventos</button>` : ''}
+      </div>`;
+
+    const btn = $('#imp-gravar');
+    if (btn) btn.onclick = () => gravarCalendario(novos);
+  };
+}
+
+async function gravarCalendario(lista) {
+  const tipo = $('#imp-tipo').value;
+  const hora = $('#imp-hora').value.trim();
+  const btn = $('#imp-gravar');
+  btn.disabled = true;
+
+  let ok = 0, falhou = 0;
+  for (const [i, ev] of lista.entries()) {
+    btn.textContent = `Gravando ${i + 1} de ${lista.length}...`;
+    try {
+      await addDoc(collection(dbCand, 'eventos'), {
+        nome: ev.nome,
+        data: ev.data,
+        hora,
+        tipo,
+        // O tipo já decide se sai no site (ver ehAtividadePublica no Worker).
+        // `publico` aqui é a marca manual pra tirar um evento do ar sem mudar
+        // o tipo dele.
+        publico: true,
+        requer_limpeza: false,
+        local: '',
+        descricao: '',
+        arquivado: false,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+        origem: 'importacao_calendario'
+      });
+      ok++;
+    } catch (e) {
+      console.error('não gravou', ev, e);
+      falhou++;
+    }
+  }
+  toast(falhou ? `${ok} gravados, ${falhou} falharam — olha o console` : `${ok} eventos no calendário`, falhou ? 'err' : 'ok');
+  btn.disabled = false;
+  btn.textContent = 'Gravar';
+  renderRoute();
+}
+
 // ── TODOS OS LINKS, NUM LUGAR SÓ ─────────────────────────────────────────
 //
 // São cinco superfícies em quatro domínios diferentes, e ninguém decora isso.
