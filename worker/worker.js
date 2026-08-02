@@ -1481,6 +1481,36 @@ async function digestDoDia(env, token, hoje) {
     });
   }
 
+  // A gira de ontem, se o caixa dela fechou.
+  //
+  // Sai no resumo das 8h e não na hora do fechamento de propósito: o PDV fecha
+  // o caixa quando a gira acaba, às vezes de madrugada. Push às 2h da manhã
+  // pra dizer quanto entrou é a definição de aviso que a pessoa desliga.
+  const ontem = maisDias(hoje, -1);
+  const caixas = (await fsQuery(PROJETO_PVD, 'eventos_caixa', token, { campo: 'data', valor: ontem }))
+    .filter((c) => c.status === 'fechado');
+
+  if (caixas.length) {
+    const vendas = await fsQuery(PROJETO_PVD, 'sales', token,
+      { campo: 'eventoId', op: 'IN', valor: caixas.map((c) => c.id) }, 500).catch(() => []);
+
+    for (const c of caixas) {
+      const r = resumoDaGira(vendas.filter((v) => v.eventoId === c.id));
+      const devedores = Object.values(r.porFilho).sort((a, b) => b.valor - a.valor);
+      avisos.push({
+        tag: `gira-${c.id}`,
+        titulo: `${c.nome || 'Gira'}: ${brl(r.total)} no caixa`,
+        corpo: r.total === 0
+          ? 'Nenhuma venda registrada na lojinha.'
+          : `${brl(r.casa)} ficou pra casa · ${r.vendas} venda${r.vendas === 1 ? '' : 's'}`
+            + (devedores.length
+                ? ` · deve ${brl(r.repasse)} pra ${devedores.map((f) => f.nome.split(' ')[0]).slice(0, 3).join(', ')}`
+                : ''),
+        url: 'index.html#giras',
+      });
+    }
+  }
+
   // Tarefas com prazo vencido e ainda em aberto.
   const tarefas = (await fsQuery(PROJETO_PVD, 'adm_kanban', token,
     { campo: 'prazo', op: 'LESS_THAN', valor: hoje }))
@@ -1580,6 +1610,39 @@ export function minutosDoDia(hhmm) {
 export function naJanelaDeUmaHora(minutosAgora, minutosConsulta) {
   const falta = minutosConsulta - minutosAgora;
   return falta >= 45 && falta <= 75;
+}
+
+// ── O FECHAMENTO DA GIRA ──────────────────────────────────────────────────
+//
+// A mesma conta que o financeiro faz na aba Giras. Vive aqui também porque o
+// resumo das 8h precisa dela, e porque aqui ela tem teste — o financeiro é o
+// espelho, e quando os dois discordarem quem manda é este.
+//
+// A REGRA DA CONSIGNAÇÃO, que é onde se erra: produto consignado tem
+// `valor_repasse`, um valor FIXO por unidade que volta pro filho. A diferença
+// entre o preço e o repasse fica pra casa.
+//
+// Soma item a item lendo `item.valor_repasse` — o SNAPSHOT gravado na venda —
+// e nunca o produto de hoje. Mudar o repasse do produto mês que vem não pode
+// reescrever o que a casa já devia.
+export function resumoDaGira(vendas) {
+  const total = vendas.reduce((t, v) => t + (Number(v.total) || 0), 0);
+  const custo = vendas.reduce((t, v) => t + (Number(v.custoTotal) || 0), 0);
+
+  const porFilho = {};
+  let itens = 0;
+  for (const v of vendas) {
+    for (const i of v.items || []) {
+      itens += Number(i.qty) || 0;
+      if (!i.filho_id) continue;
+      const devido = (Number(i.valor_repasse) || 0) * (Number(i.qty) || 0);
+      if (devido <= 0) continue;
+      porFilho[i.filho_id] = porFilho[i.filho_id] || { nome: i.filho_nome || '(sem nome)', valor: 0 };
+      porFilho[i.filho_id].valor += devido;
+    }
+  }
+  const repasse = Object.values(porFilho).reduce((t, f) => t + f.valor, 0);
+  return { total, custo, repasse, casa: total - custo - repasse, porFilho, itens, vendas: vendas.length };
 }
 
 /** Contas fixas que vencem na data pedida e ainda não têm baixa no ciclo. */
