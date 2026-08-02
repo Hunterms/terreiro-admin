@@ -2709,7 +2709,15 @@ function abrirModal(html) {
       const s = document.createElement('style');
       s.id = 'modal-bd-style';
       s.textContent = `
-        #modal-bd-geral{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:500;display:none;align-items:center;justify-content:center;padding:14px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+        /* z-index 1500 e não 500: a barra de abas é fixa em 900, e com 500 ela
+           ficava POR CIMA do modal — comendo o rodapé, que é onde mora o botão
+           de enviar. Camadas desta página, de baixo pra cima:
+             900  barra de abas
+            1500  modais
+            2000  toast
+            3000  tela de PIN
+            4000  faixa de erro de leitura                                   */
+        #modal-bd-geral{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:1500;display:none;align-items:center;justify-content:center;padding:14px;overflow-y:auto;-webkit-overflow-scrolling:touch}
         #modal-bd-geral.show{display:flex}
         #modal-content-geral{background:#161616;border:1px solid rgba(255,255,255,.08);border-radius:16px;width:100%;max-width:560px;max-height:calc(100vh - 28px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.6);animation:slideUpModal .22s ease-out}
         @keyframes slideUpModal{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -2717,7 +2725,7 @@ function abrirModal(html) {
         .modal-pq-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}
         .modal-pq-h h3{margin:0}
         .modal-pq-b{padding:18px 18px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0}
-        .modal-pq-f{padding:14px 18px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;flex-shrink:0;background:#161616}
+        .modal-pq-f{padding:14px 18px calc(14px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;flex-shrink:0;background:#161616}
         .modal-x{background:none;border:none;color:var(--text2);width:36px;height:36px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent}
         .modal-x:hover{background:rgba(255,255,255,.06)}
         .modal-x:active{transform:scale(.94)}
