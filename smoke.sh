@@ -196,6 +196,10 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "zerar-pin (protegida)" || erro "zerar-pin: $r"
+  # O caixa da lojinha passou a abrir e fechar pelo cron. Não dá pra testar o
+  # cron por fora, mas dá pra provar que o Worker no ar CONHECE a regra: a
+  # constante da hora de fechar aparece na resposta de erro? Não. Então o que
+  # se testa é a rota que compartilha o mesmo deploy.
   r=$(curl -s -X POST "$W/criar-pin" -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","pin":"12"}')
   echo "$r" | grep -q 'PIN tem 4' && ok "criar-pin no ar" || erro "criar-pin: Worker velho? $(head -c 100 <<< "$r")"
 fi

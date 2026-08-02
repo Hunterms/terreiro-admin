@@ -419,6 +419,8 @@ Brasília, dentro do `tick()`:
 | toda batida | um lote da fila de push de aviso pros filhos |
 | 8h | resumo do dia: fechamento da gira de ontem, consultas de hoje, tarefas atrasadas, contas e contribuições de amanhã |
 | dia 1, das 6h em diante | gera o lote de mensalidade do ciclo |
+| toda batida | abre o caixa da lojinha se hoje tem gira ou festa |
+| das 7h em diante | fecha o caixa que ficou aberto de ontem pra trás |
 
 O estado mora em `adm_config/push_estado` (`ultimo_olhar`, `digest_em`,
 `lote_ciclo`), e é ele que impede repetição com 96 batidas por dia.
@@ -431,6 +433,27 @@ Duas coisas **não** guardam estado ali, de propósito:
 - a fila de aviso mora no próprio `adm_avisos` (`push_status`,
   `push_restantes`, `push_enviados`). Aviso apagado leva a fila junto, sem
   deixar órfão no estado.
+
+### O caixa da lojinha
+
+Abre no dia do evento, fecha às **7h do dia seguinte**. Ninguém precisa abrir
+nem fechar.
+
+7h e não meia-noite porque gira que termina 1h da manhã tem venda depois da
+meia-noite: fechar no fim do dia civil partiria a noite em dois caixas, e o
+fechamento da gira sairia pela metade.
+
+Abre pra `gira_aberta`, `festa` e `apresentacao_cultural` — os tipos em que a
+lojinha funciona. Trabalho interno não abre; se um dia precisar, o "Iniciar
+evento" na mão está no PDV.
+
+**Caixa aberto na mão o cron NÃO fecha.** Só o que ele mesmo abriu
+(`abertoAuto: true`). Se alguém abriu por um motivo que o sistema não conhece,
+não é o sistema que decide que acabou.
+
+Isto morava no PDV e só rodava com o tablet ligado. Dois donos da mesma decisão
+é pior que um dono ruim: os dois criavam, os dois fechavam, e o anti-duplicata
+de cada um só conhecia a si mesmo.
 
 ### A janela do lembrete de 1h
 

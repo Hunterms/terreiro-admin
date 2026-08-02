@@ -1395,7 +1395,12 @@ async function tick(env) {
     }
   });
 
-  // 5) Um lote da fila de push de avisos. A fila mora no próprio aviso, não
+  // 5) O caixa da lojinha. Abre no dia do evento, fecha às 7h do dia seguinte.
+  await passo('caixa', async () => {
+    feito.push(...await cuidarDoCaixa(token, hoje, hora));
+  });
+
+  // 6) Um lote da fila de push de avisos. A fila mora no próprio aviso, não
   // aqui: um aviso apagado leva a fila dele junto, sem deixar órfão no estado.
   await passo('fila', async () => {
     const fila = await drenarFilaDeAvisos(env, token);
@@ -1610,6 +1615,67 @@ export function minutosDoDia(hhmm) {
 export function naJanelaDeUmaHora(minutosAgora, minutosConsulta) {
   const falta = minutosConsulta - minutosAgora;
   return falta >= 45 && falta <= 75;
+}
+
+// ── O CAIXA DA LOJINHA ABRE E FECHA SOZINHO ───────────────────────────────
+//
+// Antes isso morava no PDV, e só acontecia se o tablet estivesse ligado com a
+// página aberta. Tablet desligado, caixa não abria — e a venda da noite ia pro
+// nada ou pra um caixa aberto na mão às pressas.
+//
+// Aqui roda de 15 em 15 minutos, com tablet ligado ou não.
+//
+// Abre no dia do evento e fecha às 7h do dia SEGUINTE, e não à meia-noite: gira
+// que termina 1h da manhã tem venda depois da meia-noite. Fechar no fim do dia
+// civil partiria a noite em dois caixas.
+const TIPOS_COM_LOJINHA = new Set(['gira_aberta', 'festa', 'apresentacao_cultural']);
+const HORA_FECHA_CAIXA = 7;
+
+async function cuidarDoCaixa(token, hoje, hora) {
+  const feito = [];
+
+  // 1) Fecha o que ficou de ontem pra trás, depois das 7h.
+  //
+  // Só o que foi aberto SOZINHO. Caixa aberto na mão fica aberto até alguém
+  // fechar na mão: se a pessoa abriu por um motivo que o sistema não conhece,
+  // o sistema não é quem decide que acabou.
+  if (hora >= HORA_FECHA_CAIXA) {
+    const abertos = await fsQuery(PROJETO_PVD, 'eventos_caixa', token, { campo: 'status', valor: 'aberto' });
+    for (const c of abertos.filter((c) => c.abertoAuto && c.data && c.data < hoje)) {
+      await fsPatch(PROJETO_PVD, 'eventos_caixa', c.id, token, {
+        status: 'fechado', fechadoEm: new Date().toISOString(), fechadoAuto: true,
+      });
+      feito.push(`caixa-fechou:${c.id}`);
+    }
+  }
+
+  // 2) Abre o de hoje, se houver evento com lojinha e nenhum caixa aberto.
+  const jaAbertos = await fsQuery(PROJETO_PVD, 'eventos_caixa', token, { campo: 'status', valor: 'aberto' });
+  if (jaAbertos.length) return feito;   // manual ou automático, um por vez
+
+  const eventos = await fsQuery(PROJETO_CAND, 'eventos', token, { campo: 'data', valor: hoje });
+  const doDia = eventos
+    .filter((e) => !e.arquivado && TIPOS_COM_LOJINHA.has(e.tipo))
+    .sort((a, b) => String(a.hora || '').localeCompare(String(b.hora || '')));
+  if (!doDia.length) return feito;
+
+  const ev = doDia[0];
+  // Não recria o caixa daquele evento nem depois de fechado: fechou, acabou.
+  const doEvento = await fsQuery(PROJETO_PVD, 'eventos_caixa', token, { campo: 'siteEventoId', valor: ev.id });
+  if (doEvento.some((c) => c.data === hoje)) return feito;
+
+  await fsCreate(PROJETO_PVD, 'eventos_caixa', token, {
+    nome: ev.nome || ev.titulo || 'Evento',
+    siteEventoId: ev.id,
+    data: hoje,
+    status: 'aberto',
+    abertoEm: new Date().toISOString(),
+    fechadoEm: null,
+    presencas: [],
+    abertoAuto: true,
+  });
+  feito.push(`caixa-abriu:${ev.nome || ev.id}`);
+  return feito;
 }
 
 // ── O FECHAMENTO DA GIRA ──────────────────────────────────────────────────
