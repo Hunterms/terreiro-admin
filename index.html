@@ -1283,6 +1283,81 @@ async function limparKanbanAntigos() {
 // trabalho interno vai parar no site.
 const MESES_PT = { jan:1, fev:2, mar:3, abr:4, mai:5, jun:6, jul:7, ago:8, set:9, out:10, nov:11, dez:12 };
 
+// O calendário que o Pai mandou, já separado por tipo e hora. Fica aqui porque
+// digitar 41 linhas na mão é exatamente o trabalho que esta tela existe pra
+// evitar — e porque a alternativa era dar ao Worker permissão de ESCRITA no CMS
+// do site só pra eu rodar isso uma vez. Não vale o risco permanente.
+//
+// Semestre que vem: cola do jeito que vier na caixa acima, ou troca isto aqui.
+const CALENDARIOS_PRONTOS = {
+  seg2026b: {
+    rotulo: 'Segundas · 2º sem 2026', tipo: 'desenvolvimento', hora: '19:15', ano: 2026,
+    texto: `03 Ago  Gira só com as filhas
+10 Ago  Gira só com os filhos
+17 Ago  Encontro sobre gênero e espiritualidade
+24 Ago  Dia de Oxumaré
+31 Ago  Boiadeiros - Descarrego
+07 Set  Catimbó
+14 Set  Ciganos
+21 Set  Marinheiros
+28 Set  Pretos velhos (trabalho de curas)
+05 Out  Dia de Ossain
+12 Out  Sem atividade
+19 Out  Boiadeiros
+26 Out  Finanças com a esquerda (lua cheia)
+02 Nov  Dia de Finados - culto às almas
+09 Nov  Catimbó
+16 Nov  Ciganos
+23 Nov  Marinheiros
+30 Nov  Ensaio de dança pra saída de santo
+07 Dez  Sem atividade
+14 Dez  Reunião de balanço geral`,
+  },
+  sab2026b: {
+    rotulo: 'Sábados · giras', tipo: 'gira_aberta', hora: '17:30', ano: 2026,
+    texto: `01 Ago  Gira de malandros
+08 Ago  Caboclos
+15 Ago  Pretos Velhos
+22 Ago  Exu e Pombogira
+29 Ago  Baianos e Boiadeiro
+05 Set  Caboclos
+12 Set  Pretos Velhos
+19 Set  Exu e Pombogira
+03 Out  Gira de malandros
+17 Out  Caboclos
+24 Out  Pretos Velhos
+31 Out  Exu e Pombogira
+07 Nov  Baianos e Boiadeiro
+14 Nov  Caboclos
+21 Nov  Pretos Velhos
+12 Dez  Exu e Pombogira (antes tem batismo)`,
+  },
+  festas2026b: {
+    rotulo: 'Sábados · festas', tipo: 'festa', hora: '17:30', ano: 2026,
+    texto: `10 Out  Festa do Zé do Coco (aniversário do terreiro)
+19 Dez  Festa das Yabás`,
+  },
+  internos2026b: {
+    rotulo: 'Sábados · internos', tipo: 'trabalho_interno', hora: '17:30', ano: 2026,
+    texto: `26 Set  Festa de erê no TEUFF
+28 Nov  Função de barco
+05 Dez  Saída de santo do pai no TEUFF`,
+  },
+};
+
+window.usarCalendario = function(chave) {
+  const c = CALENDARIOS_PRONTOS[chave];
+  if (!c) return;
+  $('#imp-tipo').value = c.tipo;
+  $('#imp-hora').value = c.hora;
+  $('#imp-ano').value = c.ano;
+  $('#imp-texto').value = c.texto;
+  $('#imp-conferir').click();
+  if (chave === 'internos2026b') {
+    toast('Depois de gravar, abre esses 3 na agenda e escreve "O terreiro estará fechado" no campo do site','ok');
+  }
+};
+
 // "03 Ago  Gira só com as filhas" → { data: '2026-08-03', nome: 'Gira só com as filhas' }
 // Devolve `erro` em vez de pular a linha: linha que some sem avisar é como
 // metade do semestre entra e ninguém percebe.
@@ -1338,6 +1413,15 @@ function renderImportar(c) {
 17 Ago  Encontro sobre gênero e espiritualidade"></textarea>
       </div>
       <button class="btn" id="imp-conferir" style="width:100%">Conferir</button>
+
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:8px">Calendário que o Pai mandou</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${Object.entries(CALENDARIOS_PRONTOS).map(([k, c]) => `
+            <button class="btn" style="width:auto;font-size:12.5px;padding:8px 12px" onclick="usarCalendario('${k}')">${c.rotulo}</button>`).join('')}
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.45">Preenche tipo, hora e a lista. Confere e grava. São blocos separados porque cada um tem tipo e hora diferentes.</div>
+      </div>
     </div>
 
     <div id="imp-previa"></div>
