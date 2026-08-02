@@ -260,9 +260,9 @@ body.com-abas .painel-grid{grid-template-columns:1fr;gap:0;max-width:620px;margi
 body.com-abas .col-titulo{display:none}
 /* O corpo precisa caber acima da barra, senão o último card fica escondido. */
 body.com-abas{padding-bottom:calc(88px + max(10px,env(safe-area-inset-bottom,0px)))}
-/* Com abas, as seções param de ser sanfona: a aba já é o recolher. */
-body.com-abas .dash-secao > summary{cursor:default}
-body.com-abas .dash-chevron{display:none}
+/* As seções continuam sanfona dentro da aba. Cada uma abre por escolha, e a
+   escolha fica guardada: quem abre "Minhas escalas" toda vez não deveria ter
+   que abrir toda vez. */
 
 /* ── CAIXA DE AVISOS ─────────────────────────────────────────────────────
    O não lido é marcado por fundo e por um ponto, não só por peso da fonte:
@@ -434,7 +434,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
           <!-- Ordem: Tarefas → Escalas → Reembolso → Disponibilidade → Afilhados -->
 
           <!-- Mensalidade do mês (escondida até o Worker responder) -->
-          <details class="dash-secao" id="dash-sec-avisos" data-aba="avisos" style="display:none" open>
+          <details class="dash-secao" id="dash-sec-avisos" data-aba="avisos" style="display:none">
             <summary>
               <div class="dash-head-text">
                 <h2>🔔 Seus avisos <span class="dash-badge" id="dash-cnt-avisos"></span></h2>
@@ -1439,6 +1439,34 @@ async function renderPushCard(filho) {
 // mostra o que o papel esconde: quem manda é a regra mais restritiva.
 let _abaAtual = 'inicio';
 
+// ── O QUE CADA UM DEIXA ABERTO ────────────────────────────────────────────
+//
+// Guardado por seção, no aparelho. Não é preferência de conta: é dali que a
+// pessoa usa, e sincronizar isso pediria uma escrita no servidor a cada toque
+// numa sanfona.
+//
+// Tudo começa FECHADO. A primeira abertura é uma escolha; da segunda em diante
+// a tela lembra.
+const ABERTAS = 'candieiro_secoes_abertas';
+
+function abertasGuardadas() {
+  try { return new Set(JSON.parse(localStorage.getItem(ABERTAS) || '[]')); } catch { return new Set(); }
+}
+function abertaAntes(id) { return abertasGuardadas().has(id); }
+function guardarAberta(id, aberta) {
+  const s = abertasGuardadas();
+  aberta ? s.add(id) : s.delete(id);
+  try { localStorage.setItem(ABERTAS, JSON.stringify([...s])); } catch {}
+}
+
+// Um listener só, no documento: `toggle` não borbulha, mas na fase de captura
+// ele passa. Vinte listeners individuais quebrariam no dia em que alguém
+// adicionasse a vigésima primeira seção sem lembrar de registrar.
+document.addEventListener('toggle', (e) => {
+  const sec = e.target;
+  if (sec?.classList?.contains('dash-secao') && sec.id) guardarAberta(sec.id, sec.open);
+}, true);
+
 function mostrarAba(nome) {
   _abaAtual = nome;
   document.querySelectorAll('.aba-btn').forEach((b) => {
@@ -1456,7 +1484,16 @@ function mostrarAba(nome) {
   document.querySelectorAll('[data-aba]').forEach((sec) => {
     const dessaAba = sec.dataset.aba === nome;
     sec.classList.toggle('fora-da-aba', !dessaAba);
-    if (dessaAba && sec.tagName === 'DETAILS') sec.open = true;
+    // A aba NÃO força aberto. Eu tinha travado assim achando que a aba já era
+    // o recolher — o Hunter usou e discordou, e ele tem razão: quem abre a
+    // Agenda quer escolher entre escala, rega e disponibilidade, não receber
+    // as três abertas de uma vez numa tela de celular.
+    // Exceção única: a aba Avisos existe SÓ pra essa seção. Tocar na aba já é
+    // a escolha de abrir — deixar colapsada faria a aba mostrar nada, e ainda
+    // marcaria tudo como lido sem a pessoa ter visto.
+    if (dessaAba && sec.tagName === 'DETAILS') {
+      sec.open = sec.id === 'dash-sec-avisos' ? true : abertaAntes(sec.id);
+    }
   });
   // Início não tem seção própria: é o mural, os eventos e o cartão de cadastro,
   // que vivem fora do sistema de abas.
@@ -1555,7 +1592,12 @@ async function renderAvisosInbox() {
 
   // Abriu, leu. Marcar num botão separado é pedir um gesto que ninguém faz, e
   // aí o contador fica vermelho pra sempre e a pessoa aprende a ignorar.
-  if (d.nao_lidos) {
+  //
+  // Mas só marca se a seção estiver mesmo ABERTA. Depois que as sanfonas
+  // passaram a nascer fechadas, "renderizou" deixou de significar "a pessoa
+  // viu" — e marcar como lido o que ninguém leu é a pior coisa que uma caixa
+  // de avisos pode fazer.
+  if (d.nao_lidos && sec.open) {
     try {
       await Filhos.marcarAvisosLidos(APP.cfgAgendamento, APP.sessao);
       cnt.textContent = '';
