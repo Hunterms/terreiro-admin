@@ -417,7 +417,7 @@ Brasília, dentro do `tick()`:
 | toda batida | novidade desde o último olhar → push pro admin |
 | toda batida | consulta que começa em ~1h → push pro admin |
 | toda batida | um lote da fila de push de aviso pros filhos |
-| 8h | resumo do dia: consultas de hoje, tarefas atrasadas, contas e contribuições de amanhã |
+| 8h | resumo do dia: fechamento da gira de ontem, consultas de hoje, tarefas atrasadas, contas e contribuições de amanhã |
 | dia 1, das 6h em diante | gera o lote de mensalidade do ciclo |
 
 O estado mora em `adm_config/push_estado` (`ultimo_olhar`, `digest_em`,

@@ -128,6 +128,7 @@ registros, e desligar num não desliga no outro.
 | Pagamento confirmado | na hora (o webhook avisa) | admin |
 | Filho remarcou a contribuição | na hora | admin |
 | Filho pediu isenção do mês | na hora | admin |
+| **Fechamento da gira de ontem** | 8h | admin |
 | **Consulta começa em ~1h** | 45 a 75 min antes | admin |
 | Consultas de hoje | 8h | admin |
 | Tarefas atrasadas | 8h | admin |

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   mensalidadeReais, vencimentoMensalidade, ultimoDiaDoCiclo, precoCentavos, MULTA_ATRASO,
-  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora, ehAtividadePublica, paraOPublico,
+  podeAjustar, dataDeAjusteValida, minutosDoDia, naJanelaDeUmaHora, ehAtividadePublica, paraOPublico, resumoDaGira,
 } from './worker.js';
 
 // ── vencimento por prazo ───────────────────────────────────────────────────
@@ -152,7 +152,7 @@ assert.equal(precoCentavos('men', { ...jul, valor_cobrado: 1 }, f200, '2026-07-0
 
 assert.equal(MULTA_ATRASO, 10);
 
-console.log('ok — 95 asserts de mensalidade passaram');
+console.log('ok — 111 asserts de mensalidade passaram');
 
 // ── o que é de dentro não sai na agenda pública ────────────────────────────
 // Esta lista decide o que a internet vê da casa. Ela morava num Set dentro do
@@ -218,3 +218,51 @@ assert.equal(paraOPublico({ id:'x4', nome:'Gira', nome_publico:'Sem atividade', 
 // arquivado e publico:false vencem o nome_publico
 assert.equal(ehAtividadePublica({ ...sabadoInterno, arquivado: true }), false);
 assert.equal(ehAtividadePublica({ ...sabadoInterno, publico: false }), false);
+
+// ── fechamento da gira ─────────────────────────────────────────────────────
+// A conta que decide quanto a casa deve pra quem vendeu. Tem teste porque é
+// dinheiro e porque existe uma cópia dela no financeiro: quando divergirem,
+// esta é a que manda.
+const vendasDaGira = [
+  { total: 100, custoTotal: 30, items: [
+    { qty: 2, filho_id: 'f1', filho_nome: 'Aline Souza', valor_repasse: 8 },
+    { qty: 1, filho_id: null,  valor_repasse: 0 },
+  ]},
+  { total: 50, custoTotal: 10, items: [
+    { qty: 3, filho_id: 'f1', filho_nome: 'Aline Souza', valor_repasse: 8 },
+    { qty: 1, filho_id: 'f2', filho_nome: 'Jano B',      valor_repasse: 12 },
+  ]},
+];
+const g = resumoDaGira(vendasDaGira);
+assert.equal(g.total, 150);
+assert.equal(g.custo, 40);
+assert.equal(g.repasse, 8*2 + 8*3 + 12);      // 52, item a item
+assert.equal(g.casa, 150 - 40 - 52);
+assert.equal(g.itens, 7);
+assert.equal(g.vendas, 2);
+assert.equal(g.porFilho.f1.valor, 40);        // as duas vendas somadas
+assert.equal(g.porFilho.f2.valor, 12);
+
+// Item sem consignante não gera repasse, e não some da contagem de itens.
+const semDono = resumoDaGira([{ total: 20, custoTotal: 5, items: [{ qty: 4, filho_id: null }] }]);
+assert.equal(semDono.repasse, 0);
+assert.equal(semDono.casa, 15);
+assert.equal(semDono.itens, 4);
+
+// Repasse ZERO com filho_id: consignado sem repasse combinado. Não entra na
+// lista de devedores — senão a tela mostraria "deve R$ 0,00 pra fulano".
+const semRepasse = resumoDaGira([{ total: 30, items: [{ qty: 1, filho_id: 'f3', filho_nome: 'X', valor_repasse: 0 }] }]);
+assert.equal(semRepasse.repasse, 0);
+assert.equal(Object.keys(semRepasse.porFilho).length, 0);
+
+// Gira sem venda nenhuma não quebra, e não inventa número negativo.
+const vazia = resumoDaGira([]);
+assert.equal(vazia.total, 0); assert.equal(vazia.casa, 0); assert.equal(vazia.vendas, 0);
+
+// O snapshot MANDA: se o produto mudou de repasse depois, a venda antiga
+// continua devendo o que devia. Aqui isso é garantido por ler item.valor_repasse
+// e nunca o produto — o teste fixa o contrato.
+const antiga = resumoDaGira([{ total: 100, items: [{ qty: 1, filho_id: 'f1', filho_nome: 'A', valor_repasse: 8 }] }]);
+const nova   = resumoDaGira([{ total: 100, items: [{ qty: 1, filho_id: 'f1', filho_nome: 'A', valor_repasse: 20 }] }]);
+assert.equal(antiga.repasse, 8);
+assert.equal(nova.repasse, 20);
