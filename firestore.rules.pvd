@@ -448,6 +448,13 @@ service cloud.firestore {
     // `fin_gastos` é do financeiro (regra lá em cima). O que nasce aqui é a
     // baixa mensal, no mesmo formato do fin_pagamentos da mensalidade: um doc
     // por ciclo, booleano por conta. Os dois apps escrevem nele.
+    // A baixa mensal da conta fixa. Escrita do financeiro, e agora é verdade:
+    // até 02/08 a tela que marcava pago vivia no ADMIN e escrevia aqui, o que
+    // só funcionava porque as duas contas existentes são admin. A regra dizia
+    // uma coisa e o sistema fazia outra.
+    //
+    // O Pai decidiu que ato de dinheiro é do financeiro. A tela mudou de app; a
+    // regra ficou como estava, porque ela já estava certa.
     match /fin_gastos_pagos/{ciclo} {
       allow read: if ehAuth();
       allow write: if ehFinanceiro();

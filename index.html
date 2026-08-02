@@ -4760,101 +4760,59 @@ function _lembAmanhaISO() {
 //
 // O aviso no celular sai um dia antes (cron das 9h). Aqui é onde o dado nasce.
 function renderContas(c) {
-  const ciclo = cicloAtual();
+  // ── SÓ LEITURA. Marcar pago é do financeiro. ────────────────────────────
+  //
+  // Esta tela nasceu aqui porque o lembrete das 8h chega no admin, e marcar
+  // pago era o gesto seguinte ao aviso. Mas as rules sempre disseram que
+  // `fin_gastos_pagos` é do financeiro (`allow write: if ehFinanceiro()`), e a
+  // tela escrevia lá assim mesmo. Funcionava porque as duas contas são admin —
+  // e é exatamente assim que uma tabela de donos vira mentira.
+  //
+  // O Pai decidiu em 02/08: ato de dinheiro é do financeiro. Aqui fica o
+  // lembrete, que é o que o push precisa ter pra onde levar.
   const hoje = hojeISO();
   const diaHoje = Number(hoje.slice(8,10));
-  const mesBr = new Date(ciclo+'-02T00:00:00Z').toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'});
-
+  const pagos = S.gastosPagos || {};
   const gastos = [...(S.gastos||[])].sort((a,b) =>
     (Number(a.dia_venc)||99) - (Number(b.dia_venc)||99) || (a.nome||'').localeCompare(b.nome||''));
 
-  const semDia = gastos.filter(g => !Number(g.dia_venc));
-  const vencidas = contasVencidas();
-  const total = gastos.reduce((s,g) => s + (Number(g.valor)||0), 0);
-  const pago = gastos.filter(g => S.gastosPagos[g.id] === true).reduce((s,g) => s + (Number(g.valor)||0), 0);
+  const emAberto = gastos.filter(g => pagos[g.id] !== true && Number(g.dia_venc));
+  const vencidas = emAberto.filter(g => diaHoje > Number(g.dia_venc));
+  const vencemHoje = emAberto.filter(g => diaHoje === Number(g.dia_venc));
+  const aVencer = emAberto.filter(g => diaHoje < Number(g.dia_venc));
   const brl = v => `R$ ${(Number(v)||0).toFixed(2).replace('.',',')}`;
+
+  const linha = (g, cor) => `
+    <div class="list-item">
+      <div class="li-date" style="background:transparent;color:${cor};font-size:15px;font-weight:700">${String(g.dia_venc).padStart(2,'0')}</div>
+      <div class="li-main"><div class="li-name">${g.nome}</div></div>
+      <div style="font-weight:600;color:${cor}">${brl(g.valor)}</div>
+    </div>`;
 
   c.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-title">Contas fixas</div>
-        <div class="page-sub" style="text-transform:capitalize">${mesBr} · ${brl(pago)} de ${brl(total)} baixado</div>
+        <div class="page-sub">O que vence, e quando. Marcar como paga é no financeiro.</div>
       </div>
+      <a class="btn btn-primary" href="https://financeiro.terreirodocandieiro.com.br/" target="_blank" rel="noopener" style="text-decoration:none">Abrir financeiro ↗</a>
     </div>
 
-    ${vencidas.length ? `
-      <div class="card" style="margin-bottom:14px;border-color:var(--red-bd);background:var(--red-bg)">
-        <div style="padding:12px 14px;font-size:13px;color:var(--text)">
-          <strong>${vencidas.length} conta${vencidas.length===1?'':'s'} passou do dia e não tem baixa:</strong>
-          ${vencidas.map(g=>g.nome).join(', ')}
-        </div>
+    ${!gastos.length ? '<div class="empty"><div class="empty-t">Nenhuma conta cadastrada</div><div>O cadastro é no financeiro, em Gastos.</div></div>' : `
+      ${vencidas.length ? `<div class="card" style="margin-bottom:14px;border-color:rgba(231,51,41,.3)">
+        <h3 style="font-size:14px;font-weight:700;color:var(--red);margin:0 0 10px">${vencidas.length} vencida${vencidas.length===1?'':'s'} · ${brl(vencidas.reduce((s,g)=>s+(Number(g.valor)||0),0))}</h3>
+        ${vencidas.map(g => linha(g,'var(--red)')).join('')}
       </div>` : ''}
-
-    ${semDia.length ? `
-      <div class="card" style="margin-bottom:14px">
-        <div style="padding:12px 14px;font-size:12.5px;color:var(--text3)">
-          ${semDia.length} conta${semDia.length===1?'':'s'} sem dia de vencimento — enquanto ficar vazio, ela não gera aviso nenhum.
-        </div>
+      ${vencemHoje.length ? `<div class="card" style="margin-bottom:14px;border-color:rgba(224,168,0,.3)">
+        <h3 style="font-size:14px;font-weight:700;color:var(--amber,#e0a800);margin:0 0 10px">Vence hoje</h3>
+        ${vencemHoje.map(g => linha(g,'var(--amber,#e0a800)')).join('')}
       </div>` : ''}
-
-    ${gastos.length === 0 ? `
-      <div class="card"><div class="empty">
-        <div class="empty-t">Nenhuma conta fixa cadastrada</div>
-        <div class="empty-s">As contas fixas são cadastradas no app do financeiro. Aqui você define o dia do vencimento e dá a baixa do mês.</div>
-      </div></div>
-    ` : `
       <div class="card">
-        <div class="card-h"><div class="card-title">Contas <span style="color:var(--text3);font-weight:400">· ${gastos.length}</span></div></div>
-        ${gastos.map(g => {
-          const dia = Number(g.dia_venc) || '';
-          const baixada = S.gastosPagos[g.id] === true;
-          const venceu = dia && dia < diaHoje && !baixada;
-          const hojeMesmo = dia && dia === diaHoje && !baixada;
-          return `
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-              <div style="flex:1;min-width:140px">
-                <div style="font-size:13.5px;font-weight:600;color:var(--text);${baixada?'opacity:.5;text-decoration:line-through':''}">${g.nome||'(sem nome)'}</div>
-                <div style="font-size:11.5px;color:${venceu?'var(--red)':(hojeMesmo?'var(--gold)':'var(--text3)')};margin-top:2px">
-                  ${brl(g.valor)}${dia ? ` · dia ${dia}${venceu?' — passou':(hojeMesmo?' — é hoje':'')}` : ' · sem dia definido'}
-                </div>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <span style="font-size:11px;color:var(--text3)">vence dia</span>
-                <input type="number" min="1" max="31" class="fi conta-dia" data-id="${g.id}" value="${dia}"
-                       placeholder="—" style="width:64px;text-align:center;padding:6px"/>
-              </div>
-              <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--text2);white-space:nowrap">
-                <input type="checkbox" class="conta-pago" data-id="${g.id}" ${baixada?'checked':''}
-                       style="accent-color:var(--gold);width:17px;height:17px"/>
-                paguei
-              </label>
-            </div>`;
-        }).join('')}
-      </div>
-    `}
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 10px">${aVencer.length ? 'Ainda vem neste mês' : 'Nada em aberto neste mês'}</h3>
+        ${aVencer.map(g => linha(g,'var(--text2)')).join('') || '<div style="font-size:13px;color:var(--text3)">Tudo que tem data já foi pago.</div>'}
+        ${gastos.filter(g => !Number(g.dia_venc)).length ? `<div style="font-size:12px;color:var(--text3);margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">${gastos.filter(g=>!Number(g.dia_venc)).length} conta${gastos.filter(g=>!Number(g.dia_venc)).length===1?'':'s'} sem dia de vencimento — não entram no lembrete. O dia se define no financeiro.</div>` : ''}
+      </div>`}
   `;
-
-  $$('.conta-dia').forEach(inp => {
-    inp.onchange = async () => {
-      const n = parseInt(inp.value, 10);
-      // Vazio limpa o vencimento (a conta volta a não avisar). Fora de 1..31 é
-      // erro de digitação: recusa e devolve o valor de antes.
-      if (inp.value !== '' && (isNaN(n) || n < 1 || n > 31)) { toast('Dia tem que ser de 1 a 31','err'); return renderRoute(); }
-      try {
-        await updateDoc(doc(dbPvd,'fin_gastos', inp.dataset.id), { dia_venc: inp.value === '' ? null : n });
-        toast('Vencimento salvo','ok');
-      } catch(e) { toast('Não consegui salvar','err'); renderRoute(); }
-    };
-  });
-
-  $$('.conta-pago').forEach(cb => {
-    cb.onchange = async () => {
-      try {
-        // merge: escreve só o campo desta conta, sem apagar a baixa das outras.
-        await setDoc(doc(dbPvd,'fin_gastos_pagos', ciclo), { [cb.dataset.id]: cb.checked }, { merge: true });
-      } catch(e) { toast('Não consegui marcar','err'); renderRoute(); }
-    };
-  });
 }
 
 // Duas coisas diferentes chamadas "lembrete", e por isso duas abas:
