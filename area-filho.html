@@ -734,6 +734,22 @@ function dataEfetivaAloc(es, aloc, funcoes) {
   }
 })();
 
+// A rega é a única das quatro leituras antigas que continua vindo direto do
+// Firestore: `adm_rega_diaria` é trust-based e pública, o mesmo modelo do QR
+// impresso no terreiro.
+//
+// Ela morava NO MEIO das outras três no arquivo, e eu a apaguei junto quando
+// removi o trio — o boot chamava e estourava antes de a tela aparecer. A
+// checagem que fiz na hora procurava só os três nomes que eu tinha decidido
+// remover, então não achou o quarto.
+async function carregarRegasDiarias() {
+  try {
+    const rSnap = await getDocs(collection(dbPvd,'adm_rega_diaria'));
+    APP.regasDiarias = {};
+    rSnap.docs.forEach(d => { APP.regasDiarias[d.id] = { id:d.id, ...d.data() }; });
+  } catch(e) { Filhos.avisarFalha('a escala de rega', e); APP.regasDiarias = {}; }
+}
+
 // ── O MURAL, QUE AGORA É INTERNO ──────────────────────────────────────────
 //
 // Eram três leituras diretas do Firestore, feitas ANTES de qualquer login:
