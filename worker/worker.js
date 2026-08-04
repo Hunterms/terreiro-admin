@@ -1062,13 +1062,16 @@ async function rotaAgenda(env) {
  * faz: `pwa_em` é quando instalou (não muda mais), `pwa_visto_em` é a última vez
  * que abriu instalada — instalar e nunca voltar não é adesão.
  *
- * Escreve no máximo uma vez por dia por pessoa: sem a leitura antes, cada
- * abertura do app viraria uma escrita, e a área do filho recarrega o mural
- * várias vezes por sessão.
+ * Escreve no máximo uma vez por dia por pessoa: sem o `pwa_visto_em` conferido
+ * antes, cada abertura do app viraria uma escrita, e a área do filho recarrega o
+ * mural várias vezes por sessão.
+ *
+ * `filho` vem de quem chamou porque o `quemFala` já leu o doc pra conferir a
+ * sessão. Ler de novo aqui seria uma viagem ao Firestore por abertura de app,
+ * pelo dado que já está na mão.
  */
-async function marcarPwa(token, filhoId) {
+async function marcarPwa(token, filhoId, filho) {
   const hoje = hojeSP();
-  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filhoId, { token });
   if (!filho || filho.pwa_visto_em === hoje) return;
   await fsPatch(PROJETO_PVD, 'fin_filhos', filhoId, token, {
     pwa_em: filho.pwa_em || hoje,
@@ -1085,8 +1088,17 @@ async function rotaMural(body, env) {
   // existe: instalar é ato do aparelho, o navegador não avisa ninguém, e sem
   // isto "quantos instalaram" só se responde perguntando um por um.
   //
-  // Não derruba o mural se falhar, e não espera: é contagem, não conteúdo.
-  if (body?.pwa === true) marcarPwa(token, quem.id).catch(() => {});
+  // Começa AGORA e é esperada LÁ EMBAIXO, junto das listas — não é sequencial e
+  // não é solta. Promessa sem await num Worker é morta quando a resposta sai: o
+  // runtime não garante nada depois que o handler resolve, e a marca chegaria
+  // umas vezes e não outras. `waitUntil` resolveria também, mas exigiria o `ctx`
+  // atravessando todas as rotas por causa de uma.
+  //
+  // O `.catch` é o que a mantém sendo contagem e não conteúdo: se o Firestore
+  // recusar a escrita, o mural continua abrindo.
+  const marca = body?.pwa === true
+    ? marcarPwa(token, quem.id, quem.filho).catch((e) => console.warn('pwa', e?.message || e))
+    : null;
 
   const [avisos, eventos, inscricoes] = await Promise.all([
     fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
@@ -1095,6 +1107,7 @@ async function rotaMural(body, env) {
     fsList(PROJETO_CAND, 'eventos', token),
     fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
   ]);
+  await marca;   // aqui, e não solta: ver o comentário lá em cima
 
   return json({
     avisos: avisos.filter((a) => !a.arquivado),
