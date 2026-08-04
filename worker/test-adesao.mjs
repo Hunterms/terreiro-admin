@@ -33,8 +33,9 @@ function extrair(nome) {
 }
 
 const S = { filhos: [], pushTokens: [], avisosLidos: [] };
-const { adesaoApp, quemViuOAviso } = new Function('S',
-  `${extrair('adesaoApp')}\n${extrair('quemViuOAviso')}\nreturn { adesaoApp, quemViuOAviso };`)(S);
+const { adesaoApp, quemViuOAviso, nomeDeChip } = new Function('S',
+  ['adesaoApp', 'quemViuOAviso', 'nomeDeChip'].map(extrair).join('\n') +
+  '\nreturn { adesaoApp, quemViuOAviso, nomeDeChip };')(S);
 
 // ── ADESÃO AO APP ──────────────────────────────────────────────────────────
 S.filhos = [
@@ -61,6 +62,18 @@ assert.equal(a.linhas.find(l => l.f.id === 'a').instalado, false,
   'Android com push NÃO prova instalação — lá o push funciona no navegador');
 assert.equal(a.linhas.find(l => l.f.id === 'c').medido, false,
   'Carla entra por inferência, e a tela precisa saber disso');
+assert.equal(a.semProva, 1,
+  'Ana tem notificação e nenhuma prova de instalação — é ela que explica a ' +
+  'diferença entre os dois primeiros números do cartão');
+
+// ── O NOME NO CHIP ─────────────────────────────────────────────────────────
+const casa = ['Ana Maria Souza', 'Ana Paula Lima', 'Bruno Silva', 'Cida'];
+assert.equal(nomeDeChip('Bruno Silva', casa), 'Bruno S.');
+assert.equal(nomeDeChip('Ana Maria Souza', casa), 'Ana Maria',
+  'primeiro nome repetido na casa pede o sobrenome inteiro, senão não é nome');
+assert.equal(nomeDeChip('Ana Paula Lima', casa), 'Ana Paula');
+assert.equal(nomeDeChip('Cida', casa), 'Cida', 'nome de uma palavra passa inteiro');
+assert.equal(nomeDeChip('', casa), '', 'cadastro sem nome não derruba a tela');
 
 // ── QUEM VIU O AVISO ───────────────────────────────────────────────────────
 const ts = (iso) => ({ toDate: () => new Date(iso) });
