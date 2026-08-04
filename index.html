@@ -1921,10 +1921,43 @@ function adesaoApp() {
     instalados: linhas.filter(l => l.instalado).length,
     comAvisos: linhas.filter(l => l.avisos).length,
     aparelhos: linhas.reduce((t, l) => t + l.aparelhos, 0),
+    // Ligou notificação num Android e não abriu o app desde que a marca existe:
+    // pode ter instalado ou não, e daqui não há como saber — lá o push funciona
+    // no navegador. É a diferença entre os dois primeiros números do cartão, e
+    // ela precisa aparecer, senão o número de baixo parece desmentir o de cima.
+    semProva: linhas.filter(l => l.avisos && !l.instalado).length,
   };
 }
 
-/** O cartão de adesão, e a lista de quem ainda não está. */
+/**
+ * Nome curto pra caber em chip: primeiro nome mais a inicial do sobrenome, e o
+ * sobrenome inteiro quando o primeiro nome se repete na casa. Só "Ana" numa casa
+ * com três Anas é número disfarçado de nome.
+ */
+function nomeDeChip(nome, todos) {
+  const p = String(nome || '').trim().split(/\s+/);
+  if (p.length === 1) return p[0];
+  const repetido = todos.filter(n => String(n||'').trim().split(/\s+/)[0] === p[0]).length > 1;
+  return repetido ? `${p[0]} ${p[1]}` : `${p[0]} ${p[1][0]}.`;
+}
+
+/** Um bloco de nomes. Vazio não desenha nada — lista vazia não é informação. */
+function bloco(titulo, linhas, classe, rodape) {
+  if (!linhas.length) return '';
+  const todos = linhas.map(l => l.f.nome);
+  return `
+    <div style="margin-top:12px">
+      <div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:7px">
+        ${titulo} · ${linhas.length}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        ${linhas.map(l => `<span class="chip ${classe(l)}">${nomeDeChip(l.f.nome, todos)}</span>`).join('')}
+      </div>
+      ${rodape ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5">${rodape}</div>` : ''}
+    </div>`;
+}
+
+/** O cartão de adesão: os três números, e o nome de quem está em cada estado. */
 function cartaoAdesao() {
   const a = adesaoApp();
   if (!a.total) return '';
@@ -1939,7 +1972,7 @@ function cartaoAdesao() {
         <div class="metric" style="--clr:var(--gold)">
           <div class="ml">Na tela de início</div>
           <div class="mv">${a.instalados}</div>
-          <div class="mh">de ${a.total} ativos · ${pct(a.instalados)}</div>
+          <div class="mh">de ${a.total} ativos${a.semProva?` · +${a.semProva} sem prova`:` · ${pct(a.instalados)}`}</div>
         </div>
         <div class="metric" style="--clr:var(--green)">
           <div class="ml">Notificações ligadas</div>
@@ -1952,12 +1985,21 @@ function cartaoAdesao() {
           <div class="mh">pelo app instalado</div>
         </div>
       </div>
-      <div style="font-size:11.5px;color:var(--text3);line-height:1.6">
-        Instalação é medida desde 03/08 — quem instalou antes e não abriu o app
-        de novo só entra na conta pelo iPhone, onde a notificação prova a
-        instalação. ${faltam.length
-          ? `<strong>${faltam.length} ainda não fez nem um nem outro:</strong> ${faltam.slice(0,12).map(l=>l.f.nome.split(' ')[0]).join(', ')}${faltam.length>12?` e mais ${faltam.length-12}`:''}.`
-          : 'Todo mundo ativo já está com uma das duas coisas.'}
+      ${bloco('Na tela de início', a.linhas.filter(l => l.instalado),
+        l => l.visto === hoje ? 'chip-green' : 'chip-gold',
+        'Verde é quem abriu hoje.')}
+      ${bloco('Notificação ligada, sem prova de instalação', a.linhas.filter(l => l.avisos && !l.instalado),
+        () => 'chip-blue',
+        'Android ou computador: lá a notificação funciona sem instalar, então daqui não dá pra saber. Sai desta lista quando a pessoa abrir o app instalado.')}
+      ${bloco('Fora do app', faltam, () => '',
+        'Não instalou e não tem notificação. Alcança pela caixa de avisos ou pelo telefone.')}
+
+      <div style="font-size:11.5px;color:var(--text3);line-height:1.6;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+        Instalação é medida desde 03/08: antes disso ninguém contava, porque o
+        navegador não avisa nada a ninguém. Quem instalou antes e não abriu o app
+        de novo só aparece pelo iPhone, onde a notificação prova a instalação.
+        A medida é da <strong>área do filho</strong> — o admin na sua própria tela
+        de início não entra nesta conta.
       </div>
     </div>`;
 }
@@ -4766,9 +4808,8 @@ function linhaDeLeitura(a) {
         abriram a caixa de avisos depois deste aviso · ${pct}%
         ${a.grupo_nome ? `· grupo ${a.grupo_nome}` : ''}
       </div>
-      ${r.faltam.length ? `<div style="font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5">
-        Não viram: ${r.faltam.slice(0,15).map(f=>f.nome.split(' ')[0]).join(', ')}${r.faltam.length>15?` e mais ${r.faltam.length-15}`:''}.
-      </div>` : ''}
+      ${bloco('Viram', r.viram.map(f => ({ f })), () => 'chip-green', '')}
+      ${bloco('Não viram', r.faltam.map(f => ({ f })), () => 'chip-red', '')}
     </div>`;
 }
 
