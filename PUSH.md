@@ -219,6 +219,47 @@ alcançados de fato, pra tela não fingir que chegou em todo mundo.
 
 ---
 
+## 5.2 Quantos usam, e quem viu (03/08/2026)
+
+Três números, e cada um vale exatamente o que a fonte dele sustenta.
+
+**Em Filhos**, no topo:
+
+| Número | De onde sai | Retroativo? |
+|---|---|---|
+| Na tela de início | `pwa_em` no cadastro | **não** — começa hoje |
+| Notificações ligadas | `adm_push_tokens`, `filho_id` distinto | sim |
+| Abriram hoje | `pwa_visto_em == hoje` | não |
+
+Instalar é ato do aparelho: **o navegador não conta pra ninguém**. Então a área do
+filho passou a mandar `pwa: true` no `/mural` quando está rodando na tela de
+início, e o Worker grava `pwa_em` (quando instalou) e `pwa_visto_em` (última vez
+que abriu instalada). Uma escrita por pessoa por dia, no máximo.
+
+Quem instalou antes de hoje e não abriu de novo **não aparece** — a única exceção
+é iPhone com notificação ligada, que conta como instalado porque a Apple não
+entrega push fora da tela de início. Android não conta: lá o push funciona no
+navegador.
+
+Na lista, cada pessoa mostra `app instalado` e `avisos (n)` — n é aparelho, não
+pessoa. Zero nos dois é quem só se alcança pela caixa de avisos ou pelo telefone.
+
+**Em Avisos**, cada aviso mostra "N de M abriram a caixa depois deste aviso", com
+o primeiro nome de quem falta. Sai de `adm_avisos_lidos/{filho}.ate`, que é
+**marca d'água** e não recibo: é o instante da última abertura da caixa. Logo:
+
+- conta quem **abriu**, não quem leu as palavras
+- abrir uma vez cobre todo aviso publicado antes daquele instante
+- quem nunca abriu não tem doc, e conta como não viu
+
+O público é o do próprio aviso: a lista congelada do grupo, se saiu pra grupo.
+Recibo por aviso pediria um doc por aviso × pessoa, e só vale se a pergunta virar
+"leu ESTE" em vez de "está acompanhando".
+
+Confere com `node worker/test-adesao.mjs`.
+
+---
+
 ## 6. O que ficou de fora, de propósito
 
 - **Cache offline.** O service worker não guarda nada. Admin mostrando saldo e
