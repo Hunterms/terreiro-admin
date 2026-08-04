@@ -1055,10 +1055,38 @@ async function rotaAgenda(env) {
 // Agora vem daqui, atrás da mesma sessão assinada do resto. Uma chamada só, e
 // não três: são três coleções que a tela sempre pede juntas, e três viagens
 // numa abertura de app em 3G é a diferença entre abrir e parecer travado.
+/**
+ * "Esta pessoa abriu o app pela tela de início, hoje."
+ *
+ * Dois campos em `fin_filhos`, e a diferença entre eles é a pergunta que o admin
+ * faz: `pwa_em` é quando instalou (não muda mais), `pwa_visto_em` é a última vez
+ * que abriu instalada — instalar e nunca voltar não é adesão.
+ *
+ * Escreve no máximo uma vez por dia por pessoa: sem a leitura antes, cada
+ * abertura do app viraria uma escrita, e a área do filho recarrega o mural
+ * várias vezes por sessão.
+ */
+async function marcarPwa(token, filhoId) {
+  const hoje = hojeSP();
+  const filho = await fsGet(PROJETO_PVD, 'fin_filhos', filhoId, { token });
+  if (!filho || filho.pwa_visto_em === hoje) return;
+  await fsPatch(PROJETO_PVD, 'fin_filhos', filhoId, token, {
+    pwa_em: filho.pwa_em || hoje,
+    pwa_visto_em: hoje,
+  });
+}
+
 async function rotaMural(body, env) {
   const token = await tokenGoogle(env);
   const quem = await quemFala(body, env, token);
   if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  // Quem abriu pela tela de início fica marcado. É a única medida de adesão que
+  // existe: instalar é ato do aparelho, o navegador não avisa ninguém, e sem
+  // isto "quantos instalaram" só se responde perguntando um por um.
+  //
+  // Não derruba o mural se falhar, e não espera: é contagem, não conteúdo.
+  if (body?.pwa === true) marcarPwa(token, quem.id).catch(() => {});
 
   const [avisos, eventos, inscricoes] = await Promise.all([
     fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),

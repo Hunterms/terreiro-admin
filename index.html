@@ -372,6 +372,8 @@ const S = {
   gastosPagos: {},       // fin_gastos_pagos/{ciclo} — { gastoId: true }
   perguntas: [],
   respostas: [],
+  pushTokens: [],        // adm_push_tokens — um por APARELHO, não por pessoa
+  avisosLidos: [],       // adm_avisos_lidos — marca d'água `ate` por pessoa
   servicos: [],
   produtos: [],
   pedidos: [],
@@ -924,6 +926,21 @@ function attachListeners() {
   S.unsubs.push(onSnapshot(collection(dbPvd,'adm_despensa'), snap => {
     S.despensa = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['despensa','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Aparelhos registrados pra notificação. Um doc por APARELHO, e o id é o
+  // token — dois celulares da mesma pessoa são dois docs. Quem conta gente
+  // conta `filho_id` distinto, não docs.
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_push_tokens'), snap => {
+    S.pushTokens = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(['filhos','dashboard'].includes(S.route)) renderRoute();
+  }));
+
+  // Até quando cada um leu a caixa de avisos. Um doc por pessoa, com `ate` em
+  // ISO — é marca d'água, não recibo por aviso.
+  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_avisos_lidos'), snap => {
+    S.avisosLidos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route === 'avisos') renderRoute();
   }));
 
   // Perguntas e respostas (sistema de quiz/alinhamento de conhecimento)
@@ -1855,6 +1872,96 @@ function renderDashboard(c) {
 // ── FILHOS ────────────────────────────────────────────────────────────────
 let filtroFilhos = { busca:'', status:'todos', funcao:'todas' };
 
+// ── ADESÃO AO APP ──────────────────────────────────────────────────────────
+//
+// Duas perguntas diferentes, e a ordem entre elas é a da própria instalação:
+// quem salvou o app na tela de início, e quem ligou as notificações. No iPhone a
+// segunda só existe depois da primeira — a Apple não entrega push fora da tela
+// de início.
+//
+// De onde sai cada número:
+//   avisos     `adm_push_tokens`, um doc por APARELHO. Dois celulares da mesma
+//              pessoa são dois docs, então gente se conta por `filho_id`
+//              distinto. É retroativo: existe desde que o push existe.
+//   instalado  `pwa_em` no cadastro, que o Worker marca quando a área do filho
+//              abre pela tela de início. SÓ CONTA QUEM ABRIU DEPOIS DE 03/08 —
+//              antes disso ninguém media isso, o navegador não conta pra
+//              ninguém. Token de iPhone entra como prova indireta, pelo motivo
+//              do parágrafo acima, e é o que faz o número não nascer em zero.
+//
+// Conta sobre os ATIVOS: visitante e afastado no denominador afundariam a
+// medida por um motivo que não é adesão.
+function adesaoApp() {
+  const ativos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+
+  const porFilho = new Map();
+  for (const t of S.pushTokens) {
+    if (t.papel !== 'filho' || !t.filho_id) continue;
+    const a = porFilho.get(t.filho_id) || { aparelhos: 0, ios: false };
+    a.aparelhos++;
+    a.ios = a.ios || /iPhone|iPad|iPod/.test(t.ua || '');
+    porFilho.set(t.filho_id, a);
+  }
+
+  const linhas = ativos.map(f => {
+    const p = porFilho.get(f.id);
+    return {
+      f,
+      aparelhos: p?.aparelhos || 0,
+      avisos: !!p,
+      instalado: !!f.pwa_em || !!p?.ios,
+      medido: !!f.pwa_em,          // veio da marca, não da inferência do iPhone
+      visto: f.pwa_visto_em || null,
+    };
+  });
+
+  return {
+    total: ativos.length,
+    linhas,
+    instalados: linhas.filter(l => l.instalado).length,
+    comAvisos: linhas.filter(l => l.avisos).length,
+    aparelhos: linhas.reduce((t, l) => t + l.aparelhos, 0),
+  };
+}
+
+/** O cartão de adesão, e a lista de quem ainda não está. */
+function cartaoAdesao() {
+  const a = adesaoApp();
+  if (!a.total) return '';
+  const pct = (n) => a.total ? Math.round(n * 100 / a.total) + '%' : '—';
+  const faltam = a.linhas.filter(l => !l.instalado && !l.avisos);
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const abriramHoje = a.linhas.filter(l => l.visto === hoje).length;
+
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid grid-3" style="margin-bottom:12px">
+        <div class="metric" style="--clr:var(--gold)">
+          <div class="ml">Na tela de início</div>
+          <div class="mv">${a.instalados}</div>
+          <div class="mh">de ${a.total} ativos · ${pct(a.instalados)}</div>
+        </div>
+        <div class="metric" style="--clr:var(--green)">
+          <div class="ml">Notificações ligadas</div>
+          <div class="mv">${a.comAvisos}</div>
+          <div class="mh">${a.aparelhos} aparelho${a.aparelhos===1?'':'s'} registrado${a.aparelhos===1?'':'s'}</div>
+        </div>
+        <div class="metric" style="--clr:var(--blue)">
+          <div class="ml">Abriram hoje</div>
+          <div class="mv">${abriramHoje}</div>
+          <div class="mh">pelo app instalado</div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--text3);line-height:1.6">
+        Instalação é medida desde 03/08 — quem instalou antes e não abriu o app
+        de novo só entra na conta pelo iPhone, onde a notificação prova a
+        instalação. ${faltam.length
+          ? `<strong>${faltam.length} ainda não fez nem um nem outro:</strong> ${faltam.slice(0,12).map(l=>l.f.nome.split(' ')[0]).join(', ')}${faltam.length>12?` e mais ${faltam.length-12}`:''}.`
+          : 'Todo mundo ativo já está com uma das duas coisas.'}
+      </div>
+    </div>`;
+}
+
 function renderFilhos(c) {
   const lista = S.filhos.filter(f => {
     if(filtroFilhos.busca && !f.nome.toLowerCase().includes(filtroFilhos.busca.toLowerCase())) return false;
@@ -1876,6 +1983,8 @@ function renderFilhos(c) {
         </button>
       </div>
     </div>
+
+    ${cartaoAdesao()}
 
     <div class="card" style="margin-bottom:14px">
       <div class="grid grid-3">
@@ -1906,6 +2015,9 @@ function renderFilhos(c) {
       ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum filho encontrado</div></div>' : lista.map(f => {
         const postos = (f.postos||[]).map(pid => S.funcoes.find(fn=>fn.id===pid)).filter(Boolean);
         const padrinho = f.padrinho_id ? S.filhos.find(x=>x.id===f.padrinho_id) : null;
+        // Quantos aparelhos desta pessoa recebem aviso. Zero é a informação
+        // útil: é quem só alcança pela caixa de avisos ou pelo telefone.
+        const aparelhos = S.pushTokens.filter(t => t.papel==='filho' && t.filho_id===f.id).length;
         return `
         <div class="list-item">
           <div class="li-avatar">${fmt.initials(f.nome)}</div>
@@ -1917,6 +2029,8 @@ function renderFilhos(c) {
               ${f.e_padrinho ? '<span class="chip chip-purple">padrinho/madrinha</span>' : ''}
               ${postos.map(p=>`<span class="chip chip-gold">${p.nome}</span>`).join('')}
               ${padrinho ? `<span class="chip chip-purple">apadrinhado por ${padrinho.nome.split(' ')[0]}</span>` : ''}
+              ${f.pwa_em ? '<span class="chip chip-blue">app instalado</span>' : ''}
+              ${aparelhos ? `<span class="chip chip-green">avisos${aparelhos>1?` (${aparelhos})`:''}</span>` : ''}
               ${f.tel ? `<span>📱 ${f.tel}</span>` : ''}
               <span>R$ ${f.valor||0}</span>
             </div>
@@ -4609,6 +4723,55 @@ function openEscalaForm(evId, escId='') {
 }
 
 // ── AVISOS ─────────────────────────────────────────────────────────────────
+// ── QUEM VIU O AVISO ───────────────────────────────────────────────────────
+//
+// O que existe gravado é MARCA D'ÁGUA, não recibo: `adm_avisos_lidos/{filho}`
+// guarda um `ate`, o instante em que a pessoa abriu a caixa de avisos pela
+// última vez. Quem abriu depois da publicação viu este aviso na tela.
+//
+// O que isso é, com precisão — e a tela diz isso em voz alta, porque número que
+// se lê como coisa mais forte do que é vira decisão errada:
+//   · conta quem ABRIU a caixa depois do aviso sair, não quem leu as palavras
+//   · abrir uma vez cobre todo aviso publicado antes daquele instante
+//   · quem nunca abriu não tem doc, e não conta
+//
+// Recibo por aviso pediria um doc por aviso × pessoa. Só vale a pena se a
+// pergunta virar "leu ESTE" em vez de "está acompanhando".
+//
+// O público é o do próprio aviso: `filho_ids` quando saiu pra um grupo (lista
+// congelada na publicação), a casa ativa quando saiu pra todos.
+function quemViuOAviso(a) {
+  const publicadoEm = a.publicadoEm?.toDate ? a.publicadoEm.toDate().toISOString() : null;
+  const ativos = S.filhos.filter(f => !f.status || f.status === 'ativo');
+  const publico = a.filho_ids?.length
+    ? S.filhos.filter(f => a.filho_ids.includes(f.id))
+    : ativos;
+
+  const ate = new Map(S.avisosLidos.map(l => [l.id, l.ate || '']));
+  const viram = publico.filter(f => publicadoEm && (ate.get(f.id) || '') >= publicadoEm);
+  const faltam = publico.filter(f => !viram.includes(f));
+  return { publico, viram, faltam, medivel: !!publicadoEm };
+}
+
+/** A linha de aderência de um aviso: número, e quem falta. */
+function linhaDeLeitura(a) {
+  const r = quemViuOAviso(a);
+  if (!r.medivel || !r.publico.length) return '';
+  const pct = Math.round(r.viram.length * 100 / r.publico.length);
+  const cor = pct >= 60 ? 'var(--green)' : pct >= 25 ? 'var(--amber)' : 'var(--red)';
+  return `
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:12px;color:var(--text3);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+        <strong style="color:${cor};font-size:13.5px">${r.viram.length} de ${r.publico.length}</strong>
+        abriram a caixa de avisos depois deste aviso · ${pct}%
+        ${a.grupo_nome ? `· grupo ${a.grupo_nome}` : ''}
+      </div>
+      ${r.faltam.length ? `<div style="font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5">
+        Não viram: ${r.faltam.slice(0,15).map(f=>f.nome.split(' ')[0]).join(', ')}${r.faltam.length>15?` e mais ${r.faltam.length-15}`:''}.
+      </div>` : ''}
+    </div>`;
+}
+
 function renderAvisos(c) {
   const ativos = S.avisos.filter(a=>!a.arquivado).sort((a,b)=>(b.publicadoEm?.seconds||0)-(a.publicadoEm?.seconds||0));
   c.innerHTML = `
@@ -4632,6 +4795,7 @@ function renderAvisos(c) {
             </div>
             <div style="font-size:16px;font-weight:700;margin-bottom:6px">${a.titulo}</div>
             <div style="font-size:14px;color:var(--text2);line-height:1.5;white-space:pre-wrap">${a.corpo}</div>
+            ${linhaDeLeitura(a)}
           </div>
           <div style="display:flex;gap:4px">
             <button class="btn btn-sm" onclick="window._app.openAvisoForm('${a.id}')">Editar</button>
