@@ -119,9 +119,16 @@ export async function meusReembolsos(cfg, quem) {
   return chamar(cfg, '/meus-reembolsos', quem);
 }
 
-/** O mural interno: avisos, próximas atividades e as inscrições da pessoa. */
-export async function mural(cfg, quem) {
-  return chamar(cfg, '/mural', quem);
+/**
+ * O mural interno: avisos, próximas atividades e as inscrições da pessoa.
+ *
+ * `pwa` diz se a pessoa está abrindo pela tela de início. Vai de carona aqui, e
+ * não numa rota de telemetria, por dois motivos: o mural é a chamada que TODA
+ * abertura faz, e uma rota nova pra contar gente é uma rota nova pra manter.
+ * O Worker grava no máximo uma vez por dia, por pessoa.
+ */
+export async function mural(cfg, quem, pwa) {
+  return chamar(cfg, '/mural', pwa ? { ...quem, pwa: true } : quem);
 }
 
 /** A caixa de avisos de quem está logado. */

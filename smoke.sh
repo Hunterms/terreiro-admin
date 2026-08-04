@@ -63,6 +63,11 @@ if [[ "$alvo" == "tudo" || "$alvo" == "admin" ]]; then
   # A página de Links é a única lista de endereços do sistema. Se um link
   # apodrecer, ninguém descobre até precisar dele.
   checa https://hunterms.github.io/terreiro-admin/index.html "página de links" "renderLinks"
+  # Adesão: quem instalou o app e quem viu o aviso. As duas contas leem
+  # collections novas pro admin (adm_push_tokens, adm_avisos_lidos) — se a
+  # versão no ar for velha, os cartões simplesmente não existem e ninguém nota.
+  checa https://hunterms.github.io/terreiro-admin/index.html "adesão ao app" "cartaoAdesao"
+  checa https://hunterms.github.io/terreiro-admin/index.html "leitura dos avisos" "quemViuOAviso"
   checa https://hunterms.github.io/terreiro-admin/confirma-rega.html "QR da rega" ""
   checa https://hunterms.github.io/terreiro-admin/despensa.html "despensa" ""
   # PWA: sem service worker no ar não há instalação nem notificação, e a página
@@ -97,6 +102,9 @@ if [[ "$alvo" == "tudo" || "$alvo" == "site" ]]; then
   # A área do filho faz `import "./push.js"`. Import que dá 404 não deixa a
   # página "sem notificação" — derruba o módulo inteiro e ela abre em branco.
   checa https://terreirodocandieiro.com.br/push.js "push.js no domínio" "adm_push_tokens"
+  # Mesmo motivo: a área do filho importa `filhos.js`, e é ele que manda o `pwa`
+  # que alimenta a contagem de quem instalou.
+  checa https://terreirodocandieiro.com.br/filhos.js "filhos.js no domínio" "pwa"
   checa https://terreirodocandieiro.com.br/sw.js "sw.js no domínio" "notificationclick"
 fi
 

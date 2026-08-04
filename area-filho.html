@@ -780,7 +780,10 @@ async function carregarMural() {
     return;
   }
   try {
-    const d = await Filhos.mural(APP.cfgAgendamento, APP.sessao);
+    // `Push.instalado()` de carona: é a única prova de que o app está na tela de
+    // início, e ela só existe aqui, no aparelho. Sem isso o admin não tem como
+    // saber quem instalou — o navegador não conta pra ninguém.
+    const d = await Filhos.mural(APP.cfgAgendamento, APP.sessao, Push.instalado());
     APP.eventos = d.eventos || [];
     APP.avisos = (d.avisos || [])
       .sort((a, b) => String(b.publicadoEm || '').localeCompare(String(a.publicadoEm || '')));
