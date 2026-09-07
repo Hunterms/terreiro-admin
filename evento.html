@@ -222,7 +222,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 <script type="module">
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where, orderBy, serverTimestamp
+  getFirestore, collection, doc, getDoc, addDoc, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 import * as Filhos from "./filhos.js";
 import { criarCheckout } from "./checkout.js";
@@ -301,8 +301,10 @@ function _highlight(nome, q){
 
     // 4) Carrega inscrições existentes pra checar status do filho que escolher
     try {
-      const iSnap = await getDocs(query(collection(dbPvd,'evento_inscricoes'), where('evento_id','==',APP.eventoId)));
-      APP.inscricoes = iSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+      // Pelo Worker, sem nome nem telefone: só `filho_id` e `status`, que é o
+      // que esta tela pergunta. A collection era pública de list e devolvia o
+      // par filho_id + telefone da casa inteira — a credencial da área do filho.
+      APP.inscricoes = await Filhos.inscricoesDoEvento(APP.cfg, APP.eventoId);
     } catch(e) { Filhos.avisarFalha('as inscrições', e); APP.inscricoes = []; }
 
     renderEvento();

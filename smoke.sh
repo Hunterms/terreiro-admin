@@ -207,6 +207,19 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # Firestore, com a regra aberta: o PIN era conferido e não autorizava nada.
   # Se esta rota sumir, a área do filho volta a não conseguir liberar — e a
   # regra fechada faz a falha aparecer, que é o que se quer.
+  # A tela do evento pergunta "esta pessoa já está inscrita?" por aqui. A rota
+  # só pode devolver id, filho_id e status — nome, telefone e valor ficam de
+  # dentro. Se um deles voltar, a inscrição vira lista pública de novo.
+  r=$(curl -s -X POST "$W/inscricoes-do-evento" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'evento_id inválido' && ok "inscricoes-do-evento no ar" || erro "inscricoes-do-evento: Worker velho? $(head -c 100 <<< "$r")"
+  r=$(curl -s -X POST "$W/inscricoes-do-evento" -H 'Content-Type: application/json' -d '{"evento_id":"smokeTest000"}')
+  if ! grep -q '"inscricoes"' <<< "$r"; then
+    erro "inscricoes-do-evento: $(head -c 120 <<< "$r")"
+  elif grep -qE '"(nome|tel|email|valor)"' <<< "$r"; then
+    erro "VAZAMENTO: /inscricoes-do-evento devolveu campo de pessoa"
+  else
+    ok "inscricoes-do-evento sem nome nem telefone"
+  fi
   r=$(curl -s -X POST "$W/liberar-rega" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'data inválida' && ok "liberar-rega no ar" || erro "liberar-rega: Worker velho? $(head -c 100 <<< "$r")"
   # E ela não pode apagar sem prova de quem é o dia.
@@ -258,7 +271,13 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
              "area-filho.html:escapaHtml(reserva.filho_nome" \
              "index.html:escapaHtml(disp.obs" \
              "index.html:escapaHtml(reserva.filho_nome" \
-             "index.html:escapaHtml(reservaHoje.filho_nome"; do
+             "index.html:escapaHtml(reservaHoje.filho_nome" \
+             "index.html:escapaHtml(s.observacao" \
+             "index.html:escapaHtml(p.observacao" \
+             "index.html:escapaHtml(insc.nome" \
+             "index.html:escapaHtml(p.obs" \
+             "index.html:escapaJs(" \
+             "evento.html:inscricoesDoEvento"; do
     arq="${par%%:*}"; marca="${par#*:}"
     if grep -qF -- "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
       ok "$arq escapa o que veio de fora"
@@ -284,6 +303,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
     {
       sed -n '/^const esc = /,/^));$/p' "$FIN"
       grep -m1 '^const escJs' "$FIN"
+      grep -m1 '^const escapaJs' "$(dirname "$0")/index.html" | sed 's/^const escapaJs/const escJs2/'
       cat <<'EOF'
 const decode = s => s.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'");
 let mau = 0;
@@ -295,6 +315,14 @@ for (const c of ['Fulano', "O'Brien", 'a"b', 'x<img src=q onerror=alert(1)>', 'c
   if (visto !== c) mau++;
 }
 if (/[<>"']/.test(esc('<img onerror="x">'))) mau++;
+// o admin tem o par dele, e ele tem que se comportar igual
+for (const c of ["O'Brien", 'a"b', 'c\\d']) {
+  const attr = "f('" + escJs2(c) + "')";
+  if (attr.includes('"')) { mau++; continue; }
+  let visto = null;
+  try { (new Function('f', decode(attr)))(v => visto = v); } catch { mau++; continue; }
+  if (visto !== c) mau++;
+}
 process.exit(mau ? 1 : 0);
 EOF
     } > /tmp/smoke-escape.$$.mjs
@@ -321,6 +349,9 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
            adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"
   done
+  # evento_inscricoes fechou em 07/09. Levava nome, telefone, valor e filho_id
+  # numa list pública — e filho_id + telefone é a credencial da área do filho
+  # pra quem não tem PIN. É a repetição exata do que fin_filhos fez em 01/08.
   # E estas NÃO podem abrir. fin_reembolsos e adm_respostas carregam dado de
   # pessoa (chave PIX, telefone, acerto/erro com nome) — list público aqui é
   # vazamento, não conveniência.
@@ -330,7 +361,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # telefone É a credencial da área do filho: quem lia a collection entrava como
   # qualquer pessoa da casa. O elenco agora vem do Worker, sem esses campos.
   for c in fin_pagamentos sales fin_mensalidade_pedidos fin_reembolsos adm_respostas fin_filhos \
-           adm_notificacoes adm_avisos_lidos adm_tentativas adm_avisos adm_grupos; do
+           adm_notificacoes adm_avisos_lidos adm_tentativas adm_avisos adm_grupos evento_inscricoes; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
   # O delete de adm_rega_diaria era público. Apagar um dia que não existe é
