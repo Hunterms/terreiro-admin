@@ -194,6 +194,7 @@ export default {
       if (rota === '/reembolso') return await rotaReembolso(body, env);
       if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
       if (rota === '/liberar-rega') return await rotaLiberarRega(body, env);
+      if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2247,6 +2248,33 @@ async function rotaMeusReembolsos(body, env) {
       status: r.status || 'pendente', criadoEm: r.criadoEm || null, obs_admin: r.obs_admin || null,
     }));
   return json({ reembolsos: lista });
+}
+
+// ── QUEM JÁ SE INSCREVEU NUM EVENTO ───────────────────────────────────────
+//
+// `evento_inscricoes` era pública de LIST, e cada doc leva nome, telefone,
+// valor e filho_id de quem se inscreveu. É a mesma coisa que fez `fin_filhos`
+// fechar em 01/08 — e pior: ali o par `filho_id` + telefone é exatamente a
+// credencial da área do filho pra quem ainda não criou PIN.
+//
+// A evento.html precisa de uma coisa só: "esta pessoa já está inscrita, e
+// pagou?". É isso que sai daqui — id e status, sem nome, sem telefone, sem
+// valor. Mesma escolha do /filhos.
+async function rotaInscricoesDoEvento(body, env) {
+  const evento_id = String(body?.evento_id || '');
+  if (!evento_id || evento_id.length > 200) return json({ error: 'evento_id inválido' }, 400);
+
+  const token = await tokenGoogle(env);
+  const lista = await fsQuery(PROJETO_PVD, 'evento_inscricoes', token,
+    { campo: 'evento_id', valor: evento_id }, 500);
+
+  return json({
+    inscricoes: lista.map((i) => ({
+      id: i.id,
+      filho_id: i.filho_id || null,
+      status: i.status || 'aguardando',
+    })),
+  });
 }
 
 // ── LIBERAR UM DIA DE REGA ────────────────────────────────────────────────

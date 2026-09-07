@@ -616,6 +616,22 @@ Recomendo (a): no boot do admin, autentica primeiro no `terreiro-pvd`, depois re
 > a reserva de outra pessoa. A checagem de conflito que existe é do lado do
 > navegador. Fechar isso pede a mesma peça (uma rota `/reservar-rega`), e ela
 > não entrou no mesmo passo.
+>
+> **Item aberto (07/09) — estranho com conta lê a base inteira.** O `match
+> /{document=**}` abre `allow read: if ehAuth()`, ou seja **qualquer usuário
+> autenticado lê tudo**: `fin_filhos` com telefone e valor, `fin_reembolsos`
+> com chave PIX, `sales`, `adm_respostas`. E o cadastro do `terreiro-pvd` está
+> **aberto**: `POST identitytoolkit/accounts:signUp` com a chave pública (que
+> está no JS de toda página) responde `WEAK_PASSWORD`, não
+> `ADMIN_ONLY_OPERATION` — medido em 07/09. Ou seja: criar conta e ler tudo é
+> uma chamada de distância, e o telefone de `fin_filhos` é a credencial da área
+> do filho de quem não tem PIN.
+>
+> **O conserto barato é desligar o cadastro**, não reescrever as rules: Firebase
+> Console → Authentication → Sign-in method → E-mail/senha → desativar
+> "Ativar criação de conta pelo usuário". As contas daqui sempre nasceram na
+> mão do admin (ver o Setup do README), então nada depende do cadastro aberto.
+> Fechar o `{document=**}` por collection é o conserto de fundo, e é grande.
 
 ```js
 rules_version = '2';

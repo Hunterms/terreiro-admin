@@ -393,6 +393,16 @@ const $ = (q,r=document) => r.querySelector(q);
 const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
   { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
 ));
+
+// O mesmo texto dentro de um onclick="..." não pode passar pelo escapaHtml: o
+// navegador desfaz a entidade ANTES de rodar o JS, então `&#39;` volta a ser
+// aspa e fecha a string. Aqui a ordem é outra — escapa pro JS primeiro, e só a
+// aspa dupla vira entidade, que é o que fecha o atributo.
+//
+// Vale pros ids também: as rules deixam quem cria um doc público escolher o id
+// (adm_solicitacoes, vendas_pedidos, evento_inscricoes, adm_despensa), e o id
+// vai dentro do onclick de cada botão de linha.
+const escapaJs = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 const $$ = (q,r=document) => Array.from(r.querySelectorAll(q));
 
 // Data efetiva de uma alocação: "Limpeza depois" da gira é no dia seguinte.
@@ -704,11 +714,17 @@ async function detectRole(user) {
       return { role:'filho', filhoDoc:{ id:d.id, ...d.data() }};
     }
   } catch(e) {}
-  // 3. Lista hardcoded de admins (pre-claims). Match por substring OU email exato.
+  // 3. Rede de segurança pré-claims: a MESMA lista exata das rules, e só ela.
+  //
+  // Era match por SUBSTRING de 'hunter', 'pai', 'candieiro' e 'admin'. Qualquer
+  // conta com um desses pedaços no email — paiva@, adminho@, painel@ — abria o
+  // admin inteiro na tela. As rules nunca deixaram escrever (lá a lista é
+  // exata), mas o `allow read: if ehAuth()` do {document=**} deixa LER tudo, e
+  // com o cadastro aberto no Firebase Auth isso é a um signUp de distância.
+  // Achado em 07/09; a lista exata cobre os dois admins de verdade.
   const email = (user.email||'').toLowerCase();
-  const adminsSubstring = ['hunter','pai','candieiro','admin'];
-  const adminsExatos = ['nandomacedo42@gmail.com'];
-  if (adminsExatos.includes(email) || adminsSubstring.some(s => email.includes(s))) {
+  const adminsExatos = ['hunter.soares.c@gmail.com', 'nandomacedo42@gmail.com'];
+  if (adminsExatos.includes(email)) {
     return { role:'admin', filhoDoc:null };
   }
   return { role:null, filhoDoc:null };
@@ -3024,7 +3040,7 @@ async function abrirPagamentosEvento(eventoId) {
       return `
         <div class="list-item" style="background:var(--glass2)">
           <div class="li-main">
-            <div class="li-name">${insc.nome||'—'} ${ehFilho?'<span class="chip chip-gold" style="margin-left:6px;font-size:10px">filho</span>':''}</div>
+            <div class="li-name">${escapaHtml(insc.nome||'—')} ${ehFilho?'<span class="chip chip-gold" style="margin-left:6px;font-size:10px">filho</span>':''}</div>
             <div class="li-meta">
               <span style="font-weight:700;color:var(--gold)">R$ ${(Number(insc.valor)||0).toFixed(2).replace('.',',')}</span>
               ${stChip}
@@ -3032,21 +3048,21 @@ async function abrirPagamentosEvento(eventoId) {
               ${chipPagoSuspeito(insc)}
               ${insc.metodo?`<span class="chip">${insc.metodo}</span>`:''}
               ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
-              ${insc.tel?`<span style="color:var(--text3)">📱 ${insc.tel}</span>`:''}
+              ${insc.tel?`<span style="color:var(--text3)">📱 ${escapaHtml(insc.tel)}</span>`:''}
             </div>
           </div>
           <div class="li-actions">
             ${insc.status === 'pago'
-              ? `<button class="btn btn-sm" onclick="window._app.marcarInscricao('${insc.id}','aguardando')">Marcar pendente</button>`
-              : `<button class="btn btn-sm btn-primary" onclick="window._app.marcarInscricao('${insc.id}','pago')">Confirmar pago</button>`}
-            <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.deletarInscricao('${insc.id}')">×</button>
+              ? `<button class="btn btn-sm" onclick="window._app.marcarInscricao('${escapaJs(insc.id)}','aguardando')">Marcar pendente</button>`
+              : `<button class="btn btn-sm btn-primary" onclick="window._app.marcarInscricao('${escapaJs(insc.id)}','pago')">Confirmar pago</button>`}
+            <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.deletarInscricao('${escapaJs(insc.id)}')">×</button>
           </div>
         </div>
       `;
     };
 
     return `
-      <div class="modal-h"><h3>💰 Pagamentos · ${ev.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-h"><h3>💰 Pagamentos · ${escapaHtml(ev.nome)}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
       <div class="modal-c">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
           <div style="padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px">
@@ -3195,7 +3211,7 @@ function _renderPagProdContent() {
         <div class="li-actions">
           ${r.status === 'aguardando' ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${r.pedido.id}')">Confirmar pago</button>` : ''}
           ${r.status === 'pago' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${r.pedido.id}')">Desfazer</button>` : ''}
-          ${r.status === 'nao_pago' ? `<button class="btn btn-sm" onclick="window._app.marcarPagoSemPedido('${produtoId}','${r.filho.id}', '${r.filho.nome.replace(/'/g,'')}', ${valorAtivo})" title="Cria um pedido já confirmado (ex: pagou em dinheiro)">+ Marcar pago</button>` : ''}
+          ${r.status === 'nao_pago' ? `<button class="btn btn-sm" onclick="window._app.marcarPagoSemPedido('${produtoId}','${r.filho.id}', '${escapaJs(r.filho.nome)}', ${valorAtivo})" title="Cria um pedido já confirmado (ex: pagou em dinheiro)">+ Marcar pago</button>` : ''}
         </div>
       </div>
     `;
@@ -3573,9 +3589,9 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
     return `
       <div class="list-item" style="background:var(--glass2);flex-direction:column;align-items:stretch">
         <div style="display:flex;gap:10px;align-items:flex-start;width:100%">
-          <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(x.nome||'?')}</div>
+          <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${escapaHtml(fmt.initials(x.nome||'?'))}</div>
           <div class="li-main">
-            <div class="li-name">${x.nome||'(sem nome)'}</div>
+            <div class="li-name">${escapaHtml(x.nome||'(sem nome)')}</div>
             <div class="li-meta">
               ${stChip}
               <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
@@ -3584,13 +3600,13 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
               ${x.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
               ${x.parcela_num && x.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 ${x.parcela_num}/${x.parcelas_total}</span>`:''}
               ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
-              ${x.tel?`<span style="color:var(--text3)">📱 ${x.tel}</span>`:''}
+              ${x.tel?`<span style="color:var(--text3)">📱 ${escapaHtml(x.tel)}</span>`:''}
             </div>
             ${demoSummary?`<div style="font-size:11.5px;color:var(--text3);margin-top:3px">📊 ${demoSummary}${d.ja_terreiro==='sim'?' · ex-terreiro':''}</div>`:''}
           </div>
           <div class="li-actions">
-            ${(x.status==='pendente'||x.status==='aguardando_pagamento'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${x.id}')">Confirmar</button>` : ''}
-            ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${x.id}')">Desfazer</button>` : ''}
+            ${(x.status==='pendente'||x.status==='aguardando_pagamento'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${escapaJs(x.id)}')">Confirmar</button>` : ''}
+            ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${escapaJs(x.id)}')">Desfazer</button>` : ''}
           </div>
         </div>
         ${d ? `
@@ -3611,7 +3627,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
   };
 
   return `
-    <div class="modal-h"><h3>💰 Pagamentos · ${p.nome}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-h"><h3>💰 Pagamentos · ${escapaHtml(p.nome)}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
         <div style="padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px">
@@ -5795,7 +5811,7 @@ function renderAgenda(c) {
               <div style="font-size:9px;text-transform:uppercase">${new Date((a.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
             </div>
             <div class="li-main">
-              <div class="li-name">${a.consulente_nome||'—'} <span class="chip ${_atendChipClass(a)}" style="font-size:10px">${_atendLabel(a)}${isBuzios?' · privado':''}</span></div>
+              <div class="li-name">${escapaHtml(a.consulente_nome||'—')} <span class="chip ${_atendChipClass(a)}" style="font-size:10px">${_atendLabel(a)}${isBuzios?' · privado':''}</span></div>
               <div class="li-meta">
                 <span>${a.hora||'—'}${a.duracao_min?` · ${a.duracao_min}min`:''}</span>
                 <span>R$ ${a.valor||0}</span>
@@ -5902,7 +5918,7 @@ function openAtendimentoForm(id=null) {
       <div class="fi-group"><label>Consulente *</label>
         <select class="fi" id="at-cons">
           <option value="">— Selecione ou crie novo —</option>
-          ${consulentesAtivos.map(c => `<option value="${c.id}" ${a?.consulente_id===c.id?'selected':''}>${c.nome}${c.tel?' · '+c.tel:''}</option>`).join('')}
+          ${consulentesAtivos.map(c => `<option value="${c.id}" ${a?.consulente_id===c.id?'selected':''}>${escapaHtml(c.nome)}${escapaHtml(c.tel?' · '+c.tel:'')}</option>`).join('')}
         </select>
         <button class="btn btn-sm" style="margin-top:6px" onclick="window._app.openConsulenteForm(null,true)">+ Novo consulente</button>
       </div>
@@ -5954,7 +5970,7 @@ function openAtendimentoForm(id=null) {
           </select>
         </div>
       </div>
-      <div class="fi-group"><label>Observação (privada, só você e o Pai veem)</label><textarea class="fi" id="at-obs">${a?.observacao||''}</textarea></div>
+      <div class="fi-group"><label>Observação (privada, só você e o Pai veem)</label><textarea class="fi" id="at-obs">${escapaHtml(a?.observacao||'')}</textarea></div>
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="at-del">Excluir</button>':''}
@@ -6092,12 +6108,12 @@ function renderConsulentes(c) {
 
     <div>
       ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum consulente</div></div>' : lista.map(x => `
-        <div class="list-item" onclick="window._app.openConsulenteForm('${x.id}')" style="cursor:pointer">
-          <div class="li-avatar">${fmt.initials(x.nome)}</div>
+        <div class="list-item" onclick="window._app.openConsulenteForm('${escapaJs(x.id)}')" style="cursor:pointer">
+          <div class="li-avatar">${escapaHtml(fmt.initials(x.nome))}</div>
           <div class="li-main">
-            <div class="li-name">${x.nome}</div>
+            <div class="li-name">${escapaHtml(x.nome)}</div>
             <div class="li-meta">
-              ${x.tel ? `<span>📱 ${x.tel}</span>` : ''}
+              ${x.tel ? `<span>📱 ${escapaHtml(x.tel)}</span>` : ''}
               <span>${x.qtd_atendimentos||0} atendimento${(x.qtd_atendimentos||0)===1?'':'s'}</span>
               ${x.ultima_vez ? `<span>último: ${fmt.rel(x.ultima_vez)}</span>` : '<span class="chip chip-blue">nunca atendido</span>'}
               ${x.origem ? `<span class="chip">${x.origem}</span>` : ''}
@@ -6120,10 +6136,10 @@ function openConsulenteForm(id=null, fromAtendimento=false) {
   openModal(`
     <div class="modal-h"><h3>${isEdit?'Consulente':'Novo consulente'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div class="fi-group"><label>Nome *</label><input class="fi" id="cn-nome" value="${x?.nome||''}"/></div>
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="cn-nome" value="${escapaHtml(x?.nome||'')}"/></div>
       <div class="row-2">
-        <div class="fi-group"><label>Telefone</label><input class="fi" id="cn-tel" value="${x?.tel||''}" placeholder="11999999999"/></div>
-        <div class="fi-group"><label>Email</label><input class="fi" id="cn-email" value="${x?.email||''}"/></div>
+        <div class="fi-group"><label>Telefone</label><input class="fi" id="cn-tel" value="${escapaHtml(x?.tel||'')}" placeholder="11999999999"/></div>
+        <div class="fi-group"><label>Email</label><input class="fi" id="cn-email" value="${escapaHtml(x?.email||'')}"/></div>
       </div>
       <div class="fi-group"><label>Como chegou aqui?</label>
         <select class="fi" id="cn-origem">
@@ -6147,13 +6163,13 @@ function openConsulenteForm(id=null, fromAtendimento=false) {
               <span><strong>${fmt.data(a.data)}</strong> · ${a.hora||'—'} · ${_atendLabel(a).toLowerCase()}</span>
               <span class="chip ${a.status_atendimento==='realizado'?'chip-green':'chip'}">${a.status_atendimento}</span>
             </div>
-            ${a.observacao?`<div style="color:var(--text2);margin-top:4px;font-size:12.5px">${a.observacao}</div>`:''}
+            ${a.observacao?`<div style="color:var(--text2);margin-top:4px;font-size:12.5px">${escapaHtml(a.observacao)}</div>`:''}
           </div>
         `).join('')}
       ` : ''}
     </div>
     <div class="modal-f">
-      ${isEdit?`<button class="btn" onclick="window._app.toggleArquivarConsulente('${id}',${!x.arquivado});closeModal()">${x.arquivado?'Restaurar':'Arquivar'}</button>`:''}
+      ${isEdit?`<button class="btn" onclick="window._app.toggleArquivarConsulente('${escapaJs(id)}',${!x.arquivado});closeModal()">${x.arquivado?'Restaurar':'Arquivar'}</button>`:''}
       <button class="btn" onclick="closeModal()">Cancelar</button>
       ${isEdit?`<button class="btn btn-primary" onclick="closeModal();window._app.openAtendimentoForm()" style="margin-right:6px">+ Novo atendimento</button>`:''}
       <button class="btn btn-primary" id="cn-save">${isEdit?'Salvar':(fromAtendimento?'Criar e voltar':'Criar')}</button>
@@ -6598,23 +6614,23 @@ function renderDespensa(c) {
         const corBg = zerado ? 'var(--red-bg)' : (baixo ? 'rgba(243,156,18,0.08)' : 'var(--glass)');
         const corBd = zerado ? 'var(--red-bd)' : (baixo ? 'rgba(243,156,18,0.2)' : 'var(--border)');
         return `
-        <div class="list-item" style="background:${corBg};border-color:${corBd}" onclick="window._app.openItemDespensaForm('${p.id}')">
+        <div class="list-item" style="background:${corBg};border-color:${corBd}" onclick="window._app.openItemDespensaForm('${escapaJs(p.id)}')">
           <div class="li-avatar" style="background:${zerado?'var(--red-bg)':(baixo?'var(--amber-bg)':'var(--gold-bg)')};color:${zerado?'var(--red)':(baixo?'var(--amber)':'var(--gold)')};flex-direction:column;font-size:11px;line-height:1.1">
             <div style="font-size:16px;font-weight:700">${p.estoque||0}</div>
             <div style="font-size:9px;text-transform:uppercase">${p.unidade||'un'}</div>
           </div>
           <div class="li-main">
-            <div class="li-name">${p.nome||'—'}</div>
+            <div class="li-name">${escapaHtml(p.nome||'—')}</div>
             <div class="li-meta">
               ${p.categoria ? `<span class="chip">${p.categoria}</span>` : ''}
               <span style="color:var(--text3)">mínimo: ${p.minimo||0}</span>
-              ${p.obs ? `<span style="color:var(--text3);font-style:italic">${p.obs}</span>` : ''}
+              ${p.obs ? `<span style="color:var(--text3);font-style:italic">${escapaHtml(p.obs)}</span>` : ''}
               ${zerado ? '<span class="chip chip-red">ZERADO</span>' : (baixo ? '<span class="chip chip-amber">baixo</span>' : '')}
             </div>
           </div>
           <div class="li-actions">
-            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarDespensa('${p.id}','entrada')">+ Entrada</button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarDespensa('${p.id}','saida')">− Saída</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarDespensa('${escapaJs(p.id)}','entrada')">+ Entrada</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();window._app.movimentarDespensa('${escapaJs(p.id)}','saida')">− Saída</button>
           </div>
         </div>
         `;
@@ -6637,7 +6653,7 @@ function openItemDespensaForm(id=null) {
   openModal(`
     <div class="modal-h"><h3>${isEdit?'Editar item':'Novo item da despensa'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div class="fi-group"><label>Nome *</label><input class="fi" id="dp-nome" value="${p?.nome||''}" placeholder="ex: Vela branca 7 dias, Alfazema, Cachaça..."/></div>
+      <div class="fi-group"><label>Nome *</label><input class="fi" id="dp-nome" value="${escapaHtml(p?.nome||'')}" placeholder="ex: Vela branca 7 dias, Alfazema, Cachaça..."/></div>
       <div class="row-2">
         <div class="fi-group"><label>Categoria</label>
           <input class="fi" id="dp-cat-i" value="${p?.categoria||''}" placeholder="ex: velas, ervas..." list="dp-cats-list"/>
@@ -6653,7 +6669,7 @@ function openItemDespensaForm(id=null) {
         <div class="fi-group"><label>Estoque atual</label><input type="number" step="0.01" class="fi" id="dp-est" value="${p?.estoque||0}"/></div>
         <div class="fi-group"><label>Estoque mínimo (alerta)</label><input type="number" step="0.01" class="fi" id="dp-min" value="${p?.minimo||0}"/></div>
       </div>
-      <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="dp-obs" placeholder="onde compra, marca preferida, uso ritual...">${p?.obs||''}</textarea></div>
+      <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="dp-obs" placeholder="onde compra, marca preferida, uso ritual...">${escapaHtml(p?.obs||'')}</textarea></div>
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="dp-del">Excluir</button>':''}
@@ -6687,7 +6703,7 @@ function openItemDespensaForm(id=null) {
   };
 
   if(isEdit) $('#dp-del').onclick = () => {
-    confirmar(`Excluir <strong>${p.nome}</strong> da despensa?`, async () => {
+    confirmar(`Excluir <strong>${escapaHtml(p.nome)}</strong> da despensa?`, async () => {
       try { await deleteDoc(doc(dbPvd,'adm_despensa',id)); toast('Item excluído','ok'); }
       catch(e) { toast('Erro: '+e.message,'err'); }
     });
@@ -6856,15 +6872,15 @@ function renderSolicitacoes(c) {
               <div style="font-size:9px;text-transform:uppercase">${new Date((s.data||'')+'T00:00:00').toLocaleDateString('pt-BR',{month:'short'}).replace('.','')}</div>
             </div>
             <div class="li-main">
-              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${s.hora} · ${s.duracao_min||60} min</span></div>
+              <div class="li-name">${escapaHtml(s.nome)} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${s.hora} · ${s.duracao_min||60} min</span></div>
               <div class="li-meta" style="margin-top:4px">
-                <strong style="color:var(--text)">${s.servico_nome || 'Consulta'}</strong>
+                <strong style="color:var(--text)">${escapaHtml(s.servico_nome || 'Consulta')}</strong>
                 <span class="chip ${s.modalidade==='online'?'chip-blue':'chip-green'}">${s.modalidade==='online'?'online':'presencial'}</span>
                 <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
               </div>
               <div class="li-meta" style="margin-top:6px">
-                ${s.tel?`<span>📱 ${s.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
-                ${s.email?`<span>✉️ ${s.email}</span>`:''}
+                ${s.tel?`<span>📱 ${escapaHtml(s.tel)}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
+                ${s.email?`<span>✉️ ${escapaHtml(s.email)}</span>`:''}
               </div>
               <div class="li-meta" style="margin-top:6px">
                 ${metPag?`<span>${metPag}</span>`:''}
@@ -6873,12 +6889,12 @@ function renderSolicitacoes(c) {
                 ${!s.pago_automatico && s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
               </div>
-              ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${s.observacao}"</div>`:''}
+              ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${escapaHtml(s.observacao)}"</div>`:''}
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:140px">
               ${waLink ? `<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
-              <button class="btn btn-sm btn-primary" onclick="window._app.aprovarSolicitacao('${s.id}')">Aprovar</button>
-              <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${s.id}')">Rejeitar</button>
+              <button class="btn btn-sm btn-primary" onclick="window._app.aprovarSolicitacao('${escapaJs(s.id)}')">Aprovar</button>
+              <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Rejeitar</button>
             </div>
           </div>
         `}).join('')}
@@ -6895,20 +6911,20 @@ function renderSolicitacoes(c) {
         </div>
         ${aguardando.map(s => `
           <div class="list-item" style="opacity:.85">
-            <div class="li-avatar">${fmt.initials(s.nome)}</div>
+            <div class="li-avatar">${escapaHtml(fmt.initials(s.nome))}</div>
             <div class="li-main">
-              <div class="li-name">${s.nome} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${fmt.dataLong(s.data)} · ${s.hora}</span></div>
+              <div class="li-name">${escapaHtml(s.nome)} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${fmt.dataLong(s.data)} · ${s.hora}</span></div>
               <div class="li-meta" style="margin-top:4px">
-                <span>${s.servico_nome || 'Consulta'}</span>
+                <span>${escapaHtml(s.servico_nome || 'Consulta')}</span>
                 <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
                 ${chipPagoSuspeito(s)}
-                ${s.tel?`<span>📱 ${s.tel}</span>`:''}
+                ${s.tel?`<span>📱 ${escapaHtml(s.tel)}</span>`:''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
               </div>
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
-              <button class="btn btn-sm" onclick="window._app.solicitacaoPraFila('${s.id}')" title="Devolve pra fila de aprovação, como se tivesse chegado agora">→ Mandar pra fila</button>
-              <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${s.id}')">Descartar</button>
+              <button class="btn btn-sm" onclick="window._app.solicitacaoPraFila('${escapaJs(s.id)}')" title="Devolve pra fila de aprovação, como se tivesse chegado agora">→ Mandar pra fila</button>
+              <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Descartar</button>
             </div>
           </div>
         `).join('')}
@@ -6921,9 +6937,9 @@ function renderSolicitacoes(c) {
         <div style="margin-top:10px">
           ${processadas.slice(0,30).map(s => `
             <div class="list-item" style="opacity:.7">
-              <div class="li-avatar">${fmt.initials(s.nome)}</div>
+              <div class="li-avatar">${escapaHtml(fmt.initials(s.nome))}</div>
               <div class="li-main">
-                <div class="li-name">${s.nome}</div>
+                <div class="li-name">${escapaHtml(s.nome)}</div>
                 <div class="li-meta">
                   <span>${fmt.data(s.data)} · ${s.hora}</span>
                   <span class="chip ${s.status==='aprovada'?'chip-green':'chip'}">${s.status}</span>
@@ -6949,7 +6965,7 @@ async function aprovarSolicitacao(id) {
     </div>
     <div class="modal-c">
       <div style="padding:12px 14px;background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);border-radius:10px;margin-bottom:16px;font-size:13.5px;line-height:1.6">
-        <div><strong style="color:var(--text)">${s.nome}</strong> · ${s.servico_nome||'Consulta'}</div>
+        <div><strong style="color:var(--text)">${escapaHtml(s.nome)}</strong> · ${escapaHtml(s.servico_nome||'Consulta')}</div>
         <div>${dataBr} às ${s.hora} · R$ ${s.valor_proposto||0}</div>
         <div>Modalidade: <strong>${s.modalidade==='online'?'Online':'Presencial'}</strong></div>
         <div>Método indicado: ${metPag}</div>
@@ -7056,7 +7072,7 @@ async function aprovarSolicitacao(id) {
 async function rejeitarSolicitacao(id) {
   const s = S.solicitacoes.find(x => x.id === id);
   if(!s) return;
-  confirmar(`Rejeitar pedido de <strong>${s.nome}</strong>? O slot fica livre de novo.`, async () => {
+  confirmar(`Rejeitar pedido de <strong>${escapaHtml(s.nome)}</strong>? O slot fica livre de novo.`, async () => {
     try {
       await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { status: 'rejeitada', atualizadoEm: serverTimestamp() });
       await delSlotPub('sol_'+id);
@@ -7858,7 +7874,7 @@ function renderPedidos(c) {
           const tel = (p.tel||'').replace(/\D/g,'');
           const waNum = tel.length === 10 || tel.length === 11 ? '55'+tel : tel;
           const dataBr = p.criadoEm ? fmt.rel(p.criadoEm) : '';
-          const msgConfirm = `Oi ${(p.nome||'').split(' ')[0]}, recebemos seu pedido pra *${p.produto_nome||'compra'}* (R$ ${p.valor||0}). Tô confirmando aqui!`;
+          const msgConfirm = `Oi ${escapaHtml((p.nome||'').split(' ')[0])}, recebemos seu pedido pra *${escapaHtml(p.produto_nome||'compra')}* (R$ ${p.valor||0}). Tô confirmando aqui!`;
           const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(msgConfirm)}` : null;
           const demoLabels = {
             genero: { fem_cis:'Feminino Cis', fem_trans:'Feminino Trans', masc_cis:'Masculino Cis', masc_trans:'Masculino Trans', nao_binario:'Não-binárie', outro:'Outro' },
@@ -7883,11 +7899,11 @@ function renderPedidos(c) {
           ` : '';
           return `
           <div class="list-item" style="align-items:flex-start">
-            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${fmt.initials(p.nome||'?')}</div>
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${escapaHtml(fmt.initials(p.nome||'?'))}</div>
             <div class="li-main">
-              <div class="li-name">${p.nome||'(sem nome)'} <span class="chip ${cfg.chip}" style="margin-left:6px">${cfg.lbl}</span></div>
+              <div class="li-name">${escapaHtml(p.nome||'(sem nome)')} <span class="chip ${cfg.chip}" style="margin-left:6px">${cfg.lbl}</span></div>
               <div class="li-meta" style="margin-top:4px">
-                <strong style="color:var(--text)">${p.produto_nome||'?'}</strong>
+                <strong style="color:var(--text)">${escapaHtml(p.produto_nome||'?')}</strong>
                 <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${p.valor_cheio}</span>`:''}</span>
                 ${p.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)" title="Mês de referência deste pagamento recorrente">🔁 ${fmtCiclo(p.ciclo)}</span>`:''}
                 ${p.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${p.turma_nome}</span>`:''}
@@ -7900,19 +7916,19 @@ function renderPedidos(c) {
                 ${!p.pago_automatico && p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
               </div>
               <div class="li-meta" style="margin-top:4px">
-                ${p.tel?`<span>📱 ${p.tel}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
-                ${p.email?`<span>✉️ ${p.email}</span>`:''}
-                ${p.como_soube?`<span style="color:var(--text3)">via ${p.como_soube}</span>`:''}
+                ${p.tel?`<span>📱 ${escapaHtml(p.tel)}</span>`:'<span style="color:var(--red)">⚠ sem telefone</span>'}
+                ${p.email?`<span>✉️ ${escapaHtml(p.email)}</span>`:''}
+                ${p.como_soube?`<span style="color:var(--text3)">via ${escapaHtml(p.como_soube)}</span>`:''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${dataBr}</span>
               </div>
-              ${p.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${p.observacao}"</div>`:''}
+              ${p.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${escapaHtml(p.observacao)}"</div>`:''}
               ${demoBlock}
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:130px">
               ${waLink?`<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}
-              ${status!=='confirmado'?`<button class="btn btn-sm btn-primary" onclick="window._app.setPedidoStatus('${p.id}','confirmado')">Confirmar</button>`:''}
-              ${status!=='cancelado'?`<button class="btn btn-sm" onclick="window._app.setPedidoStatus('${p.id}','cancelado')">Cancelar</button>`:''}
-              <button class="btn btn-sm" onclick="window._app.deletarPedido('${p.id}','${(p.nome||'').replace(/'/g,'')}')" title="Apagar permanente">🗑</button>
+              ${status!=='confirmado'?`<button class="btn btn-sm btn-primary" onclick="window._app.setPedidoStatus('${escapaJs(p.id)}','confirmado')">Confirmar</button>`:''}
+              ${status!=='cancelado'?`<button class="btn btn-sm" onclick="window._app.setPedidoStatus('${escapaJs(p.id)}','cancelado')">Cancelar</button>`:''}
+              <button class="btn btn-sm" onclick="window._app.deletarPedido('${escapaJs(p.id)}','${escapaJs((p.nome||''))}')" title="Apagar permanente">🗑</button>
             </div>
           </div>
         `;}).join('')}
@@ -8110,11 +8126,11 @@ function _renderIntelPessoas(pessoas) {
         const ultima = p.ultimaData ? new Date(p.ultimaData+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—';
         return `
           <div class="list-item">
-            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${fmt.initials(p.nome)}</div>
+            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold);font-size:11px">${escapaHtml(fmt.initials(p.nome))}</div>
             <div class="li-main">
-              <div class="li-name">${p.nome} ${chips.join(' ')}</div>
+              <div class="li-name">${escapaHtml(p.nome)} ${chips.join(' ')}</div>
               <div class="li-meta">
-                ${p.tel ? `<span>${p.tel}</span>` : ''}
+                ${p.tel ? `<span>${escapaHtml(p.tel)}</span>` : ''}
                 ${p.qtdAtendimentosPagos > 0 ? `<span>👁 ${p.qtdAtendimentosPagos}× · R$ ${p.valorAtendimentos.toFixed(0)}</span>` : ''}
                 ${p.qtdPedidosPagos > 0 ? `<span>🛒 ${p.qtdPedidosPagos}× · R$ ${p.valorPedidos.toFixed(0)}</span>` : ''}
                 <span style="color:var(--text3)">Última: ${ultima}</span>

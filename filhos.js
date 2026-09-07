@@ -129,6 +129,18 @@ export async function liberarRega(cfg, quem, data) {
 }
 
 /**
+ * Quem já está inscrito num evento — só `filho_id` e `status`.
+ *
+ * A collection era pública de LIST e cada doc levava nome, telefone e valor de
+ * quem se inscreveu. A tela do evento só precisa saber se a pessoa que acabou
+ * de escolher o nome já está lá, e se pagou.
+ */
+export async function inscricoesDoEvento(cfg, eventoId) {
+  const d = await chamar(cfg, '/inscricoes-do-evento', { evento_id: eventoId });
+  return Array.isArray(d.inscricoes) ? d.inscricoes : [];
+}
+
+/**
  * O mural interno: avisos, próximas atividades e as inscrições da pessoa.
  *
  * `pwa` diz se a pessoa está abrindo pela tela de início. Vai de carona aqui, e

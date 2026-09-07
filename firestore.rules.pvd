@@ -202,8 +202,16 @@ service cloud.firestore {
     // ── PÚBLICO: inscrições/pagamentos de evento ──────────────────────────
     // evento.html cria 1 doc por inscrição. Visitantes (form) e filhos (auto-
     // complete) entram aqui. Status muda pra 'pago' após admin confirmar.
+    // A leitura era PÚBLICA de list, e cada doc leva nome, telefone, valor e
+    // filho_id de quem se inscreveu. É a mesma coisa que fechou `fin_filhos`
+    // em 01/08 — e o par `filho_id` + telefone é a credencial da área do filho
+    // pra quem ainda não criou PIN. Achado em 07/09.
+    //
+    // A evento.html agora pergunta pelo Worker (POST /inscricoes-do-evento),
+    // que devolve só id, filho_id e status. O create continua público: é o
+    // form. Quem lê aqui, lê logado.
     match /evento_inscricoes/{id} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow create: if request.resource.data.evento_id is string
                     && request.resource.data.nome is string
                     && request.resource.data.nome.size() > 1
