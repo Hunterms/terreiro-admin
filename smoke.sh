@@ -114,6 +114,14 @@ if [[ "$alvo" == "tudo" || "$alvo" == "financeiro" ]]; then
   # o bug de 30/07: app.js declarava Firebase como se fosse global
   checa https://financeiro.terreirodocandieiro.com.br/js/app.js "app.js" "ouvirMensPedidos"
   checa https://financeiro.terreirodocandieiro.com.br/js/firebase.js "auth de verdade" "signInWithEmailAndPassword"
+  # Eram 22 onSnapshot sem tratamento: leitura que falha deixava o total em
+  # R$ 0,00 e parecia mês sem gasto. O embrulho mora no firebase.js, então
+  # nenhuma das 22 chamadas precisa saber — e é por isso que ele pode sumir
+  # sem ninguém notar.
+  checa https://financeiro.terreirodocandieiro.com.br/js/firebase.js "leitura que falha avisa" "_falhaDeLeitura"
+  # E autenticado não é autorizado: a tela abria pra qualquer conta do
+  # terreiro-pvd, e as rules deixam quem tem login LER tudo.
+  checa https://financeiro.terreirodocandieiro.com.br/js/firebase.js "conta sem papel não abre" "podeVerOFinanceiro"
   corpo=$(pega https://financeiro.terreirodocandieiro.com.br/js/app.js)
   if grep -qE '^const app = initializeApp' <<< "$corpo"; then
     erro "app.js voltou a chamar initializeApp como global — quebra na carga"
@@ -292,9 +300,17 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
   if [[ ! -f "$FIN" ]]; then
     erro "não achei $FIN — a aba de Reembolsos não foi conferida"
   else
-    grep -qF -- 'esc(r.descricao' "$FIN" \
-      && ok "financeiro escapa o pedido de reembolso" \
-      || erro "financeiro PAROU de escapar a descrição do reembolso"
+    for marca in 'esc(r.descricao' 'esc(g.nome)' 'esc(d.obs)' 'escJs(g.nome)'; do
+      grep -qF -- "$marca" "$FIN" \
+        && ok "financeiro escapa $marca" \
+        || erro "financeiro PAROU de escapar '$marca'"
+    done
+    # O reembolso do filho vira gasto avulso com a descrição dele dentro
+    # (aprovarReembolso). Se o gasto avulso deixar de escapar, o texto volta
+    # pela porta de trás.
+    grep -qF -- "askDel('fin_gastos_avulso','\${g.id}','\${escJs(g.nome)}')" "$FIN" \
+      && ok "gasto avulso vindo de reembolso escapado" \
+      || erro "gasto avulso PAROU de escapar — a descrição do filho volta crua"
 
     # escJs não é o esc: dentro de onclick="..." o navegador desfaz a entidade
     # ANTES de rodar o JS, então `&#39;` voltaria a ser aspa e fecharia a
