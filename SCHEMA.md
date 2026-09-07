@@ -276,7 +276,7 @@ Agenda do Pai. Substitui Google Calendar como **fonte da verdade** (sync vai pro
   hora:             string              // "HH:MM"
   duracao_min:      number              // default 60
   tipo_oraculo:     'baralho_cigano' | 'buzios'
-  publico:          boolean             // baralho=true, búzios=false (não aparece no público)
+  publico:          boolean             // marca o atendimento como visível fora do admin
   valor:            number
   status_pagamento: 'pendente' | 'pago_pix' | 'pago_dinheiro' | 'pago_cartao' | 'isento'
   pago_em:          timestamp|null
@@ -289,8 +289,11 @@ Agenda do Pai. Substitui Google Calendar como **fonte da verdade** (sync vai pro
 ```
 
 **Búzios**:
-- `tipo_oraculo: 'buzios'` força `publico: false`
-- Nunca aparece em view pública (decisão registrada na memória)
+- O **serviço** é público desde 07/09/2026: o Pai Nando liberou a divulgação, o site tem página
+  (`/buzios.html`) e `adm_servicos.buzios` está com `publico: true`. A regra antiga, de só atender
+  quem já frequentava a casa, caiu.
+- O **atendimento** (este doc) continua com `publico: false` quando `tipo_oraculo: 'buzios'`.
+  Isso agora é privacidade do consulente, não sigilo do oráculo.
 - Só Pai cria/edita
 
 ---
@@ -592,6 +595,27 @@ Recomendo (a): no boot do admin, autentica primeiro no `terreiro-pvd`, depois re
 ---
 
 ## 7. Firestore Security Rules (esboço)
+
+> **⚠️ Este bloco é de maio, e não é o que está no ar.** Ele desenha um modelo
+> com login de filho (`isFilho()`, `meuFilhoId()`), e o sistema foi por outro
+> caminho: as páginas do filho são trust-based, sem Firebase Auth, e várias
+> collections aceitam leitura — e algumas, escrita — SEM login nenhum. É o que
+> faz a área do filho, a rega e o pedido de reembolso funcionarem sem conta.
+>
+> **O que está no ar mora em `firestore.rules.pvd` e `firestore.rules.candieiro`,
+> nesta pasta.** É de lá que se copia pro console, não daqui. O `./smoke.sh rules`
+> confere collection por collection o que abre e o que fecha, contra a produção.
+>
+> Fica aqui como registro de qual era o desenho, e o porquê da diferença.
+>
+> **Item aberto (07/09) — a reserva de rega se sobrescreve.** O `delete` de
+> `adm_rega_diaria` foi fechado: liberar um dia passou a ser `POST /liberar-rega`
+> no Worker, que confere a sessão e vê se o dia é de quem pediu. O `create` e o
+> `update` continuam abertos pra qualquer um, e o `confirmarRega` da
+> `area-filho.html` usa `setDoc` **sem merge** — quem chamar direto sobrescreve
+> a reserva de outra pessoa. A checagem de conflito que existe é do lado do
+> navegador. Fechar isso pede a mesma peça (uma rota `/reservar-rega`), e ela
+> não entrou no mesmo passo.
 
 ```js
 rules_version = '2';

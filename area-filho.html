@@ -602,7 +602,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
 <script type="module">
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, query, where, orderBy, serverTimestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 import { criarCheckout } from "./checkout.js";
 import * as Push from "./push.js";
@@ -2207,7 +2207,7 @@ function renderMes(m) {
     </div>
     <div class="fi-group">
       <label>Observação opcional</label>
-      <input class="fi" id="obs-${m}" value="${disp.obs||''}" placeholder="Ex: vou viajar dia X / estou de luto" ${editavel?'':'disabled'}/>
+      <input class="fi" id="obs-${m}" value="${escapaHtml(disp.obs||'')}" placeholder="Ex: vou viajar dia X / estou de luto" ${editavel?'':'disabled'}/>
     </div>
     ${editavel
       ? `<button class="btn btn-primary btn-block" onclick="window._app.salvar('${m}')">Salvar disponibilidade de ${nomeMes.split(' de ')[0]}</button>`
@@ -3141,8 +3141,8 @@ function renderMesRega(mesDate, hoje) {
     if(passado) { bg='transparent'; col='var(--text3)'; dataAttr = `data-d="${dStr}" data-disabled="1"`; }
     else if(reserva) {
       bg='var(--green-bg)'; bd='var(--green-bd)'; col='var(--green)';
-      titulo = `Reservado por ${reserva.filho_nome}. Clique pra liberar (precisa do telefone de ${reserva.filho_nome.split(' ')[0]}).`;
-      extra = `<div style="font-size:8.5px;line-height:1;margin-top:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42px">${(reserva.filho_nome||'').split(' ')[0]}</div>`;
+      titulo = `Reservado por ${escapaHtml(reserva.filho_nome||'alguém')}. Clique pra liberar (precisa do telefone de ${escapaHtml((reserva.filho_nome||'quem reservou').split(' ')[0])}).`;
+      extra = `<div style="font-size:8.5px;line-height:1;margin-top:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42px">${escapaHtml((reserva.filho_nome||'').split(' ')[0])}</div>`;
       dataAttr = `data-d="${dStr}" data-reservado="1"`;
     }
     else if(noCarrinho) { bg='var(--gold)'; col='#1a1209'; bd='var(--gold)'; }
@@ -3192,7 +3192,7 @@ async function liberarDiaRega(d) {
     const digitado = await pedirPin({
       iniciais: iniciaisDe(filho.nome),
       titulo: 'Liberar este dia',
-      sub: `O dia ${dataFmt} está com <b>${reserva.filho_nome}</b>. Se for você, confirme com o seu PIN.`,
+      sub: `O dia ${dataFmt} está com <b>${escapaHtml(reserva.filho_nome||'alguém')}</b>. Se for você, confirme com o seu PIN.`,
       botao: 'Liberar o dia',
     });
     if(!digitado) return;
@@ -3211,13 +3211,16 @@ async function liberarDiaRega(d) {
   }
 
   try {
-    await deleteDoc(doc(dbPvd,'adm_rega_diaria', d));
+    // Quem apaga é o Worker, com a sessão na mão. O `deleteDoc` que estava aqui
+    // ia direto pro Firestore, e a regra da collection deixava QUALQUER UM
+    // apagar a reserva de QUALQUER UM — o PIN acima conferia e não autorizava.
+    await Filhos.liberarRega(APP.cfgAgendamento, APP.sessao, d);
     delete APP.regasDiarias[d];
     renderRega();
     toast(`Dia ${dataFmt.split(',')[1]?.trim() || dataFmt} liberado. Quem precisar pode reservar agora.`);
   } catch(e) {
     console.error(e);
-    toast('Erro ao liberar: '+e.message,'err');
+    toast(Filhos.explicar(e.message), 'err');
   }
 }
 

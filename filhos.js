@@ -120,6 +120,15 @@ export async function meusReembolsos(cfg, quem) {
 }
 
 /**
+ * Libera um dia de rega. O Worker confere que o dia é de quem está pedindo,
+ * e só ele apaga — o `deleteDoc` daqui ia direto pro Firestore, onde a regra
+ * era aberta pra qualquer um. O PIN existia e não autorizava nada.
+ */
+export async function liberarRega(cfg, quem, data) {
+  return chamar(cfg, '/liberar-rega', { ...quem, data });
+}
+
+/**
  * O mural interno: avisos, próximas atividades e as inscrições da pessoa.
  *
  * `pwa` diz se a pessoa está abrindo pela tela de início. Vai de carona aqui, e
