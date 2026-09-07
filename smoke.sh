@@ -203,6 +203,15 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # O pedido de reembolso passou a exigir sessão. Sem ela, filho_id inválido.
   r=$(curl -s -X POST "$W/reembolso" -H 'Content-Type: application/json' -d '{"descricao":"x","valor":10}')
   echo "$r" | grep -q 'inválido' && ok "reembolso exige sessão" || erro "reembolso: $(head -c 90 <<< "$r")"
+  # Liberar dia de rega passou a ser ato do Worker. Antes o delete ia direto pro
+  # Firestore, com a regra aberta: o PIN era conferido e não autorizava nada.
+  # Se esta rota sumir, a área do filho volta a não conseguir liberar — e a
+  # regra fechada faz a falha aparecer, que é o que se quer.
+  r=$(curl -s -X POST "$W/liberar-rega" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'data inválida' && ok "liberar-rega no ar" || erro "liberar-rega: Worker velho? $(head -c 100 <<< "$r")"
+  # E ela não pode apagar sem prova de quem é o dia.
+  r=$(curl -s -X POST "$W/liberar-rega" -H 'Content-Type: application/json' -d '{"data":"2099-12-31"}')
+  echo "$r" | grep -q 'inválido' && ok "liberar-rega exige sessão" || erro "liberar-rega SEM PROVA: $(head -c 120 <<< "$r")"
   r=$(curl -s -X POST "$W/avisar-filho" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
@@ -233,6 +242,71 @@ if [[ "$alvo" == "tudo" || "$alvo" == "calado" ]]; then
   done
 fi
 
+if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
+  echo "TEXTO DE FORA"
+  # As páginas trust-based existem porque estas collections aceitam escrita SEM
+  # login: adm_disponibilidade, adm_rega_diaria e fin_reembolsos. É de propósito
+  # — é o que faz a área do filho funcionar sem conta. O preço é que o texto que
+  # sai delas foi escrito por qualquer um com a chave pública do projeto, que
+  # está no JS de todo mundo.
+  #
+  # E ele é desenhado em TELA LOGADA: o admin e o financeiro. Um `obs` de
+  # disponibilidade com `<img onerror=...>` rodava no navegador de quem tem
+  # sessão de admin. Achado em 07/09; o conserto foi escapar no ponto de
+  # desenho, e estas linhas são o que impede alguém desfazer sem perceber.
+  for par in "area-filho.html:escapaHtml(disp.obs" \
+             "area-filho.html:escapaHtml(reserva.filho_nome" \
+             "index.html:escapaHtml(disp.obs" \
+             "index.html:escapaHtml(reserva.filho_nome" \
+             "index.html:escapaHtml(reservaHoje.filho_nome"; do
+    arq="${par%%:*}"; marca="${par#*:}"
+    if grep -qF -- "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
+      ok "$arq escapa o que veio de fora"
+    else
+      erro "$arq PAROU de escapar '$marca' — texto de estranho volta a rodar em tela logada"
+    fi
+  done
+
+  # O financeiro mora em outro repo. Se ele não estiver ao lado, isto avisa em
+  # vez de calar — a checagem que não roda é indistinguível da que passou.
+  FIN="$HOME/Desktop/Docs/candieiro-financeiro/js/app.js"
+  if [[ ! -f "$FIN" ]]; then
+    erro "não achei $FIN — a aba de Reembolsos não foi conferida"
+  else
+    grep -qF -- 'esc(r.descricao' "$FIN" \
+      && ok "financeiro escapa o pedido de reembolso" \
+      || erro "financeiro PAROU de escapar a descrição do reembolso"
+
+    # escJs não é o esc: dentro de onclick="..." o navegador desfaz a entidade
+    # ANTES de rodar o JS, então `&#39;` voltaria a ser aspa e fecharia a
+    # string. A ordem certa é escapar pro JS primeiro e só depois a aspa dupla.
+    # Ordem errada passa no olho e falha aqui.
+    {
+      sed -n '/^const esc = /,/^));$/p' "$FIN"
+      grep -m1 '^const escJs' "$FIN"
+      cat <<'EOF'
+const decode = s => s.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'");
+let mau = 0;
+for (const c of ['Fulano', "O'Brien", 'a"b', 'x<img src=q onerror=alert(1)>', 'c\\d', "\\'", '"><script>alert(1)</script>']) {
+  const attr = "askDel('" + escJs(c) + "')";
+  if (attr.includes('"')) { mau++; continue; }
+  let visto = null;
+  try { (new Function('askDel', decode(attr)))(v => visto = v); } catch { mau++; continue; }
+  if (visto !== c) mau++;
+}
+if (/[<>"']/.test(esc('<img onerror="x">'))) mau++;
+process.exit(mau ? 1 : 0);
+EOF
+    } > /tmp/smoke-escape.$$.mjs
+    if node /tmp/smoke-escape.$$.mjs 2>/dev/null; then
+      ok "escJs sobrevive ao decode do atributo (7 casos)"
+    else
+      erro "escJs deixa passar — nome ou id de reembolso fecha o onclick"
+    fi
+    rm -f /tmp/smoke-escape.$$.mjs
+  fi
+fi
+
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   echo "RULES"
   K=AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4
@@ -259,6 +333,11 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
            adm_notificacoes adm_avisos_lidos adm_tentativas adm_avisos adm_grupos; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "403" ]] && ok "$c fechado" || erro "$c FICOU PÚBLICO"
   done
+  # O delete de adm_rega_diaria era público. Apagar um dia que não existe é
+  # inofensivo, e é o único jeito de perguntar "a regra ainda nega?" de fora.
+  # Se isto voltar a 200, qualquer pessoa apaga a reserva de qualquer filho.
+  cod=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$B/adm_rega_diaria/9999-12-31?key=$K")
+  [[ "$cod" == "403" ]] && ok "adm_rega_diaria sem delete público" || erro "adm_rega_diaria DELETE aberto (HTTP $cod) — publique firestore.rules.pvd"
   # adm_config: o doc 'agendamento' abre por get, a collection não abre por list
   [[ "$(http "$B/adm_config/agendamento?key=$K")" == "200" ]] && ok "adm_config/agendamento por get" || erro "adm_config/agendamento fechou — checkout quebra"
   [[ "$(http "$B/adm_config?pageSize=1&key=$K")" == "403" ]] && ok "adm_config sem list" || erro "adm_config FICOU LISTÁVEL"

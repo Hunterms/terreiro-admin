@@ -385,6 +385,14 @@ const S = {
 
 // ── UTIL ───────────────────────────────────────────────────────────────────
 const $ = (q,r=document) => r.querySelector(q);
+// Escapa texto que veio de fora antes de entrar em innerHTML ou em atributo.
+// `adm_disponibilidade`, `adm_rega_diaria`, `fin_reembolsos` e `adm_solicitacoes`
+// aceitam escrita SEM login (é o que faz as páginas trust-based funcionarem),
+// então o que sai delas é texto de estranho — e esta tela roda logada.
+// Nome por extenso pra não colidir com o `esc` de escala, como na area-filho.html.
+const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
+  { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
 const $$ = (q,r=document) => Array.from(r.querySelectorAll(q));
 
 // Data efetiva de uma alocação: "Limpeza depois" da gira é no dia seguinte.
@@ -6232,7 +6240,7 @@ function renderControleDisp(c) {
               <span>${totalDias} dia${totalDias===1?'':'s'} indisponível</span>
               ${totalFuncs?`<span>${totalFuncs} função(ões) recusada(s)</span>`:''}
               ${atualizadoEm?`<span style="color:var(--text3)">atualizou ${atualizadoEm}</span>`:''}
-              ${disp?.obs?`<span style="font-style:italic">"${disp.obs}"</span>`:''}
+              ${disp?.obs?`<span style="font-style:italic">"${escapaHtml(disp.obs)}"</span>`:''}
             ` : `
               <span class="chip">não marcou</span>
               ${f.tel?'':'<span style="color:var(--amber)">sem telefone cadastrado</span>'}
@@ -6366,8 +6374,8 @@ function renderRega(c) {
       else if(reserva) { bg='var(--green-bg)'; bd='var(--green-bd)'; col='var(--green)'; }
       else { bg = passado ? 'transparent' : 'rgba(243,156,18,0.08)'; bd = 'var(--border)'; col = passado ? 'var(--text3)' : 'var(--amber)'; }
       if(ehHoje) bd = 'var(--red)';
-      const nome = reserva ? (reserva.realizado_por_nome||reserva.filho_nome||'').split(' ')[0] : '';
-      const tip = confirmado ? `✓ ${reserva.realizado_por_nome||reserva.filho_nome} confirmou` : (reserva ? `Reservado por ${reserva.filho_nome}` : (passado?'':'Sem cobertura'));
+      const nome = reserva ? escapaHtml((reserva.realizado_por_nome||reserva.filho_nome||'').split(' ')[0]) : '';
+      const tip = confirmado ? `✓ ${escapaHtml(reserva.realizado_por_nome||reserva.filho_nome)} confirmou` : (reserva ? `Reservado por ${escapaHtml(reserva.filho_nome)}` : (passado?'':'Sem cobertura'));
       const pendente = reserva && !confirmado && !passado;
       const ehAtrasada = reserva && !confirmado && passado; // reservou no passado e não confirmou
       const icone = confirmado ? '🌱' : (pendente ? '⏳' : (ehAtrasada ? '⚠️' : ''));
@@ -6422,10 +6430,10 @@ function renderRega(c) {
         ${reservaHoje?.realizado ? '<span class="chip chip-green">✓ CONFIRMADO</span>' : (reservaHoje?'<span class="chip chip-amber">PENDENTE DE CONFIRMAÇÃO</span>':'')}
       </div>
       ${reservaHoje && reservaHoje.realizado ? `
-        <div style="font-size:18px;font-weight:700;color:var(--green)">🌱 ${reservaHoje.realizado_por_nome || reservaHoje.filho_nome} regou hoje</div>
+        <div style="font-size:18px;font-weight:700;color:var(--green)">🌱 ${escapaHtml(reservaHoje.realizado_por_nome || reservaHoje.filho_nome)} regou hoje</div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Confirmado pelo QR code ${reservaHoje.realizadoEm ? '· ' + fmt.rel(reservaHoje.realizadoEm) : ''}</div>
       ` : reservaHoje ? `
-        <div style="font-size:18px;font-weight:700;color:var(--amber)">⏳ ${reservaHoje.filho_nome}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--amber)">⏳ ${escapaHtml(reservaHoje.filho_nome)}</div>
         <div style="font-size:13px;color:var(--text2);margin-top:4px">Reservou — ainda não confirmou que regou (esperando QR no terreiro)</div>
       ` : `
         <div style="font-size:15px;color:var(--amber);font-weight:600">Sem cobertura pra hoje 😬</div>
@@ -7147,7 +7155,7 @@ function openServicoForm(id=null) {
         <div class="fi-group">
           <label>Visibilidade</label>
           <label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="sv-pub" ${s?.publico!==false?'checked':''}/> Público (aparece em agendar.html)</label>
-          <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Desmarque pra serviços só do admin (ex: búzios)</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Desmarque pra serviços só do admin (ex: bori, quebra de egum)</div>
         </div>
       </div>
       <div class="fi-group">
@@ -7227,8 +7235,8 @@ const SERVICOS_CANDIEIRO = [
   },
   {
     nome: 'Jogo de Búzios', slug: 'buzios',
-    descricao: 'Jogo de búzios com Pai Nando — atendimento restrito a quem já frequenta a casa.',
-    valor: 300, duracao_min: 60, presencial: true, online: false, publico: false, ativo: true, ordem: 2,
+    descricao: 'Jogo de búzios com Pai Nando — oráculo de matriz africana, só presencial.',
+    valor: 300, duracao_min: 60, presencial: true, online: false, publico: true, ativo: true, ordem: 2,
     infinity_link: 'https://pay.infinitepay.io/candieiro/Ri0x-HFbwfGC410-300,00'
   },
   {
@@ -8942,7 +8950,7 @@ async function renderDispMes(m) {
     </div>
     <div class="fi-group">
       <label>Observação opcional</label>
-      <input class="fi" id="disp-obs-${m}" value="${disp.obs||''}" placeholder="Ex: estou de luto / vou viajar dia X"/>
+      <input class="fi" id="disp-obs-${m}" value="${escapaHtml(disp.obs||'')}" placeholder="Ex: estou de luto / vou viajar dia X"/>
     </div>
     <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="window._app.salvarDisp('${m}')">Salvar disponibilidade</button></div>
   `;

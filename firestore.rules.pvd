@@ -460,15 +460,26 @@ service cloud.firestore {
       allow write: if ehFinanceiro();
     }
 
-    // Rega diária: leitura + write público (QR-based / trust-based)
-    // delete público pra liberar dia reservado (UX de "trocar com outra pessoa"
-    // na area-filho.html). Auth client-side via 4 dígitos do tel do dono.
+    // Rega diária: leitura + create/update público (QR-based / trust-based).
+    //
+    // O DELETE era público, e não devia ter sido: a tela pedia o PIN do dono e
+    // conferia no Worker, e depois apagava direto daqui. Prova conferida com
+    // autorização aberta é teatro — quem abrisse o devtools apagava a reserva
+    // de qualquer um da casa. Achado em 07/09.
+    //
+    // Agora liberar um dia é POST /liberar-rega no Worker: ele confere a sessão,
+    // vê que o dia é de quem pediu, e apaga com a service account (que não passa
+    // por rule). Aqui só o admin apaga, pra limpeza.
+    //
+    // ⚠️ Falta o par: o create/update continua aberto, e `setDoc` sem merge
+    // sobrescreve reserva de outra pessoa (area-filho.html, confirmarRega).
+    // Mesma classe, não consertado no mesmo passo — ver SCHEMA.md §7.
     match /adm_rega_diaria/{date} {
       allow read: if true;
       allow create, update: if request.resource.data.keys().hasAny(
         ['reserva', 'realizadoEm', 'filhos_marcaram', 'data']
       );
-      allow delete: if true;
+      allow delete: if ehAdmin();
     }
   }
 }

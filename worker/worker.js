@@ -193,6 +193,7 @@ export default {
       if (rota === '/agenda') return await rotaAgenda(env);
       if (rota === '/reembolso') return await rotaReembolso(body, env);
       if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
+      if (rota === '/liberar-rega') return await rotaLiberarRega(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2246,6 +2247,34 @@ async function rotaMeusReembolsos(body, env) {
       status: r.status || 'pendente', criadoEm: r.criadoEm || null, obs_admin: r.obs_admin || null,
     }));
   return json({ reembolsos: lista });
+}
+
+// ── LIBERAR UM DIA DE REGA ────────────────────────────────────────────────
+//
+// A tela já pedia o PIN e conferia aqui — e depois apagava o doc direto no
+// Firestore, onde a regra era `allow delete: if true`. Prova conferida com
+// autorização aberta é o mesmo teatro que o /entrar desfez: quem abrisse o
+// devtools apagava a reserva de qualquer um da casa, sem PIN nenhum.
+//
+// Agora quem apaga é o Worker, e só depois de ver que o dia é de quem pediu.
+// Dia que já estava livre responde `ok` — apertar duas vezes não é erro, e
+// erro que não é erro treina a pessoa a ignorar o aviso de verdade.
+async function rotaLiberarRega(body, env) {
+  const data = String(body?.data || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return json({ error: 'data inválida' }, 400);
+
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const dia = await fsGet(PROJETO_PVD, 'adm_rega_diaria', data, { token });
+  if (!dia) return json({ ok: true, jaEstavaLivre: true });
+  if (String(dia.filho_id || '') !== quem.id) {
+    return json({ error: 'esse dia é de outra pessoa' }, 403);
+  }
+
+  await fsDelete(PROJETO_PVD, 'adm_rega_diaria', data, token);
+  return json({ ok: true });
 }
 
 // ── O FILHO EDITANDO O PRÓPRIO CADASTRO ────────────────────────────────────
