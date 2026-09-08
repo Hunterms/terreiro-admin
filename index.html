@@ -275,7 +275,7 @@ import {
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/auth/+esm";
 import {
   getFirestore, collection, doc, onSnapshot as _onSnapshotOriginal, addDoc, updateDoc, deleteDoc, setDoc,
-  query, where, orderBy, serverTimestamp, getDoc, getDocs
+  query, where, orderBy, serverTimestamp, getDoc, getDocs, writeBatch
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 
 // ── LEITURA QUE FALHA TEM QUE APARECER ────────────────────────────────────
@@ -383,6 +383,7 @@ const S = {
   pedidos: [],
   eventoInscricoes: [],
   cfgEscalas: { janela_semanas: 8 },
+  cfgLgpd: null,         // adm_config/lgpd — { retencao_meses }. Ausente = o padrão.
   route: 'dashboard',
   unsubs: []
 };
@@ -1016,6 +1017,14 @@ function attachListeners() {
   S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
     if(snap.exists()) S.cfgEscalas = { janela_semanas: 8, ...snap.data() };
     if(S.route === 'escalas') renderRoute();
+  }));
+
+  // Prazo de retenção. Doc opcional: sem ele, vale RETENCAO_PADRAO_MESES.
+  // Fica em config e não em constante porque o prazo é decisão da casa (e um
+  // dia de advogado), não de quem escreveu o código.
+  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','lgpd'), snap => {
+    S.cfgLgpd = snap.exists() ? snap.data() : null;
+    if(S.route === 'dados') renderRoute();
   }));
 
   // Config do agendamento (pra mensagens do WhatsApp pegarem o PIX, etc.)
@@ -2343,6 +2352,13 @@ function openFilhoForm(id=null) {
       obs: $('#ff-obs').value.trim(),
       atualizadoEm: serverTimestamp()
     };
+    // A data em que a pessoa saiu. Sem ela não dá pra dizer se o prazo de
+    // retenção já venceu, e a tela de expurgo vira palpite. Só carimba na
+    // VIRADA — reeditar a ficha de quem já está afastado não reinicia o prazo.
+    const eraAfastado = f?.status === 'afastado';
+    if (data.status === 'afastado' && !eraAfastado) data.saiu_em = serverTimestamp();
+    if (data.status !== 'afastado' && eraAfastado) data.saiu_em = null;
+
     try {
       if(isEdit) {
         await updateDoc(doc(dbPvd,'fin_filhos',id), data);
@@ -2358,12 +2374,12 @@ function openFilhoForm(id=null) {
     }
   };
 
-  if(isEdit) $('#ff-del').onclick = () => {
-    confirmar(`Excluir <strong>${f.nome}</strong>? Esta ação não pode ser desfeita.`, async () => {
-      try { await deleteDoc(doc(dbPvd,'fin_filhos',id)); toast('Filho excluído','ok'); }
-      catch(e) { toast('Erro: '+e.message,'err'); }
-    });
-  };
+  // Este botão apagava UM documento e dizia "não pode ser desfeita", como se
+  // tivesse apagado a pessoa. O `filho_id` dela ficava em oito outros lugares,
+  // vários com o nome copiado junto. Agora ele abre o expurgo de verdade, que
+  // mostra o que vai sair, baixa o dossiê antes, e pede o primeiro nome
+  // escrito à mão — não é confirmação de rotina.
+  if(isEdit) $('#ff-del').onclick = () => { closeModal(); apagarPessoa(id); };
 }
 
 // ── FUNÇÕES ───────────────────────────────────────────────────────────────
@@ -8871,6 +8887,158 @@ function renderAvisosFilho(c) {
 }
 
 // ── EXPOSE ─────────────────────────────────────────────────────────────────
+// ── RETENÇÃO E EXPURGO ────────────────────────────────────────────────────
+//
+// O botão "Excluir" da ficha do filho apagava UM documento: `fin_filhos/{id}`.
+// E dizia "esta ação não pode ser desfeita", como se tivesse apagado a pessoa.
+//
+// Não tinha. Medido em 08/09: o `filho_id` dela continuava em
+// `adm_disponibilidade`, `adm_rega_diaria`, `adm_respostas`, `adm_push_tokens`,
+// `adm_avisos_lidos`, `evento_inscricoes`, dentro das `alocacoes` de cada
+// escala e dentro dos `responsaveis` de cada card do kanban. Vários desses
+// levam o NOME copiado junto. Sobrava a pessoa inteira, só sem a capa.
+//
+// Isso importa por dois motivos, e o segundo é o que morde: a lista de nomes
+// da tela ficava com "?" onde o cadastro sumiu, e a LGPD dá ao titular o
+// direito de pedir a eliminação (art. 18, VI). Apagar a capa e deixar o corpo
+// não é eliminação — é perder o índice.
+//
+// O que este bloco NÃO apaga, de propósito: nada do financeiro. Pagamento,
+// mensalidade, reembolso e curso são registro contábil da casa, têm retenção
+// própria, e o titular não é o dono dessa guarda. A tela diz isso em voz alta
+// em vez de fingir que apagou tudo.
+
+const RETENCAO_PADRAO_MESES = 24;
+
+// Onde o `filho_id` de uma pessoa mora, e de que forma. `campo` é apagar o
+// documento inteiro; `dentro` é tirar a pessoa de uma lista e manter o resto.
+const RASTROS = [
+  { col:'adm_disponibilidade', modo:'doc',   chave:'filho_id',     rotulo:'disponibilidade' },
+  { col:'adm_rega_diaria',     modo:'doc',   chave:'filho_id',     rotulo:'reservas de rega' },
+  { col:'adm_respostas',       modo:'doc',   chave:'filho_id',     rotulo:'respostas de pergunta' },
+  { col:'adm_push_tokens',     modo:'doc',   chave:'filho_id',     rotulo:'aparelhos com push' },
+  { col:'adm_avisos_lidos',    modo:'doc',   chave:'filho_id',     rotulo:'marcas de aviso lido' },
+  { col:'evento_inscricoes',   modo:'doc',   chave:'filho_id',     rotulo:'inscrições em evento' },
+  { col:'adm_escalas',         modo:'lista', chave:'alocacoes',    sub:'filho_id', rotulo:'escalas' },
+  { col:'adm_kanban',          modo:'lista', chave:'responsaveis', rotulo:'tarefas do kanban' },
+];
+
+// Quantos rastros a pessoa tem, por lugar. Conta na memória: as oito
+// collections já vêm por onSnapshot, e uma query por collection só pra contar
+// custaria leitura sem dizer nada de novo.
+function rastrosDe(filhoId) {
+  const fonte = {
+    adm_disponibilidade: S.disponibilidade, adm_rega_diaria: S.regas,
+    adm_respostas: S.respostas, adm_push_tokens: S.pushTokens,
+    adm_avisos_lidos: S.avisosLidos, evento_inscricoes: S.eventoInscricoes,
+    adm_escalas: S.escalas, adm_kanban: S.kanban,
+  };
+  const achados = [];
+  for (const r of RASTROS) {
+    const docs = (fonte[r.col] || []).filter(d => {
+      if (r.modo === 'doc') return d[r.chave] === filhoId;
+      const lista = d[r.chave] || [];
+      return r.sub ? lista.some(x => x?.[r.sub] === filhoId) : lista.includes(filhoId);
+    });
+    if (docs.length) achados.push({ ...r, docs });
+  }
+  return achados;
+}
+
+function totalRastros(filhoId) {
+  return rastrosDe(filhoId).reduce((n, r) => n + r.docs.length, 0);
+}
+
+// Meses desde que a pessoa foi marcada afastada. `saiu_em` só passa a existir
+// em 08/09 — quem já estava afastado antes não tem a data, e a tela mostra
+// "sem data" em vez de inventar um prazo que não pode provar.
+function mesesAfastado(f) {
+  const t = f.saiu_em?.seconds ? f.saiu_em.seconds * 1000 : (f.saiu_em ? Date.parse(f.saiu_em) : null);
+  if (!t) return null;
+  return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24 * 30.44));
+}
+
+async function apagarPessoa(filhoId) {
+  const f = S.filhos.find(x => x.id === filhoId);
+  if (!f) { toast('Filho não encontrado', 'err'); return; }
+  const achados = rastrosDe(filhoId);
+  const total = achados.reduce((n, r) => n + r.docs.length, 0);
+  const primeiro = (f.nome || '').trim().split(/\s+/)[0] || 'a pessoa';
+
+  const lista = achados.length
+    ? achados.map(r => `<li>${r.docs.length} ${escapaHtml(r.rotulo)}${r.modo === 'lista' ? ' <span style="color:var(--text3)">(sai da lista, o resto fica)</span>' : ''}</li>`).join('')
+    : '<li style="color:var(--text3)">nenhum rastro fora do cadastro</li>';
+
+  openModal(`
+    <div class="modal-c">
+      <div style="font-size:16px;font-weight:650;margin-bottom:10px">Apagar ${escapaHtml(f.nome)}</div>
+      <div style="font-size:13.5px;line-height:1.55;color:var(--text2);margin-bottom:12px">
+        Sai o cadastro e mais ${total} registro${total === 1 ? '' : 's'}:
+      </div>
+      <ul style="font-size:13px;line-height:1.7;color:var(--text2);margin:0 0 14px 18px;padding:0">${lista}</ul>
+      <div style="font-size:12.5px;line-height:1.5;color:var(--amber,#e0a800);background:rgba(224,168,0,.08);border-left:2px solid var(--amber,#e0a800);padding:9px 11px;margin-bottom:14px">
+        <strong>Não sai o financeiro.</strong> Mensalidade, pagamento, reembolso e curso ficam:
+        são registro contábil da casa, com guarda própria. Se precisar tirar de lá, é no financeiro e à mão.
+      </div>
+      <div style="font-size:12.5px;color:var(--text2);margin-bottom:8px">
+        O dossiê baixa sozinho antes de apagar. Pra confirmar, escreve <strong>${escapaHtml(primeiro)}</strong>:
+      </div>
+      <input class="fi" id="ap-conf" autocomplete="off" placeholder="${escapaHtml(primeiro)}"/>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-danger" id="ap-ok" disabled style="opacity:.4">Baixar e apagar</button>
+      </div>
+    </div>
+  `);
+
+  const inp = $('#ap-conf'), ok = $('#ap-ok');
+  const _norma = (t) => String(t || '').trim().toLowerCase();
+  inp.oninput = () => {
+    const bate = _norma(inp.value) === _norma(primeiro);
+    ok.disabled = !bate;
+    ok.style.opacity = bate ? '1' : '.4';
+  };
+  inp.focus();
+
+  ok.onclick = async () => {
+    ok.disabled = true; ok.textContent = 'Apagando...';
+    // O dossiê primeiro. Se o download falhar, nada é apagado — a ordem é a
+    // única garantia de que não se apaga sem cópia.
+    try { exportarPessoa(filhoId); }
+    catch (e) { toast('Não consegui gerar o dossiê — nada foi apagado: ' + e.message, 'err'); closeModal(); return; }
+
+    try {
+      // writeBatch aguenta 500 operações. Aqui são dezenas, mas o corte existe
+      // pra não descobrir o limite no dia em que alguém tiver mais rastro.
+      let batch = writeBatch(dbPvd), n = 0;
+      const passo = async () => { if (n >= 400) { await batch.commit(); batch = writeBatch(dbPvd); n = 0; } };
+
+      for (const r of achados) {
+        for (const d of r.docs) {
+          await passo();
+          if (r.modo === 'doc') {
+            batch.delete(doc(dbPvd, r.col, d.id));
+          } else {
+            const lista = d[r.chave] || [];
+            const limpa = r.sub ? lista.filter(x => x?.[r.sub] !== filhoId) : lista.filter(x => x !== filhoId);
+            batch.update(doc(dbPvd, r.col, d.id), { [r.chave]: limpa });
+          }
+          n++;
+        }
+      }
+      await passo();
+      batch.delete(doc(dbPvd, 'fin_filhos', filhoId));
+      await batch.commit();
+
+      closeModal();
+      toast(`${f.nome} e ${total} registro${total === 1 ? '' : 's'} apagados`, 'ok');
+    } catch (e) {
+      toast('Erro ao apagar: ' + e.message, 'err');
+      ok.disabled = false; ok.textContent = 'Baixar e apagar';
+    }
+  };
+}
+
 // ── DADOS: a saída ────────────────────────────────────────────────────────
 //
 // Medido em 08/09: os três sistemas da casa não tinham NENHUMA forma de tirar
@@ -9013,6 +9181,38 @@ function renderDados(c) {
       </div>
     </div>
 
+    ${(() => {
+      // Quem saiu e ainda está guardado. Enquanto ninguém olhar esta lista, o
+      // dado de quem foi embora fica aqui pra sempre — que é o padrão de
+      // qualquer sistema, e é justamente o que a LGPD chama de guarda sem
+      // finalidade. A tela não apaga nada sozinha: ela só mostra o vencido.
+      const meses = S.cfgLgpd?.retencao_meses ?? RETENCAO_PADRAO_MESES;
+      const saidos = S.filhos.filter(f => f.status === 'afastado')
+        .map(f => ({ f, m: mesesAfastado(f), n: totalRastros(f.id) }))
+        .sort((a,b) => (b.m ?? 1e9) - (a.m ?? 1e9));
+      if (!saidos.length) return '';
+      const vencidos = saidos.filter(x => x.m === null || x.m >= meses);
+      return `
+      <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:10px">
+        Retenção · ${vencidos.length} de ${saidos.length} passou de ${meses} meses
+      </div>
+      <div style="font-size:12.5px;color:var(--text2);line-height:1.5;margin-bottom:12px;max-width:640px">
+        Quem saiu da casa e continua guardado aqui. Apagar baixa o dossiê antes e
+        limpa os oito lugares onde o <code>filho_id</code> mora — o financeiro não é tocado.
+      </div>
+      ${saidos.map(({f, m, n}) => {
+        const venceu = m === null || m >= meses;
+        return `<div style="display:flex;gap:12px;align-items:center;padding:11px 15px;background:var(--glass);border:1px solid ${venceu?'rgba(230,51,41,.35)':'var(--border)'};border-radius:9px;margin-bottom:7px;flex-wrap:wrap">
+          <div style="flex:1;min-width:150px;font-size:13.5px">${escapaHtml(f.nome)}</div>
+          <div style="font-size:12px;color:${venceu?'var(--red)':'var(--text3)'}">${m === null ? 'saída sem data' : `${m} mês${m===1?'':'es'} fora`}</div>
+          <div style="font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums">${n} registro${n===1?'':'s'}</div>
+          <button class="btn" onclick="window._app.exportarPessoa('${escapaJs(f.id)}')" style="width:auto;padding:7px 13px;font-size:12.5px">Dossiê</button>
+          <button class="btn btn-danger" onclick="window._app.apagarPessoa('${escapaJs(f.id)}')" style="width:auto;padding:7px 13px;font-size:12.5px">Apagar</button>
+        </div>`;
+      }).join('')}
+      <div style="height:22px"></div>`;
+    })()}
+
     <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:10px">Uma tabela por vez</div>
     ${FONTES_DADOS.map(f => {
       const n = _linhasDe(f).length;
@@ -9026,6 +9226,7 @@ function renderDados(c) {
 }
 
 window._app = {
+  apagarPessoa,
   exportarDados,
   exportarBackupAdmin,
   exportarPessoa,

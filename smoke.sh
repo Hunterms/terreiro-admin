@@ -444,6 +444,20 @@ EOF
     rm -f /tmp/smoke-csv.$$.mjs /tmp/smoke-csv.$$.err
   fi
 
+  # A contagem de rastro aparece imediatamente antes de um botão que apaga.
+  # Contar de menos faz a tela prometer 3 e sumir com 9 — e o dossiê que baixa
+  # junto sai incompleto, que é o que sobra depois.
+  (cd "$(dirname "$0")" && node test-expurgo.mjs >/dev/null 2>&1) \
+    && ok "test-expurgo.mjs passa (contagem antes de apagar)" \
+    || erro "test-expurgo.mjs FALHOU — a prévia do expurgo não confere"
+
+  # O texto da tela diz "os oito lugares onde o filho_id mora". Se alguém
+  # acrescentar uma nona collection e esquecer da frase, a tela mente sobre o
+  # que apagou. O teste trava o número; esta linha trava a frase.
+  grep -qF 'os oito lugares onde o' "$(dirname "$0")/index.html" \
+    && ok "a tela e o mapa de rastros contam a mesma história" \
+    || erro "o texto da retenção mudou — confere se ainda são 8 collections"
+
   # O teste do financeiro roda no repo dele; aqui só se confere que ele existe
   # e passa, senão "não rodei" vira indistinguível de "passou".
   T="$HOME/Desktop/Docs/candieiro-financeiro/test-export.mjs"
