@@ -397,6 +397,64 @@ EOF
   fi
 fi
 
+if [[ "$alvo" == "tudo" || "$alvo" == "dados" ]]; then
+  echo "DADOS (export)"
+  # O CSV existe em DUAS cópias — index.html e o app.js do financeiro — porque
+  # são repos separados e nenhum importa do outro. Cópia que diverge é o modo
+  # normal de morrer: alguém conserta uma e a outra segue exportando torto por
+  # meses, sem erro nenhum na tela.
+  #
+  # Este teste não confere "passa nos casos": confere que as duas dão a MESMA
+  # saída pros mesmos casos. Se divergirem, ele diz qual caso.
+  FIN="$HOME/Desktop/Docs/candieiro-financeiro/js/app.js"
+  if [[ ! -f "$FIN" ]]; then
+    erro "não achei $FIN — as duas cópias do CSV não foram comparadas"
+  else
+    {
+      # admin: _celulaCSV / _paraCSV
+      awk '/^const _SEP = /{d=1} /^function _baixarArquivo/{d=0} d' "$(dirname "$0")/index.html"
+      echo 'const A = { celula: _celulaCSV, csv: _paraCSV };'
+      # financeiro: _celula / _paraCSV (mesmos nomes de arquivo, escopo novo)
+      echo 'const F = (() => {'
+      awk '/^const SEP = /{d=1} /^function _baixar\(/{d=0} d' "$FIN"
+      echo 'return { celula: _celula, csv: _paraCSV }; })();'
+      cat <<'EOF'
+const casos = [null, undefined, 0, false, '', 'Vela', 'a;b', 'diz "oi"', 'quebra\nlinha',
+               { a: 1 }, new Date('2026-09-08T13:00:00Z'), { toDate: () => new Date('2026-01-02T03:04:05Z') }];
+let mau = [];
+for (const c of casos) {
+  const a = A.celula(c), f = F.celula(c);
+  if (a !== f) mau.push(`celula(${JSON.stringify(c)}): admin=${a} financeiro=${f}`);
+}
+const linhas = [{ nome:'Vela', valor:10 }, { nome:'Erva', valor:4, obs:'no; centro' }, { valor:7 }];
+if (A.csv(linhas) !== F.csv(linhas)) mau.push('paraCSV: as duas cópias montam arquivos diferentes');
+// e o arquivo tem que estar certo, não só igual dos dois lados
+const l = A.csv(linhas).split('\r\n');
+if (!l[0].startsWith('\ufeff')) mau.push('sem BOM — Excel pt-BR quebra o acento');
+if (l[0] !== '\ufeffnome;valor;obs') mau.push('cabeçalho não é a união das chaves: ' + l[0]);
+if (l[3] !== ';7;') mau.push('linha sem a 1ª chave desalinha: ' + l[3]);
+if (mau.length) { console.error(mau.join('\n')); process.exit(1); }
+EOF
+    } > /tmp/smoke-csv.$$.mjs
+    if node /tmp/smoke-csv.$$.mjs 2>/tmp/smoke-csv.$$.err; then
+      ok "CSV: admin e financeiro dão a mesma saída (12 casos + o arquivo)"
+    else
+      erro "CSV divergiu: $(head -2 /tmp/smoke-csv.$$.err | tr '\n' ' ')"
+    fi
+    rm -f /tmp/smoke-csv.$$.mjs /tmp/smoke-csv.$$.err
+  fi
+
+  # O teste do financeiro roda no repo dele; aqui só se confere que ele existe
+  # e passa, senão "não rodei" vira indistinguível de "passou".
+  T="$HOME/Desktop/Docs/candieiro-financeiro/test-export.mjs"
+  if [[ -f "$T" ]]; then
+    (cd "$(dirname "$T")" && node test-export.mjs >/dev/null 2>&1) \
+      && ok "test-export.mjs do financeiro passa" || erro "test-export.mjs do financeiro FALHOU"
+  else
+    erro "não achei o test-export.mjs do financeiro"
+  fi
+fi
+
 if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   echo "RULES"
   K=AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4

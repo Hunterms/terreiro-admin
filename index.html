@@ -129,6 +129,10 @@
       </button>
 
       <div class="section-label">Análise</div>
+      <button data-route="dados">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Dados
+      </button>
       <button data-route="inteligencia">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
         Inteligência
@@ -855,7 +859,11 @@ async function togglePush() {
 const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','rega','calendario',
   'escalas','despensa','contas','agenda','solicitacoes','consulentes','servicos','config-agendamento',
   'produtos','pedidos','inteligencia','avisos','lembretes','perguntas',
-  'meu-dashboard','minhas-escalas','disponibilidade','avisos-filho'];
+  'meu-dashboard','minhas-escalas','disponibilidade','avisos-filho',
+  // Estas três tinham botão no menu e não estavam aqui: dava pra clicar, mas
+  // não dava pra voltar. Recarregar a página caía no dashboard, e link
+  // compartilhado não abria a tela. Achado em 08/09.
+  'grupos','links','importar','dados'];
 function rotaDoHash() {
   const r = (location.hash || '').replace(/^#/, '');
   return ROTAS_VALIDAS.includes(r) ? r : null;
@@ -1094,6 +1102,7 @@ function renderRoute() {
     case 'dashboard':     return renderDashboard(c);
     case 'grupos':        return renderGrupos(c);
     case 'links':         return renderLinks(c);
+    case 'dados':         return renderDados(c);
     case 'importar':      return renderImportar(c);
     case 'filhos':        return renderFilhos(c);
     case 'funcoes':       return renderFuncoes(c);
@@ -8862,7 +8871,164 @@ function renderAvisosFilho(c) {
 }
 
 // ── EXPOSE ─────────────────────────────────────────────────────────────────
+// ── DADOS: a saída ────────────────────────────────────────────────────────
+//
+// Medido em 08/09: os três sistemas da casa não tinham NENHUMA forma de tirar
+// dado de dentro. O financeiro ganhou a dele no mesmo dia, e ela cobre as
+// collections de dinheiro mais as três do PDV. O que sobrou é o que só existe
+// aqui: gente, escala, atendimento, resposta de pergunta, pedido.
+//
+// É também a metade que mais pesa na LGPD. Ser filho de um terreiro é dado
+// SENSÍVEL (art. 5º, II — convicção religiosa e filiação a organização de
+// caráter religioso), e `adm_consulentes` e `adm_atendimentos` são dado de
+// atendimento de gente que nem é da casa. O titular pode pedir os dele; até
+// agora não havia por onde entregar.
+//
+// Mesmo formato do financeiro de propósito: `;` e BOM, que é o que o Excel em
+// pt-BR abre sem wizard. Vírgula joga tudo numa coluna, e sem BOM o acento
+// quebra — as duas coisas fazem o arquivo parecer defeito.
+
+const _SEP = ';';
+
+function _celulaCSV(v) {
+  if (v === null || v === undefined) return '';
+  if (v?.toDate) v = v.toDate();                        // Timestamp do Firestore
+  if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
+  if (typeof v === 'object') v = JSON.stringify(v);
+  v = String(v);
+  return /["\n\r;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// Colunas = UNIÃO das chaves de todas as linhas. Documento sem um campo é a
+// regra aqui; ancorar na primeira linha perde coluna em silêncio.
+function _paraCSV(linhas) {
+  const cols = []; const vistas = new Set();
+  for (const l of linhas) for (const k of Object.keys(l)) if (!vistas.has(k)) { vistas.add(k); cols.push(k); }
+  return '\ufeff' + [cols.map(_celulaCSV).join(_SEP),
+    ...linhas.map(l => cols.map(c => _celulaCSV(l[c])).join(_SEP))].join('\r\n');
+}
+
+function _baixarArquivo(nome, texto, tipo) {
+  const url = URL.createObjectURL(new Blob([texto], { type: tipo + ';charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const _hojeISO = () => new Date().toISOString().slice(0, 10);
+
+const FONTES_DADOS = [
+  { id:'filhos',        rotulo:'Filhos',                sensivel:true,  linhas:() => S.filhos },
+  { id:'funcoes',       rotulo:'Funções',               linhas:() => S.funcoes },
+  { id:'grupos',        rotulo:'Grupos de envio',       linhas:() => S.grupos },
+  { id:'escalas',       rotulo:'Escalas',               linhas:() => (S.escalas||[]).flatMap(e =>
+      (e.alocacoes||[]).length
+        ? e.alocacoes.map(a => ({ escala_id:e.id, data:e.data, tipo:e.tipo, evento_id:e.evento_id||'',
+            filho_id:a.filho_id, filho: S.filhos.find(f=>f.id===a.filho_id)?.nome || '?',
+            funcao: S.funcoes.find(x=>x.id===a.funcao_id)?.nome || a.funcao_id || '' }))
+        : [{ escala_id:e.id, data:e.data, tipo:e.tipo, evento_id:e.evento_id||'', filho_id:'', filho:'(sem alocação)', funcao:'' }]) },
+  { id:'disponibilidade', rotulo:'Disponibilidade',     linhas:() => S.disponibilidade },
+  { id:'rega',          rotulo:'Rega diária',           linhas:() => S.regas },
+  { id:'eventos',       rotulo:'Eventos e giras',       linhas:() => S.eventos },
+  { id:'kanban',        rotulo:'Kanban',                linhas:() => S.kanban },
+  { id:'avisos',        rotulo:'Avisos',                linhas:() => S.avisos },
+  { id:'perguntas',     rotulo:'Perguntas',             linhas:() => S.perguntas },
+  { id:'respostas',     rotulo:'Respostas',             sensivel:true,  linhas:() => S.respostas },
+  { id:'consulentes',   rotulo:'Consulentes',           sensivel:true,  linhas:() => S.consulentes },
+  { id:'atendimentos',  rotulo:'Atendimentos',          sensivel:true,  linhas:() => S.atendimentos },
+  { id:'solicitacoes',  rotulo:'Solicitações',          sensivel:true,  linhas:() => S.solicitacoes },
+  { id:'servicos',      rotulo:'Serviços',              linhas:() => S.servicos },
+  { id:'produtos',      rotulo:'Produtos',              linhas:() => S.produtos },
+  { id:'pedidos',       rotulo:'Pedidos',               sensivel:true,  linhas:() => S.pedidos },
+  { id:'inscricoes',    rotulo:'Inscrições em evento',  sensivel:true,  linhas:() => S.eventoInscricoes },
+  { id:'despensa',      rotulo:'Despensa',              linhas:() => S.despensa },
+];
+
+function _linhasDe(f) { try { return f.linhas() || []; } catch { return []; } }
+
+function exportarDados(id) {
+  const f = FONTES_DADOS.find(x => x.id === id);
+  if (!f) return;
+  const linhas = _linhasDe(f);
+  if (!linhas.length) { toast(`${f.rotulo}: nada pra exportar`, 'err'); return; }
+  _baixarArquivo(`candieiro-${f.id}-${_hojeISO()}.csv`, _paraCSV(linhas), 'text/csv');
+  toast(`${f.rotulo}: ${linhas.length} linha${linhas.length===1?'':'s'}`);
+}
+
+function exportarBackupAdmin() {
+  const tudo = { gerado_em: new Date().toISOString(), origem: 'terreiro-admin' };
+  let total = 0;
+  for (const f of FONTES_DADOS) { const l = _linhasDe(f); tudo[f.id] = l; total += l.length; }
+  _baixarArquivo(`candieiro-admin-backup-${_hojeISO()}.json`, JSON.stringify(tudo, null, 1), 'application/json');
+  toast(`Backup: ${total} registros`);
+}
+
+// Tudo que a casa guarda sobre UMA pessoa, num arquivo. É o que se entrega
+// quando alguém pede os dados dela — e é o que se olha antes de apagar.
+function exportarPessoa(filhoId) {
+  const f = S.filhos.find(x => x.id === filhoId);
+  if (!f) { toast('Filho não encontrado', 'err'); return; }
+  const alvo = String(filhoId);
+  const bate = (o) => JSON.stringify(o ?? '').includes(alvo);
+  const dossie = { gerado_em: new Date().toISOString(), filho_id: alvo, cadastro: f };
+  let total = 1;
+  for (const fonte of FONTES_DADOS) {
+    if (fonte.id === 'filhos') continue;
+    const linhas = _linhasDe(fonte).filter(bate);
+    if (linhas.length) { dossie[fonte.id] = linhas; total += linhas.length; }
+  }
+  _baixarArquivo(`candieiro-pessoa-${alvo}-${_hojeISO()}.json`, JSON.stringify(dossie, null, 1), 'application/json');
+  toast(`${f.nome}: ${total} registros`);
+}
+
+function renderDados(c) {
+  const opcoes = [...S.filhos].sort((a,b) => (a.nome||'').localeCompare(b.nome||''))
+    .map(f => `<option value="${escapaHtml(f.id)}">${escapaHtml(f.nome)}</option>`).join('');
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Dados</div>
+        <div class="page-sub">Tirar dado de dentro: backup da casa, tabela pro contador, e o dossiê de uma pessoa só.</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">
+      <div style="flex:1;min-width:260px;padding:15px;background:var(--glass);border:1px solid var(--border);border-radius:10px">
+        <div style="font-weight:650;font-size:14px;margin-bottom:5px">Backup da casa</div>
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.5;margin-bottom:12px">
+          Tudo o que este app guarda, num arquivo. O dinheiro tem o backup dele no financeiro; este é o resto.
+        </div>
+        <button class="btn" onclick="window._app.exportarBackupAdmin()" style="width:auto;padding:9px 16px">Baixar (JSON)</button>
+      </div>
+      <div style="flex:1;min-width:260px;padding:15px;background:var(--glass);border:1px solid var(--border);border-radius:10px">
+        <div style="font-weight:650;font-size:14px;margin-bottom:5px">Os dados de uma pessoa</div>
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.5;margin-bottom:12px">
+          Ser filho daqui é dado sensível pela LGPD. Se alguém pedir o que a casa tem sobre ela, é este arquivo.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select class="fi" id="dados-pessoa" style="flex:1;min-width:150px">${opcoes}</select>
+          <button class="btn" onclick="window._app.exportarPessoa(document.getElementById('dados-pessoa').value)" style="width:auto;padding:9px 16px">Baixar</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-bottom:10px">Uma tabela por vez</div>
+    ${FONTES_DADOS.map(f => {
+      const n = _linhasDe(f).length;
+      return `<div style="display:flex;gap:12px;align-items:center;padding:11px 15px;background:var(--glass);border:1px solid var(--border);border-radius:9px;margin-bottom:7px">
+        <div style="flex:1;min-width:0;font-size:13.5px">${escapaHtml(f.rotulo)}${f.sensivel?' <span class="chip" style="font-size:9.5px;background:rgba(155,89,182,.16);color:#b07cce">dado de pessoa</span>':''}</div>
+        <div style="font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums;min-width:44px;text-align:right">${n}</div>
+        <button class="btn" ${n?'':'disabled style="opacity:.35"'} onclick="window._app.exportarDados('${escapaJs(f.id)}')" style="width:auto;padding:7px 14px;font-size:12.5px">CSV</button>
+      </div>`;
+    }).join('')}
+  `;
+}
+
 window._app = {
+  exportarDados,
+  exportarBackupAdmin,
+  exportarPessoa,
   toast,
   navigate,
   setLembTab,
