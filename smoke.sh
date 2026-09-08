@@ -285,6 +285,14 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
              "index.html:escapaHtml(insc.nome" \
              "index.html:escapaHtml(p.obs" \
              "index.html:escapaJs(" \
+             "index.html:escapaHtml(p.turma_nome" \
+             "index.html:escapaHtml(d.genero_outro" \
+             "index.html:urlSegura(d.pagamento_recibo_url" \
+             "index.html:urlSegura(d.instagram" \
+             "despensa.html:escapaHtml(p.nome" \
+             "despensa.html:escapaHtml(p.obs" \
+             "despensa.html:escapaJs(p.id" \
+             "confirma-rega.html:escapaHtml(APP.regaHoje.filho_nome" \
              "evento.html:inscricoesDoEvento"; do
     arq="${par%%:*}"; marca="${par#*:}"
     if grep -qF -- "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
@@ -293,6 +301,44 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
       erro "$arq PAROU de escapar '$marca' — texto de estranho volta a rodar em tela logada"
     fi
   done
+
+  # `_highlight` fabrica HTML: parte o nome em três e enfia <mark> no meio.
+  # Existe uma cópia em cada página com seletor de nome, e o retorno vai
+  # inteiro pra innerHTML. Quem escapar o CHAMADOR e não o helper escapa o
+  # <mark> junto e a marca some da tela — por isso o escape mora aqui dentro,
+  # e por isso as quatro cópias precisam continuar iguais.
+  for arq in index.html despensa.html vendas.html evento.html area-filho.html; do
+    [[ -f "$(dirname "$0")/$arq" ]] || continue
+    grep -q '_highlight' "$(dirname "$0")/$arq" || continue
+    if grep -q 'escapaHtml(nome.slice' "$(dirname "$0")/$arq"; then
+      ok "$arq: _highlight escapa as três fatias do nome"
+    else
+      erro "$arq: _highlight devolve nome CRU pra innerHTML"
+    fi
+  done
+
+  # urlSegura não é enfeite do escapaHtml: `javascript:alert(1)` passa inteiro
+  # pelo escape de entidade e roda no clique. O @ do Instagram e o link do
+  # recibo vêm de doc que qualquer um cria.
+  {
+    grep -m1 '^const urlSegura' "$(dirname "$0")/index.html"
+    cat <<'EOF'
+let mau = 0;
+for (const u of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'data:text/html,<script>', 'vbscript:x', '  javascript:x']) {
+  if (urlSegura(u) !== '') mau++;
+}
+for (const u of ['https://instagram.com/fulano', 'http://x.com/y']) {
+  if (urlSegura(u) !== u) mau++;
+}
+process.exit(mau ? 1 : 0);
+EOF
+  } > /tmp/smoke-url.$$.mjs
+  if node /tmp/smoke-url.$$.mjs 2>/dev/null; then
+    ok "urlSegura barra javascript: e deixa http(s) passar (7 casos)"
+  else
+    erro "urlSegura deixa passar esquema perigoso — href de doc público vira clique que roda JS"
+  fi
+  rm -f /tmp/smoke-url.$$.mjs
 
   # O financeiro mora em outro repo. Se ele não estiver ao lado, isto avisa em
   # vez de calar — a checagem que não roda é indistinguível da que passou.

@@ -154,6 +154,14 @@ const cfg = {
 const db = getFirestore(initializeApp(cfg));
 
 const $ = q => document.querySelector(q);
+// `adm_rega_diaria` aceita create e update SEM login — é o que faz esta página
+// e a reserva da área do filho funcionarem sem conta. O nome que sai dela foi
+// escrito por qualquer um com a chave pública, e aqui ele entra em innerHTML.
+// O index.html e a area-filho.html já escapam este mesmo campo desde 07/09.
+const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
+  { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
+
 const hoje = new Date(); hoje.setHours(0,0,0,0);
 const hojeStr = hoje.toISOString().slice(0,10);
 
@@ -184,7 +192,7 @@ let APP = { filhos: [], regaHoje: null };
       sw.innerHTML = `
         <div class="status-box status-confirmado">
           <div class="status-titulo">✓ Já confirmado hoje</div>
-          <div class="status-nome">${APP.regaHoje.realizado_por_nome || APP.regaHoje.filho_nome || 'alguém'}</div>
+          <div class="status-nome">${escapaHtml(APP.regaHoje.realizado_por_nome || APP.regaHoje.filho_nome || 'alguém')}</div>
           <div style="font-size:12px;color:var(--text3);margin-top:6px">Não precisa confirmar de novo. Obrigado!</div>
         </div>
       `;
@@ -193,7 +201,7 @@ let APP = { filhos: [], regaHoje: null };
       sw.innerHTML = `
         <div class="status-box status-pendente">
           <div class="status-titulo">Reservado pra hoje</div>
-          <div class="status-nome">${APP.regaHoje.filho_nome}</div>
+          <div class="status-nome">${escapaHtml(APP.regaHoje.filho_nome)}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:6px">Confirme que regou abaixo</div>
         </div>
       `;
