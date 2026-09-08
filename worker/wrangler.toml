@@ -1,0 +1,44 @@
+# Como este Worker sobe.
+#
+# Até 08/09/2026 o deploy era colar o `worker.js` no dashboard. Funcionava, e
+# custou caro uma vez: a segunda volta da auditoria (07/09) entregou duas rotas
+# novas no repo — `/inscricoes-do-evento` e `/liberar-rega` — e ninguém colou.
+# Por um dia a área do filho não liberou dia de rega e a tela do evento não
+# soube dizer "você já está inscrita". O código estava certo e não estava no ar,
+# que é a pior das duas formas de estar errado.
+#
+#     cd worker && bash publicar.sh
+#
+# ── keep_vars, e por que ele NÃO é preguiça ────────────────────────────────
+# As oito variáveis deste Worker nasceram no painel e moram lá. Sem
+# `keep_vars`, o bloco `[vars]` deste arquivo passa a ser a verdade e o deploy
+# APAGA toda variável que não estiver escrito aqui — inclusive a chave privada
+# da service account, que é o que assina toda escrita no Firestore. A falha
+# seria calada: o Worker sobe, responde 200 no que não usa Firebase, e só
+# quebra na primeira escrita.
+#
+# A alternativa era declarar as oito aqui. Duas são secret e não dá pra ler de
+# volta, e uma terceira é chave privada — não entra em arquivo versionado.
+# Então o painel continua sendo o dono das variáveis, e este arquivo diz isso
+# em voz alta em vez de disputar.
+keep_vars = true
+
+name = "terreiro-email"
+main = "worker.js"
+compatibility_date = "2026-06-13"
+workers_dev = true
+
+# O `scheduled()` do worker.js roda por este cron, e ele TAMBÉM some se sumir
+# daqui. Lido do que estava no ar em 08/09, não escolhido: de 15 em 15 minutos.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Espelha o que o painel já tinha ligado. Sem declarar, o deploy desliga.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
