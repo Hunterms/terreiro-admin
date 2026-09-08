@@ -93,6 +93,18 @@ export async function entrar(cfg, filhoId, quatroDigitos) {
   }
 }
 
+/**
+ * Registra que a pessoa aceitou o termo. `versao` é a do texto que ela LEU.
+ *
+ * Ser filho de um terreiro é dado sensível pela LGPD (art. 5º, II). O aceite
+ * é escrito pelo Worker com a service account, e não daqui: `fin_filhos` é
+ * fechada pra escrita, e um aceite que o navegador pudesse forjar não prova
+ * nada — nem a favor da casa, nem a favor da pessoa.
+ */
+export async function aceitarTermo(cfg, quem, versao) {
+  return chamar(cfg, '/aceitar-termo', { ...quem, versao });
+}
+
 /** O filho grava o que é conhecimento dele. Aceita sessão no lugar do PIN. */
 export async function salvarMeuCadastro(cfg, quem, campos) {
   return chamar(cfg, '/meu-cadastro', { ...quem, ...campos });

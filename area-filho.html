@@ -822,6 +822,14 @@ async function selecionarFilho(id) {
 
     APP.sessao = { filho_id: id, sessao };
     Filhos.guardarSessao(id, sessao);
+
+    // O aceite do termo vem depois do PIN, e antes da casa aparecer. Ser filho
+    // daqui é dado sensível pela LGPD, e a base legal do art. 11 pra isso é o
+    // consentimento — que sem registro não existe.
+    //
+    // Se a casa ainda não publicou termo, `r.termo` vem null e ninguém vê
+    // modal nenhum: a peça fica pronta antes do texto.
+    if (r.termo?.precisa_aceitar) await pedirAceiteDoTermo(filho, r.termo);
     filho.tel = r.tel || '';
     filho.auth_email = r.auth_email || null;
   }
@@ -1103,6 +1111,50 @@ async function autenticar(filho) {
 //
 // Por isso `cancelavel: false`: esta é a única tela do sistema sem saída. E é
 // por isso que o admin ganhou o botão de zerar no mesmo dia.
+// O termo, mostrado inteiro, com um botão só. Não é cancelável pelo mesmo
+// motivo do PIN: não há a versão "entrei sem aceitar" — ou a casa pode tratar
+// o dado, ou não pode.
+//
+// O que é cancelável é a relação, não a tela: quem não quiser aceitar fecha a
+// página e fala com a administração. Botão "recusar" aqui daria a impressão de
+// que existe um estado intermediário no sistema, e não existe.
+async function pedirAceiteDoTermo(filho, termo) {
+  for (;;) {
+    const aceitou = await new Promise((resolve) => {
+      // Cabeçalho / corpo / rodapé são as classes da casa. O corpo é quem
+      // rola: sem ele o texto longo empurra o botão pra fora da tela, e num
+      // celular o "Li e aceito" fica onde ninguém alcança.
+      abrirModal(`
+        <div class="modal-pq-h">
+          <div>
+            <h3 style="font-size:16px;font-weight:700">Sobre os seus dados</h3>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">versão ${escapaHtml(termo.versao)}</div>
+          </div>
+        </div>
+        <div class="modal-pq-b">
+          <div style="font-size:13.5px;line-height:1.65;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere">${escapaHtml(termo.texto)}</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:14px;line-height:1.5">
+            Se não quiser aceitar, fecha esta página e fala com a administração.
+          </div>
+        </div>
+        <div class="modal-pq-f">
+          <button class="btn-primary" id="termo-ok" style="width:100%">Li e aceito</button>
+        </div>
+      `, { travado: true });
+      document.getElementById('termo-ok').onclick = () => resolve(true);
+    });
+    if (!aceitou) continue;
+
+    try {
+      await Filhos.aceitarTermo(APP.cfgAgendamento, APP.sessao, termo.versao);
+      fecharModal();
+      return;
+    } catch (e) {
+      alert(Filhos.explicar(e.message));
+    }
+  }
+}
+
 async function criarPinObrigatorio(filho, prova) {
   for (;;) {
     const escolhido = await pedirPin({
@@ -2699,13 +2751,16 @@ window.abrirRespostaPergunta = function(perguntaId) {
 };
 
 // Helpers de modal genérico (usados em vários cards). Mobile-friendly.
-function abrirModal(html) {
+function abrirModal(html, { travado = false } = {}) {
   let bd = document.getElementById('modal-bd-geral');
   if (!bd) {
     bd = document.createElement('div');
     bd.id = 'modal-bd-geral';
     bd.innerHTML = '<div id="modal-content-geral"></div>';
-    bd.onclick = e => { if (e.target === bd) fecharModal(); };
+    // Clicar fora fecha — MENOS quando o modal está travado. O aceite do termo
+    // e o PIN obrigatório não têm versão "pulei sem responder", e um toque
+    // acidental no fundo não pode virar essa versão.
+    bd.onclick = e => { if (e.target === bd && !bd.dataset.travado) fecharModal(); };
     document.body.appendChild(bd);
     // Injeta CSS uma vez
     if (!document.getElementById('modal-bd-style')) {
@@ -2743,6 +2798,7 @@ function abrirModal(html) {
     }
   }
   document.getElementById('modal-content-geral').innerHTML = html;
+  if (travado) bd.dataset.travado = '1'; else delete bd.dataset.travado;
   bd.classList.add('show');
 }
 window.fecharModal = function() {

@@ -241,6 +241,14 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # cron por fora, mas dá pra provar que o Worker no ar CONHECE a regra: a
   # constante da hora de fechar aparece na resposta de erro? Não. Então o que
   # se testa é a rota que compartilha o mesmo deploy.
+  # Consentimento: sem versão, a rota tem que recusar antes de tocar em nada.
+  # Se ela passar a aceitar vazio, o aceite vira registro sem o que foi aceito
+  # — que é o mesmo que não ter aceite, mas com aparência de ter.
+  r=$(curl -s -X POST "$W/aceitar-termo" -H 'Content-Type: application/json' -d '{}')
+  echo "$r" | grep -q 'versao do termo inválida' && ok "aceitar-termo no ar" || erro "aceitar-termo: Worker velho? $(head -c 100 <<< "$r")"
+  r=$(curl -s -X POST "$W/aceitar-termo" -H 'Content-Type: application/json' -d '{"versao":"v1","filho_id":"naoexiste"}')
+  echo "$r" | grep -qE 'não encontrado|inválido' && ok "aceitar-termo exige prova" || erro "aceitar-termo SEM PROVA: $(head -c 120 <<< "$r")"
+
   r=$(curl -s -X POST "$W/criar-pin" -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","pin":"12"}')
   echo "$r" | grep -q 'PIN tem 4' && ok "criar-pin no ar" || erro "criar-pin: Worker velho? $(head -c 100 <<< "$r")"
 fi

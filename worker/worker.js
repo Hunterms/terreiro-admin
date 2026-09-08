@@ -202,6 +202,7 @@ export default {
       if (rota === '/criar-pin') return await rotaCriarPin(body, env);
       if (rota === '/zerar-pin') return await rotaZerarPin(body, request, env);
       if (rota === '/meu-cadastro') return await rotaMeuCadastro(body, env);
+      if (rota === '/aceitar-termo') return await rotaAceitarTermo(body, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/mensalidade-ajuste') return await rotaMensalidadeAjuste(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
@@ -2085,6 +2086,14 @@ async function rotaEntrar(body, env) {
   }
   await limparErros(token, id);
 
+  // O termo vem daqui, e não do Firestore direto, porque `adm_config` só abre
+  // por `get` no doc `agendamento` — o resto exige login, e esta página não
+  // tem. Quem lê é a service account. E vem no MESMO round-trip do login: uma
+  // tela que precisa de duas chamadas pra saber se deve pedir aceite acaba
+  // piscando o conteúdo antes de pedir.
+  const termo = await fsGet(PROJETO_PVD, 'adm_config', 'lgpd', { token }).catch(() => null);
+  const versaoVigente = String(termo?.termo_versao || '').trim();
+
   return json({
     ok: true,
     filho_id: id,
@@ -2094,6 +2103,14 @@ async function rotaEntrar(body, env) {
     // Sem PIN ainda: a tela obriga a criar antes de mostrar a área. É uma vez
     // só, pra todo mundo, e a partir dali o telefone não abre mais porta.
     precisa_pin: !temPin,
+    // Só pede aceite quando existe termo publicado E a versão que a pessoa
+    // aceitou não é a vigente. Casa sem termo cadastrado não ganha modal —
+    // a peça técnica fica pronta antes do texto, e não trava ninguém.
+    termo: versaoVigente ? {
+      versao: versaoVigente,
+      texto: String(termo?.termo_texto || ''),
+      precisa_aceitar: String(filho.consentimento_versao || '') !== versaoVigente,
+    } : null,
     sessao: await assinarSessao(env, id),
   });
 }
@@ -2103,6 +2120,38 @@ async function rotaEntrar(body, env) {
 // Criar exige a prova de agora (telefone na primeira vez, PIN atual pra trocar).
 // Não basta a sessão: sessão é "você entrou faz um tempo", e trocar senha é
 // exatamente o momento em que isso não é suficiente.
+// Registra que a pessoa aceitou o termo de uso dos dados dela.
+//
+// Ser filho de um terreiro é dado SENSÍVEL pela LGPD (art. 5º, II — convicção
+// religiosa e filiação a organização de caráter religioso). A base legal do
+// art. 11 pra tratar dado sensível não tem hipótese que cubra "cadastro de
+// membro": sobra o consentimento, e consentimento sem registro não existe.
+//
+// Por que passa por aqui e não escreve direto do navegador: `fin_filhos` é
+// fechada pra escrita desde 01/08, e tem que continuar. Um aceite que o
+// próprio titular pudesse forjar — ou que qualquer um pudesse forjar no nome
+// dele — não prova nada. Quem carimba é a service account, depois de conferir
+// a sessão.
+//
+// A versão vem do cliente de propósito: é a versão do texto que a pessoa
+// LEU. Se a casa mudar o termo, o `versao` guardado deixa de bater com o
+// vigente e o aceite é pedido de novo. Guardar só "aceitou: true" perderia
+// isso, e é o erro clássico aqui.
+async function rotaAceitarTermo(body, env) {
+  const versao = String(body?.versao || '').trim().slice(0, 40);
+  if (!versao) return json({ error: 'versao do termo inválida' }, 400);
+
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  await fsPatch(PROJETO_PVD, 'fin_filhos', quem.id, token, {
+    consentimento_versao: versao,
+    consentimento_em: new Date().toISOString(),
+  });
+  return json({ ok: true, versao });
+}
+
 async function rotaCriarPin(body, env) {
   const { filho_id, tel4, pin } = body || {};
   if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
