@@ -249,6 +249,13 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   r=$(curl -s -X POST "$W/aceitar-termo" -H 'Content-Type: application/json' -d '{"versao":"v1","filho_id":"naoexiste"}')
   echo "$r" | grep -qE 'não encontrado|inválido' && ok "aceitar-termo exige prova" || erro "aceitar-termo SEM PROVA: $(head -c 120 <<< "$r")"
 
+  # Resposta de escala. Recusa sem motivo tem que ser recusada: sem o porquê o
+  # admin fica com um buraco e nenhuma pista do que fazer com ele.
+  r=$(curl -s -X POST "$W/responder-escala" -H 'Content-Type: application/json' -d '{"escala_id":"x","resposta":"recusado"}')
+  echo "$r" | grep -q 'diga por que' && ok "responder-escala no ar" || erro "responder-escala: Worker velho? $(head -c 100 <<< "$r")"
+  r=$(curl -s -X POST "$W/responder-escala" -H 'Content-Type: application/json' -d '{"escala_id":"x","resposta":"aceito","filho_id":"naoexiste"}')
+  echo "$r" | grep -qE 'não encontrado|inválido' && ok "responder-escala exige prova" || erro "responder-escala SEM PROVA: $(head -c 120 <<< "$r")"
+
   r=$(curl -s -X POST "$W/criar-pin" -H 'Content-Type: application/json' -d '{"filho_id":"smokeTest000","pin":"12"}')
   echo "$r" | grep -q 'PIN tem 4' && ok "criar-pin no ar" || erro "criar-pin: Worker velho? $(head -c 100 <<< "$r")"
 fi
@@ -489,6 +496,13 @@ EOF
       erro "$quem: venda estornada VOLTOU pro faturamento"
     fi
   done
+
+  # Salvar a escala reconstrói o array de alocações do zero, e a resposta do
+  # filho mora dentro dele. Abrir a escala e clicar em Salvar sem mudar nada
+  # apagaria a confirmação de todo mundo — calado, e na véspera.
+  (cd "$(dirname "$0")" && node test-escala-resposta.mjs >/dev/null 2>&1) \
+    && ok "test-escala-resposta.mjs passa (save não apaga o aceite)" \
+    || erro "test-escala-resposta.mjs FALHOU — salvar a escala apaga a resposta do filho"
 
   # O teste do financeiro roda no repo dele; aqui só se confere que ele existe
   # e passa, senão "não rodei" vira indistinguível de "passou".

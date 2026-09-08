@@ -94,6 +94,18 @@ export async function entrar(cfg, filhoId, quatroDigitos) {
 }
 
 /**
+ * Responde a uma escala: 'aceito', ou 'recusado' com o porquê.
+ *
+ * Passa pelo Worker porque `adm_escalas` aceita update sem login — é o que
+ * deixa a gerente da lojinha montar o plantão dela. Escrito daqui, qualquer um
+ * responderia no nome de qualquer um, e recusa forjada some com a pessoa da
+ * escala sem ela saber.
+ */
+export async function responderEscala(cfg, quem, { escala_id, funcao_id, resposta, motivo }) {
+  return chamar(cfg, '/responder-escala', { ...quem, escala_id, funcao_id, resposta, motivo });
+}
+
+/**
  * Registra que a pessoa aceitou o termo. `versao` é a do texto que ela LEU.
  *
  * Ser filho de um terreiro é dado sensível pela LGPD (art. 5º, II). O aceite

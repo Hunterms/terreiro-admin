@@ -203,6 +203,7 @@ export default {
       if (rota === '/zerar-pin') return await rotaZerarPin(body, request, env);
       if (rota === '/meu-cadastro') return await rotaMeuCadastro(body, env);
       if (rota === '/aceitar-termo') return await rotaAceitarTermo(body, env);
+      if (rota === '/responder-escala') return await rotaResponderEscala(body, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
       if (rota === '/mensalidade-ajuste') return await rotaMensalidadeAjuste(body, env);
       if (rota === '/papel') return await rotaPapel(body, request, env);
@@ -2120,6 +2121,59 @@ async function rotaEntrar(body, env) {
 // Criar exige a prova de agora (telefone na primeira vez, PIN atual pra trocar).
 // Não basta a sessão: sessão é "você entrou faz um tempo", e trocar senha é
 // exatamente o momento em que isso não é suficiente.
+// O filho responde à escala em que foi colocado: aceita, ou recusa dizendo por quê.
+//
+// Até 08/09 a escala era via de mão única. O gerador automático já era bom —
+// pondera rodízio por função, cap mensal, janela histórica e futura, carona
+// por casa e quem mora perto ou longe — mas ninguém do outro lado podia dizer
+// "não dá". O buraco só aparecia na noite da gira.
+//
+// Por que passa pelo Worker e não escreve direto: `adm_escalas` aceita update
+// sem login (é o que deixa a gerente da lojinha montar o plantão dela). Se o
+// aceite fosse escrito daqui do navegador, qualquer um responderia no nome de
+// qualquer um — e uma recusa forjada é pior que nenhuma, porque some com a
+// pessoa da escala sem ela saber.
+//
+// A escrita devolve o ARRAY INTEIRO de alocações com uma posição trocada.
+// O Firestore não tem update de item de array por índice, e ler-modificar-
+// escrever aqui é aceitável: quem edita a mesma escala é o admin, na tela
+// dele, e não uma fila de gente ao mesmo tempo.
+async function rotaResponderEscala(body, env) {
+  const escalaId = String(body?.escala_id || '');
+  const resposta = String(body?.resposta || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(escalaId)) return json({ error: 'escala_id inválido' }, 400);
+  if (resposta !== 'aceito' && resposta !== 'recusado') return json({ error: 'resposta inválida' }, 400);
+
+  const motivo = String(body?.motivo || '').trim().slice(0, 200);
+  // Recusa sem motivo deixa o admin com um buraco e nenhuma pista do que fazer
+  // com ele. Aceite não precisa de motivo — "sim" já é a informação inteira.
+  if (resposta === 'recusado' && !motivo) return json({ error: 'diga por que não pode' }, 400);
+
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+
+  const esc = await fsGet(PROJETO_PVD, 'adm_escalas', escalaId, { token });
+  if (!esc) return json({ error: 'escala não encontrada' }, 404);
+
+  const alocacoes = Array.isArray(esc.alocacoes) ? esc.alocacoes : [];
+  const funcaoId = body?.funcao_id ? String(body.funcao_id) : null;
+  // Sem funcao_id, responde a primeira alocação dela. Com, responde àquela —
+  // dá pra estar escalado em duas funções na mesma noite.
+  const i = alocacoes.findIndex((a) => a?.filho_id === quem.id && (!funcaoId || a?.funcao_id === funcaoId));
+  if (i < 0) return json({ error: 'você não está nesta escala' }, 403);
+
+  const novas = alocacoes.map((a, n) => n !== i ? a : {
+    ...a,
+    resposta,
+    resposta_em: new Date().toISOString(),
+    resposta_motivo: resposta === 'recusado' ? motivo : '',
+  });
+
+  await fsPatch(PROJETO_PVD, 'adm_escalas', escalaId, token, { alocacoes: novas });
+  return json({ ok: true, resposta });
+}
+
 // Registra que a pessoa aceitou o termo de uso dos dados dela.
 //
 // Ser filho de um terreiro é dado SENSÍVEL pela LGPD (art. 5º, II — convicção
