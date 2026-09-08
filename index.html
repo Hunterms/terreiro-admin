@@ -3982,6 +3982,16 @@ function renderEscalasGira() {
               <div class="li-meta">
                 <span>${fmt.dataLong(ev.data)} · ${ev.hora||'—'}</span>
                 ${escalas.length?`<span class="chip chip-green">${totalAloc} pessoa${totalAloc===1?'':'s'} escalada${totalAloc===1?'':'s'}</span>`:'<span class="chip chip-amber">Sem escala</span>'}
+                ${(() => {
+                  // O buraco tem que aparecer AQUI, na lista. Se só aparecesse
+                  // dentro da escala, achar quem recusou custaria abrir doze
+                  // eventos — e ninguém abre doze eventos.
+                  const todas = escalas.flatMap(e => e.alocacoes || []);
+                  const rec = todas.filter(a => a.resposta === 'recusado').length;
+                  const semResposta = todas.filter(a => !a.resposta).length;
+                  return (rec ? `<span class="chip chip-red">${rec} não pode${rec===1?'':'m'}</span>` : '')
+                       + (semResposta ? `<span class="chip">${semResposta} sem resposta</span>` : '');
+                })()}
               </div>
             </div>
             <div class="li-actions">
@@ -4497,6 +4507,15 @@ function openEscalaForm(evId, escId='') {
     contagem[a.filho_id] = (contagem[a.filho_id]||0) + 1;
   }));
 
+  // O que cada pessoa respondeu, por (filho, função). Mapa e não busca no
+  // array a cada chip: são ~60 filhos × ~9 funções por escala.
+  const alocRespostas = {}, alocMotivos = {};
+  for (const a of (esc?.alocacoes || [])) {
+    if (!a?.resposta) continue;
+    alocRespostas[`${a.filho_id}__${a.funcao_id}`] = a.resposta;
+    if (a.resposta_motivo) alocMotivos[`${a.filho_id}__${a.funcao_id}`] = a.resposta_motivo;
+  }
+
   const alocPreenchidas = {};
   (esc?.alocacoes||[]).forEach(a => {
     alocPreenchidas[a.funcao_id] = alocPreenchidas[a.funcao_id] || [];
@@ -4660,14 +4679,24 @@ function openEscalaForm(evId, escId='') {
               const titleMsg = disabled
                 ? (indispDay?'Indisponível esse dia':'Recusou essa função no mês')
                 : (destaca ? (tipoSp === 'perto' ? 'Mora perto · prioridade pra essa função' : 'Mora longe · prioridade pra essa função') : '');
-              const cssClass = sel ? 'chip-gold' : (destaca ? 'chip-green' : '');
+              const recusou = alocRespostas[`${f.id}__${fn.id}`] === 'recusado';
+              // Recusa vence a cor de selecionado. Um ✕ num chip dourado se
+              // perde numa tela com 60 chips; vermelho não se perde.
+              const cssClass = recusou ? 'chip-red' : (sel ? 'chip-gold' : (destaca ? 'chip-green' : ''));
               const emoji = destaca ? (tipoSp === 'perto' ? '🏠 ' : '🏃 ') : '';
               // Contagem na janela histórica — total geral e por função
               const cntTotal = contagem[f.id] || 0;
               const cntFn = contagemFn[`${f.id}__${fn.id}`] || 0;
-              const tituloFinal = titleMsg + (cntTotal>0?` · escalado ${cntTotal}× no total (${cntFn}× nessa função) nas últimas ${janelaSemanas} sem`:` · nunca escalado nas últimas ${janelaSemanas} sem`);
+              const tituloFinal = titleMsg + motivoResp + (cntTotal>0?` · escalado ${cntTotal}× no total (${cntFn}× nessa função) nas últimas ${janelaSemanas} sem`:` · nunca escalado nas últimas ${janelaSemanas} sem`);
               const sufixo = cntFn > 0 ? ` <span style="opacity:.6;font-size:10px">${cntFn}×</span>` : '';
-              return `<button type="button" class="chip ${cssClass}" title="${tituloFinal}" style="${disabled?'opacity:.35;cursor:not-allowed':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${emoji}${f.nome.split(' ')[0]}${sufixo}</button>`;
+              // O que a pessoa respondeu. Recusa aparece no chip e o motivo no
+              // title: sem isso o admin abre a escala, vê a pessoa marcada, e
+              // não sabe que ela já avisou que não vem.
+              const resp = (alocRespostas[`${f.id}__${fn.id}`] || null);
+              const marca = resp === 'aceito' ? ' ✓' : resp === 'recusado' ? ' ✕' : '';
+              const motivoResp = resp === 'recusado' && alocMotivos[`${f.id}__${fn.id}`]
+                ? ` · não pode: ${alocMotivos[`${f.id}__${fn.id}`]}` : (resp === 'aceito' ? ' · confirmou' : '');
+              return `<button type="button" class="chip ${cssClass}" title="${tituloFinal}" style="${disabled?'opacity:.35;cursor:not-allowed':''}" data-fid="${f.id}" data-fnid="${fn.id}" data-sel="${sel}" ${disabled?'disabled':''} onclick="if(this.disabled)return; this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold');this.classList.remove('chip-green')">${emoji}${escapaHtml(f.nome.split(' ')[0])}${sufixo}${marca}</button>`;
             }).join('')}
           </div>
         </div>
@@ -4699,6 +4728,17 @@ function openEscalaForm(evId, escId='') {
   };
 
   $('#es-save').onclick = async () => {
+    // A resposta do filho ("confirmo" / "não posso") mora dentro da alocação, e
+    // esta tela reconstrói o array inteiro do zero a cada save. Sem carregar a
+    // resposta junto, abrir a escala e clicar em Salvar — sem mudar nada —
+    // apagaria a confirmação de todo mundo, calado. Foi o primeiro jeito que
+    // eu escrevi isto, e é o defeito que a peça inteira teria.
+    const respostaAnterior = {};
+    for (const a of (esc?.alocacoes || [])) {
+      if (a?.resposta) respostaAnterior[`${a.filho_id}__${a.funcao_id}`] = {
+        resposta: a.resposta, resposta_em: a.resposta_em || null, resposta_motivo: a.resposta_motivo || '',
+      };
+    }
     const alocacoes = [];
     funcoesAtivas.forEach(fn => {
       $$(`#e-${fn.id} [data-sel="true"]`).forEach(b => {
@@ -4706,7 +4746,10 @@ function openEscalaForm(evId, escId='') {
           funcao_id: fn.id,
           filho_id: b.dataset.fid,
           status: 'escalado',
-          notificado: false
+          notificado: false,
+          // Trocou de função? A resposta não vem junto: quem disse "posso" pra
+          // limpeza não disse "posso" pra cambone.
+          ...(respostaAnterior[`${b.dataset.fid}__${fn.id}`] || {}),
         });
       });
     });
