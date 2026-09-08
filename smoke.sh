@@ -466,6 +466,30 @@ EOF
     && ok "a tela e o mapa de rastros contam a mesma história" \
     || erro "o texto da retenção mudou — confere se ainda são 8 collections"
 
+  # O PDV: a conta da gaveta e a devolução de estoque no estorno.
+  PDV="$HOME/Desktop/Docs/terreiro-pdv"
+  if [[ -f "$PDV/test-caixa.mjs" ]]; then
+    (cd "$PDV" && node test-caixa.mjs >/dev/null 2>&1) \
+      && ok "test-caixa.mjs do PDV passa (gaveta + devolução)" \
+      || erro "test-caixa.mjs do PDV FALHOU"
+  else
+    erro "não achei o test-caixa.mjs do PDV"
+  fi
+
+  # Venda estornada tem que sair das somas nos DOIS apps, e sair no ponto de
+  # carga — não em cada `reduce`. São 5 leitores no PDV e 8 no financeiro; o
+  # dia em que alguém filtrar caso a caso, o décimo quarto leitor vai somar
+  # venda cancelada e ninguém vai ver.
+  for par in "PDV|$PDV/index.html" \
+             "financeiro|$HOME/Desktop/Docs/candieiro-financeiro/js/app.js"; do
+    quem="${par%%|*}"; arq="${par#*|}"
+    if grep -qF -- 'S.sales = todas.filter(v => !v.cancelada)' "$arq" 2>/dev/null; then
+      ok "$quem: estorno filtrado na carga"
+    else
+      erro "$quem: venda estornada VOLTOU pro faturamento"
+    fi
+  done
+
   # O teste do financeiro roda no repo dele; aqui só se confere que ele existe
   # e passa, senão "não rodei" vira indistinguível de "passou".
   T="$HOME/Desktop/Docs/candieiro-financeiro/test-export.mjs"
@@ -487,6 +511,12 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   # A lista nasceu em 01/08, depois de publicar rules sem a leitura de
   # adm_despensa. O filho relatou "a despensa está vazia" e nada no sistema
   # tinha reclamado. Toda collection que uma página sem login lê entra aqui.
+  # pdv_caixa_mov nasceu em 08/09 e é do PDV, que tem login. Não pode abrir pra
+  # fora: sangria e conferência dizem quanto dinheiro tem na gaveta e a que
+  # horas ele sai de lá.
+  cod=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/pdv_caixa_mov?key=$K" -H 'Content-Type: application/json' -d '{"fields":{"tipo":{"stringValue":"sangria"}}}')
+  [[ "$cod" == "403" ]] && ok "pdv_caixa_mov sem escrita pública" || erro "pdv_caixa_mov aceita escrita de fora (HTTP $cod) — publique firestore.rules.pvd"
+
   for c in vendas_produtos adm_servicos adm_despensa adm_perguntas \
            adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"

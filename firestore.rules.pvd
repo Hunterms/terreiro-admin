@@ -66,6 +66,10 @@ service cloud.firestore {
     match /sales/{id}         { allow write: if ehLoja(); }
     match /eventos_caixa/{id} { allow write: if ehLoja(); }
     match /pdv_repasses/{id}  { allow write: if ehLoja(); }
+    // Fundo de troco, sangria, suprimento e conferência de caixa (08/09). É o
+    // que separa "quanto vendi" de "quanto tem na gaveta", e a diferença entre
+    // os dois é a quebra. Escrita só da lojinha, como o resto do PDV.
+    match /pdv_caixa_mov/{id} { allow write: if ehLoja(); }
 
     // ── O FINANCEIRO ENCOSTA EM TRÊS COISAS QUE NÃO SÃO DELE ──────────────
     // Depois das mudanças de 30/07, o app do financeiro escreve em collections
