@@ -302,11 +302,27 @@ const _search = { idx:-1, results:[] };
 
 function _norm(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
 function _initials(nome){ return (nome||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '—'; }
+
+// Escapa texto que veio de fora antes de entrar em innerHTML ou em atributo.
+// `adm_despensa` aceita create SEM login — é o que faz o form público da
+// despensa funcionar — e não tem `hasOnly`. Nome, categoria, unidade e obs
+// são texto de estranho, e esta tela roda com a sessão do filho no
+// localStorage. Mesmos nomes e mesma definição do index.html.
+const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
+  { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+));
+
+// Dentro de onclick="..." o navegador desfaz a entidade ANTES de rodar o JS,
+// então `&#39;` voltaria a ser aspa e fecharia a string. Aqui escapa pro JS
+// primeiro, e só a aspa dupla vira entidade. Vale pro id também: quem cria
+// um doc de `adm_despensa` pela REST escolhe o id.
+const escapaJs = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
 function _highlight(nome, q){
-  if(!q) return nome;
+  if(!q) return escapaHtml(nome);
   const nN = _norm(nome), qN = _norm(q);
-  const i = nN.indexOf(qN); if(i<0) return nome;
-  return nome.slice(0,i)+'<strong style="color:var(--gold)">'+nome.slice(i,i+q.length)+'</strong>'+nome.slice(i+q.length);
+  const i = nN.indexOf(qN); if(i<0) return escapaHtml(nome);
+  return escapaHtml(nome.slice(0,i))+'<strong style="color:var(--gold)">'+escapaHtml(nome.slice(i,i+q.length))+'</strong>'+escapaHtml(nome.slice(i+q.length));
 }
 
 function toast(msg, kind='ok') {
@@ -385,8 +401,8 @@ function initSearchSelect() {
       box.innerHTML = '<div style="padding:14px;color:var(--text3);font-size:13px">Nenhum filho encontrado.</div>';
     } else {
       box.innerHTML = results.map((f, i) => `
-        <div class="opt ${i===_search.idx?'active':''}" data-id="${f.id}">
-          <div class="avatar">${_initials(f.nome)}</div>
+        <div class="opt ${i===_search.idx?'active':''}" data-id="${escapaHtml(f.id)}">
+          <div class="avatar">${escapaHtml(_initials(f.nome))}</div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;color:var(--text)">${_highlight(f.nome, q)}</div>
           </div>
@@ -525,7 +541,7 @@ function renderMain() {
   const cats = minhasCategorias.length === 0 ? todasCats : todasCats.filter(c => minhasCategorias.includes(c));
   const catSel = $('#f-cat');
   const catCur = catSel.value;
-  catSel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  catSel.innerHTML = '<option value="">Todas categorias</option>' + cats.map(c => `<option value="${escapaHtml(c)}">${escapaHtml(c)}</option>`).join('');
   if (cats.includes(catCur)) catSel.value = catCur;
 
   // Filtros
@@ -561,20 +577,20 @@ function renderMain() {
     return `<div class="item ${cls}">
       <div class="item-head">
         <div style="flex:1;min-width:0">
-          <div class="item-nome">${p.nome}</div>
+          <div class="item-nome">${escapaHtml(p.nome)}</div>
           <div class="item-meta">
-            ${p.categoria ? `<span class="item-tag">${p.categoria}</span> ` : ''}
-            ${min > 0 ? `mínimo ${min} ${p.unidade||''}` : ''}
+            ${p.categoria ? `<span class="item-tag">${escapaHtml(p.categoria)}</span> ` : ''}
+            ${min > 0 ? `mínimo ${min} ${escapaHtml(p.unidade||'')}` : ''}
             ${tagText ? `${min > 0 ? ' · ' : ''}<span class="item-tag ${tagCls}">${tagText}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-sm btn-ghost" onclick="abrirModalEditar('${p.id}')" title="Editar nome/cat/min"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn btn-sm btn-ghost" onclick="abrirModalEditar('${escapaJs(p.id)}')" title="Editar nome/cat/min"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       </div>
       <div class="qty-row">
-        <button class="qty-btn minus" onclick="ajustarEstoque('${p.id}', -1)">−</button>
-        <input class="qty-input" type="number" step="0.01" min="0" inputmode="decimal" value="${est}" data-id="${p.id}" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" onblur="atualizarEstoque(this)"/>
-        <span class="qty-un">${p.unidade||'un'}</span>
-        <button class="qty-btn plus" onclick="ajustarEstoque('${p.id}', 1)">+</button>
+        <button class="qty-btn minus" onclick="ajustarEstoque('${escapaJs(p.id)}', -1)">−</button>
+        <input class="qty-input" type="number" step="0.01" min="0" inputmode="decimal" value="${est}" data-id="${escapaHtml(p.id)}" onfocus="this.select()" onkeydown="if(event.key==='Enter')this.blur()" onblur="atualizarEstoque(this)"/>
+        <span class="qty-un">${escapaHtml(p.unidade||'un')}</span>
+        <button class="qty-btn plus" onclick="ajustarEstoque('${escapaJs(p.id)}', 1)">+</button>
       </div>
     </div>`;
   }).join('');
@@ -638,10 +654,10 @@ window.abrirModalNovo = function() {
       <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" autofocus placeholder="ex: Vela branca, Alfazema..."/></div>
       <div class="fi-group"><label>Categoria${restrito?' <span class="req">*</span>':''}</label>
         ${restrito
-          ? `<select class="fi" id="m-cat"><option value="">— Selecione —</option>${catsDispo.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">${c}</option>`).join('')}</select>
-             <div style="font-size:11px;color:var(--text3);margin-top:4px">Você cuida de: ${minhas.join(', ')}.</div>`
+          ? `<select class="fi" id="m-cat"><option value="">— Selecione —</option>${catsDispo.map(c=>`<option value="${escapaHtml(c)}">${escapaHtml(c)}</option>`).join('')}</select>
+             <div style="font-size:11px;color:var(--text3);margin-top:4px">Você cuida de: ${escapaHtml(minhas.join(', '))}.</div>`
           : `<input class="fi" id="m-cat" list="m-cats-list" placeholder="ex: velas, ervas..."/>
-             <datalist id="m-cats-list">${catsDispo.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>`}
+             <datalist id="m-cats-list">${catsDispo.map(c=>`<option value="${escapaHtml(c)}">`).join('')}</datalist>`}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fi-group"><label>Quantidade <span class="req">*</span></label><input class="fi" id="m-est" type="number" step="0.01" min="0" inputmode="decimal" value="0"/></div>
@@ -691,10 +707,10 @@ window.abrirModalEditar = function(id) {
   abrirModal(`
     <div class="modal-h"><h3>Editar item</h3><button class="modal-x" onclick="fecharModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-b">
-      <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" value="${(p.nome||'').replace(/"/g,'&quot;')}"/></div>
+      <div class="fi-group"><label>Nome <span class="req">*</span></label><input class="fi" id="m-nome" value="${escapaHtml(p.nome)}"/></div>
       <div class="fi-group"><label>Categoria</label>
-        <input class="fi" id="m-cat" list="m-cats-list" value="${(p.categoria||'').replace(/"/g,'&quot;')}"/>
-        <datalist id="m-cats-list">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>
+        <input class="fi" id="m-cat" list="m-cats-list" value="${escapaHtml(p.categoria)}"/>
+        <datalist id="m-cats-list">${cats.map(c=>`<option value="${escapaHtml(c)}">`).join('')}</datalist>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fi-group"><label>Unidade</label>
@@ -702,9 +718,9 @@ window.abrirModalEditar = function(id) {
             ${['un','kg','g','L','ml','cx','mç','par','dz'].map(u=>`<option value="${u}" ${p.unidade===u?'selected':''}>${u}</option>`).join('')}
           </select>
         </div>
-        <div class="fi-group"><label>Mínimo (alerta)</label><input class="fi" id="m-min" type="number" step="0.01" min="0" value="${p.minimo||0}"/></div>
+        <div class="fi-group"><label>Mínimo (alerta)</label><input class="fi" id="m-min" type="number" step="0.01" min="0" value="${Number(p.minimo)||0}"/></div>
       </div>
-      <div class="fi-group" style="margin-bottom:0"><label>Observação</label><textarea class="fi" id="m-obs">${p.obs||''}</textarea></div>
+      <div class="fi-group" style="margin-bottom:0"><label>Observação</label><textarea class="fi" id="m-obs">${escapaHtml(p.obs)}</textarea></div>
       <div style="font-size:11.5px;color:var(--text3);margin-top:14px;line-height:1.4">A quantidade você edita direto no card. Pra apagar o item, peça pro admin.</div>
     </div>
     <div class="modal-f">

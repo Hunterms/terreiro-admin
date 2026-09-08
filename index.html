@@ -403,6 +403,12 @@ const escapaHtml = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => (
 // (adm_solicitacoes, vendas_pedidos, evento_inscricoes, adm_despensa), e o id
 // vai dentro do onclick de cada botão de linha.
 const escapaJs = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+// Escapar não basta pra href: `javascript:alert(1)` passa inteiro pelo
+// escapaHtml e roda no clique. O @ do Instagram e o link do recibo vêm de
+// doc que qualquer um cria (vendas_pedidos, evento_inscricoes,
+// adm_solicitacoes aceitam create sem login). Só http e https saem daqui.
+const urlSegura = (u) => /^https?:\/\//i.test(String(u ?? '')) ? String(u) : '';
 const $$ = (q,r=document) => Array.from(r.querySelectorAll(q));
 
 // Data efetiva de uma alocação: "Limpeza depois" da gira é no dia seguinte.
@@ -910,7 +916,7 @@ function attachListeners() {
   // Eventos (candieiro project!)
   S.unsubs.push(onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
     S.eventos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['calendario','dashboard','meu-dashboard','escalas','eventos-filhos'].includes(S.route)) renderRoute();
+    if(['calendario','dashboard','meu-dashboard','escalas'].includes(S.route)) renderRoute();
   }));
 
   // Avisos
@@ -936,8 +942,6 @@ function attachListeners() {
     S.eventoInscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     // Re-render modal de pagamentos se aberto
     if(window._app && window._app.renderPagamentos) window._app.renderPagamentos();
-    // Re-render lista de eventos pros filhos se aberta
-    if(S.route === 'eventos-filhos') renderRoute();
   }));
 
   // Rega diária (1 doc por dia coberto)
@@ -3582,9 +3586,9 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
     const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
     const d = x.demografia;
     const demoSummary = d ? [
-      d.genero ? ({fem_cis:'Fem Cis',fem_trans:'Fem Trans',masc_cis:'Masc Cis',masc_trans:'Masc Trans',nao_binario:'NB',outro:'Outro'}[d.genero]||d.genero) : null,
-      d.pronome ? ({ele:'ele',ela:'ela',elu:'elu'}[d.pronome]||d.pronome) : null,
-      d.raca ? ({preto:'preto/a',pardo:'pardo/a',indigena:'indígena',amarelo:'amarelo/a',branco:'branco/a'}[d.raca]||d.raca) : null
+      d.genero ? ({fem_cis:'Fem Cis',fem_trans:'Fem Trans',masc_cis:'Masc Cis',masc_trans:'Masc Trans',nao_binario:'NB',outro:'Outro'}[d.genero]||escapaHtml(d.genero)) : null,
+      d.pronome ? ({ele:'ele',ela:'ela',elu:'elu'}[d.pronome]||escapaHtml(d.pronome)) : null,
+      d.raca ? ({preto:'preto/a',pardo:'pardo/a',indigena:'indígena',amarelo:'amarelo/a',branco:'branco/a'}[d.raca]||escapaHtml(d.raca)) : null
     ].filter(Boolean).join(' · ') : '';
     return `
       <div class="list-item" style="background:var(--glass2);flex-direction:column;align-items:stretch">
@@ -3596,7 +3600,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
               ${stChip}
               <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
               ${x.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)">🔁 ${fmtCiclo(x.ciclo)}</span>`:''}
-              ${x.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${x.turma_nome}</span>`:''}
+              ${x.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${escapaHtml(x.turma_nome)}</span>`:''}
               ${x.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
               ${x.parcela_num && x.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 ${x.parcela_num}/${x.parcelas_total}</span>`:''}
               ${quando?`<span style="color:var(--text3)">${quando}</span>`:''}
@@ -3613,11 +3617,11 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
           <details style="margin-top:6px;margin-left:50px">
             <summary style="cursor:pointer;font-size:11.5px;color:#3498db;font-weight:600">Ver dados demográficos completos</summary>
             <div style="margin-top:6px;font-size:12px;color:var(--text2);line-height:1.6;padding:8px 10px;background:rgba(52,152,219,.04);border-left:2px solid #3498db;border-radius:4px">
-              ${d.instagram?`<div><strong>Instagram:</strong> <a href="${d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+d.instagram.replace('@','')}" target="_blank" rel="noopener" style="color:#e91e63">${d.instagram}</a></div>`:''}
-              ${d.genero?`<div><strong>Gênero:</strong> ${({fem_cis:'Feminino Cis',fem_trans:'Feminino Trans',masc_cis:'Masculino Cis',masc_trans:'Masculino Trans',nao_binario:'Não-binárie',outro:'Outro'}[d.genero]||d.genero)}${d.genero_outro?` · "${d.genero_outro}"`:''}</div>`:''}
-              ${d.pronome?`<div><strong>Pronome:</strong> ${({ele:'Ele/Dele',ela:'Ela/Dela',elu:'Elu/Delu'}[d.pronome]||d.pronome)}</div>`:''}
-              ${d.deficiencia?`<div><strong>Deficiência:</strong> ${({nao:'Não',visual:'Visual',fisica:'Física',psicossocial:'Psicossocial',auditiva:'Auditiva',multipla:'Múltipla',intelectual:'Intelectual'}[d.deficiencia]||d.deficiencia)}</div>`:''}
-              ${d.raca?`<div><strong>Cor/Raça:</strong> ${({preto:'Preto/a',pardo:'Pardo/a',indigena:'Indígena',amarelo:'Amarelo/a',branco:'Branco/a'}[d.raca]||d.raca)}</div>`:''}
+              ${d.instagram?`<div><strong>Instagram:</strong> <a href="${escapaHtml(urlSegura(d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+String(d.instagram).replace('@','')))}" target="_blank" rel="noopener" style="color:#e91e63">${escapaHtml(d.instagram)}</a></div>`:''}
+              ${d.genero?`<div><strong>Gênero:</strong> ${({fem_cis:'Feminino Cis',fem_trans:'Feminino Trans',masc_cis:'Masculino Cis',masc_trans:'Masculino Trans',nao_binario:'Não-binárie',outro:'Outro'}[d.genero]||escapaHtml(d.genero))}${d.genero_outro?` · "${escapaHtml(d.genero_outro)}"`:''}</div>`:''}
+              ${d.pronome?`<div><strong>Pronome:</strong> ${({ele:'Ele/Dele',ela:'Ela/Dela',elu:'Elu/Delu'}[d.pronome]||escapaHtml(d.pronome))}</div>`:''}
+              ${d.deficiencia?`<div><strong>Deficiência:</strong> ${({nao:'Não',visual:'Visual',fisica:'Física',psicossocial:'Psicossocial',auditiva:'Auditiva',multipla:'Múltipla',intelectual:'Intelectual'}[d.deficiencia]||escapaHtml(d.deficiencia))}</div>`:''}
+              ${d.raca?`<div><strong>Cor/Raça:</strong> ${({preto:'Preto/a',pardo:'Pardo/a',indigena:'Indígena',amarelo:'Amarelo/a',branco:'Branco/a'}[d.raca]||escapaHtml(d.raca))}</div>`:''}
               ${d.ja_terreiro?`<div><strong>Já fez parte de outro terreiro:</strong> ${d.ja_terreiro==='sim'?'Sim':'Não'}</div>`:''}
             </div>
           </details>
@@ -4337,82 +4341,6 @@ function gerarSugestaoBatch(ev, funcoesAtivas, filhosAtivos, pendentes=[]) {
   return sug;
 }
 
-function renderEscalasLojinha() {
-  const body = $('#esc-body');
-  const fnLojinha = S.funcoes.find(f => f.nome && f.nome.toLowerCase().includes('lojinha') && !f.arquivada);
-
-  if(!fnLojinha) {
-    body.innerHTML = `
-      <div class="empty">
-        <div class="empty-t">Função "Lojinha" não cadastrada</div>
-        <div class="empty-s">Crie uma função chamada "Lojinha" e marque como restrita ao grupo que trabalha lá.</div>
-        <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.openFuncaoForm()">Criar função</button>
-      </div>
-    `;
-    return;
-  }
-
-  if(!fnLojinha.restrito_a_filhos || fnLojinha.restrito_a_filhos.length === 0) {
-    body.innerHTML = `
-      <div class="empty">
-        <div class="empty-t">Defina o grupo da lojinha</div>
-        <div class="empty-s">A função "Lojinha" existe mas ainda não tem filhos elegíveis definidos. Edite a função pra marcar o grupo.</div>
-        <button class="btn btn-primary" style="margin-top:18px" onclick="window._app.openFuncaoForm('${fnLojinha.id}')">Editar função Lojinha</button>
-      </div>
-    `;
-    return;
-  }
-
-  const grupoIds = fnLojinha.restrito_a_filhos;
-  const grupo = S.filhos.filter(f => grupoIds.includes(f.id));
-
-  // semanas: atual + próximas 3
-  const hoje = new Date();
-  const startOfWeek = new Date(hoje);
-  startOfWeek.setDate(hoje.getDate() - hoje.getDay()); // domingo
-  startOfWeek.setHours(0,0,0,0);
-
-  const semanas = [];
-  for(let i=0; i<4; i++) {
-    const s = new Date(startOfWeek);
-    s.setDate(startOfWeek.getDate() + i*7);
-    const e = new Date(s); e.setDate(s.getDate()+6);
-    const semanaId = isoWeek(s);
-    semanas.push({ id:semanaId, inicio:s.toISOString().slice(0,10), fim:e.toISOString().slice(0,10), label:`${s.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${e.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}` });
-  }
-
-  body.innerHTML = `
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-h">
-        <div class="card-title">Grupo da lojinha</div>
-        <button class="btn btn-sm" onclick="window._app.openFuncaoForm('${fnLojinha.id}')">Editar grupo</button>
-      </div>
-      <div class="chips">${grupo.map(f=>`<span class="chip chip-gold">${f.nome}</span>`).join('')}</div>
-    </div>
-
-    <div class="card">
-      <div class="card-h"><div class="card-title">Plantões — próximas 4 semanas</div></div>
-      ${semanas.map(sem => {
-        const esc = S.escalas.find(e => e.tipo === 'lojinha' && e.periodo === sem.id);
-        const total = esc ? (esc.alocacoes||[]).length : 0;
-        return `
-          <div class="list-item">
-            <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
-            </div>
-            <div class="li-main">
-              <div class="li-name">${sem.label}</div>
-              <div class="li-meta">${total?`<span class="chip chip-green">${total} plantão${total===1?'':'ões'}</span>`:'<span class="chip chip-amber">Sem plantão</span>'}</div>
-            </div>
-            <div class="li-actions">
-              <button class="btn btn-sm btn-primary" onclick="window._app.openLojinhaEscalaForm('${sem.id}','${sem.inicio}','${sem.fim}','${esc?esc.id:''}')">${esc?'Editar':'Criar plantão'}</button>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
 
 function isoWeek(d) {
   const date = new Date(d);
@@ -6793,7 +6721,7 @@ function chipPagoAuto(d) {
   const parcelas = Number(d.pagamento_parcelas) || 1;
   const valor = (Number(d.pagamento_centavos) || 0) / 100;
   const recibo = d.pagamento_recibo_url
-    ? ` <a href="${d.pagamento_recibo_url}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">recibo ↗</a>`
+    ? ` <a href="${escapaHtml(urlSegura(d.pagamento_recibo_url))}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">recibo ↗</a>`
     : '';
   return `<span class="chip chip-green" title="Confirmado pela InfinitePay, valor conferido pelo Worker">⚡ pago automático${valor?` · R$ ${valor.toFixed(0)}`:''}${parcelas>1?` · ${parcelas}x`:''}</span>${recibo}`;
 }
@@ -7746,91 +7674,7 @@ function openProdutoForm(id=null) {
 // ── PEDIDOS (gerenciamento dos vindos do form público) ──────────────────
 let pedTab = 'pendente'; // pendente | confirmado | cancelado | todos
 
-// ── EVENTOS PROS FILHOS ──────────────────────────────────────────────────
-// Lista enxuta de eventos tipo='evento_filho' com botão de criar e acesso rápido
-// à lista de pagamentos. Compartilha o mesmo modal (openEventoForm) — só pré-fila
-// o tipo pra evento_filho.
-function renderEventosFilhos(c) {
-  const hoje = new Date().toISOString().slice(0,10);
-  const futuros = S.eventos
-    .filter(e => e.tipo === 'evento_filho' && !e.arquivado && (e.data||'') >= hoje)
-    .sort((a,b) => (a.data+(a.hora||'')).localeCompare(b.data+(b.hora||'')));
-  const passados = S.eventos
-    .filter(e => e.tipo === 'evento_filho' && !e.arquivado && (e.data||'') < hoje)
-    .sort((a,b) => (b.data+(b.hora||'')).localeCompare(a.data+(a.hora||'')))
-    .slice(0,12);
 
-  // Totais arrecadados (todos eventos)
-  const arrecGeral = (S.eventoInscricoes||[])
-    .filter(i => i.status === 'pago')
-    .reduce((s,i) => s + (Number(i.valor)||0), 0);
-  const brl = v => 'R$ ' + Number(v||0).toFixed(2).replace('.',',');
-
-  const cardEv = (e) => {
-    const insc = (S.eventoInscricoes||[]).filter(i => i.evento_id === e.id);
-    const pagas = insc.filter(i => i.status === 'pago');
-    const aguardando = insc.filter(i => i.status === 'aguardando' || !i.status);
-    const arrec = pagas.reduce((s,i) => s + (Number(i.valor)||0), 0);
-    const valor = Number(e.valor) || 0;
-    const url = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/evento.html?id=' + e.id;
-    return `
-      <div class="list-item">
-        <div class="li-avatar" style="background:var(--gold-bg);color:var(--gold)">${(e.data||'').slice(8,10)}</div>
-        <div class="li-main">
-          <div class="li-name">${e.nome || e.titulo || 'Evento'}</div>
-          <div class="li-meta">
-            <span>${fmt.dataLong(e.data)}${e.hora?' · '+e.hora:''}</span>
-            ${valor?`<span class="chip chip-gold">${brl(valor)}</span>`:''}
-            ${pagas.length?`<span class="chip chip-green">${pagas.length} pago${pagas.length===1?'':'s'} · ${brl(arrec)}</span>`:''}
-            ${aguardando.length?`<span class="chip chip-amber">${aguardando.length} aguardando</span>`:''}
-          </div>
-        </div>
-        <div class="li-actions">
-          <button class="btn btn-sm" onclick="window._app.copiarLinkEvento('${e.id}', this)">📋 Link</button>
-          <button class="btn btn-sm btn-primary" onclick="window._app.abrirPagamentosEvento('${e.id}')">💰 Pagamentos</button>
-          <button class="btn btn-sm" onclick="window._app.openEventoForm('${e.id}')">Editar</button>
-        </div>
-      </div>
-    `;
-  };
-
-  c.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Eventos pros filhos</div>
-        <div class="page-sub">Festas, jantares e outros eventos pagos só pra galera da casa. <strong style="color:var(--green)">Arrecadado total: ${brl(arrecGeral)}</strong></div>
-      </div>
-      <div class="page-actions">
-        <button class="btn btn-primary" onclick="window._app.openEventoForm(null, null, 'evento_filho')">+ Novo evento pros filhos</button>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-h"><div class="card-title">Próximos eventos (${futuros.length})</div></div>
-      ${futuros.length === 0
-        ? '<div class="empty"><div class="empty-t">Nenhum evento futuro</div><div class="empty-s">Clica em "+ Novo evento pros filhos" pra criar.</div></div>'
-        : futuros.map(cardEv).join('')}
-    </div>
-
-    ${passados.length > 0 ? `
-      <div class="card">
-        <div class="card-h"><div class="card-title">Histórico (${passados.length})</div></div>
-        ${passados.map(cardEv).join('')}
-      </div>
-    ` : ''}
-  `;
-}
-
-function copiarLinkEvento(id, btn) {
-  const url = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/evento.html?id=' + id;
-  navigator.clipboard.writeText(url).then(() => {
-    if(btn) {
-      const orig = btn.textContent;
-      btn.textContent = '✓ Copiado!';
-      setTimeout(() => btn.textContent = orig, 1800);
-    } else { toast('Link copiado','ok'); }
-  }).catch(() => alert('Link: ' + url));
-};
 
 function renderPedidos(c) {
   atualizarBadgePedidos();
@@ -7888,12 +7732,12 @@ function renderPedidos(c) {
             <details style="margin-top:8px;padding:8px 10px;background:rgba(52,152,219,.06);border:1px solid rgba(52,152,219,.2);border-radius:6px">
               <summary style="cursor:pointer;font-size:12px;color:#3498db;font-weight:700;letter-spacing:.02em">📊 Dados demográficos</summary>
               <div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;font-size:12.5px">
-                ${d.instagram?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Instagram</div><a href="${d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+d.instagram.replace('@','')}" target="_blank" rel="noopener" style="color:#e91e63;text-decoration:none;word-break:break-all">${d.instagram}</a></div>`:''}
-                ${d.genero?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Gênero</div><div>${demoLabels.genero[d.genero]||d.genero}${d.genero_outro?` · "${d.genero_outro}"`:''}</div></div>`:''}
-                ${d.pronome?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pronome</div><div>${demoLabels.pronome[d.pronome]||d.pronome}</div></div>`:''}
-                ${d.deficiencia?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Deficiência</div><div>${demoLabels.deficiencia[d.deficiencia]||d.deficiencia}</div></div>`:''}
-                ${d.raca?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Cor/Raça</div><div>${demoLabels.raca[d.raca]||d.raca}</div></div>`:''}
-                ${d.ja_terreiro?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Outro terreiro</div><div>${demoLabels.ja_terreiro[d.ja_terreiro]||d.ja_terreiro}</div></div>`:''}
+                ${d.instagram?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Instagram</div><a href="${escapaHtml(urlSegura(d.instagram.startsWith('http')?d.instagram:'https://instagram.com/'+String(d.instagram).replace('@','')))}" target="_blank" rel="noopener" style="color:#e91e63;text-decoration:none;word-break:break-all">${escapaHtml(d.instagram)}</a></div>`:''}
+                ${d.genero?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Gênero</div><div>${demoLabels.genero[d.genero]||escapaHtml(d.genero)}${d.genero_outro?` · "${escapaHtml(d.genero_outro)}"`:''}</div></div>`:''}
+                ${d.pronome?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pronome</div><div>${demoLabels.pronome[d.pronome]||escapaHtml(d.pronome)}</div></div>`:''}
+                ${d.deficiencia?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Deficiência</div><div>${demoLabels.deficiencia[d.deficiencia]||escapaHtml(d.deficiencia)}</div></div>`:''}
+                ${d.raca?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Cor/Raça</div><div>${demoLabels.raca[d.raca]||escapaHtml(d.raca)}</div></div>`:''}
+                ${d.ja_terreiro?`<div><div style="color:var(--text3);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Outro terreiro</div><div>${demoLabels.ja_terreiro[d.ja_terreiro]||escapaHtml(d.ja_terreiro)}</div></div>`:''}
               </div>
             </details>
           ` : '';
@@ -7904,13 +7748,13 @@ function renderPedidos(c) {
               <div class="li-name">${escapaHtml(p.nome||'(sem nome)')} <span class="chip ${cfg.chip}" style="margin-left:6px">${cfg.lbl}</span></div>
               <div class="li-meta" style="margin-top:4px">
                 <strong style="color:var(--text)">${escapaHtml(p.produto_nome||'?')}</strong>
-                <span><strong style="color:var(--gold)">R$ ${p.valor||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${p.valor_cheio}</span>`:''}</span>
+                <span><strong style="color:var(--gold)">R$ ${Number(p.valor)||0}</strong>${p.promo_aplicada && p.valor_cheio && p.valor_cheio !== p.valor?` <span style="color:var(--text3);text-decoration:line-through;font-size:11.5px">R$ ${Number(p.valor_cheio)||0}</span>`:''}</span>
                 ${p.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)" title="Mês de referência deste pagamento recorrente">🔁 ${fmtCiclo(p.ciclo)}</span>`:''}
-                ${p.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${p.turma_nome}</span>`:''}
+                ${p.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${escapaHtml(p.turma_nome)}</span>`:''}
                 ${p.desconto_afirmativo?`<span class="chip" style="font-size:10px;background:rgba(155,89,182,.18);color:#b07cce">✊🏿 afirmativo</span>`:''}
-                ${p.parcela_num && p.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 parcela ${p.parcela_num}/${p.parcelas_total}</span>`:''}
-                ${p.promo_aplicada?`<span class="chip chip-green" style="font-size:10px">${p.promo_label||'promo'}</span>`:''}
-                ${p.metodo_pagamento?`<span>${METODO_PAG_LABEL[p.metodo_pagamento]||p.metodo_pagamento}</span>`:''}
+                ${p.parcela_num && p.parcelas_total>1?`<span class="chip" style="font-size:10px;background:rgba(46,204,113,.18);color:var(--green)">📅 parcela ${Number(p.parcela_num)||0}/${Number(p.parcelas_total)||0}</span>`:''}
+                ${p.promo_aplicada?`<span class="chip chip-green" style="font-size:10px">${escapaHtml(p.promo_label||'promo')}</span>`:''}
+                ${p.metodo_pagamento?`<span>${METODO_PAG_LABEL[p.metodo_pagamento]||escapaHtml(p.metodo_pagamento)}</span>`:''}
                 ${chipPagoAuto(p)}
                 ${chipPagoSuspeito(p)}
                 ${!p.pago_automatico && p.comprovante_anexado?'<span class="chip chip-green">comprovante</span>':''}
@@ -9040,7 +8884,6 @@ window._app = {
   abrirPagamentosEvento,
   marcarInscricao,
   deletarInscricao,
-  copiarLinkEvento,
   openEscalaForm,
   setEscTab,
   setAnalisePeriodo,
