@@ -71,10 +71,35 @@ o pedido como pago.
 
 ### 1. Sobe o código
 
-Cloudflare → Workers & Pages → o worker que já existe (`terreiro-email`) →
-**Edit code** → apaga o que está lá → cola **`worker.js`** inteiro → **Deploy**.
+```
+cd worker && bash publicar.sh
+```
+
+Sobe, confere a conta antes e roda o `../smoke.sh worker` no fim. Precisa do
+`worker/.env.deploy` — o próprio script diz como criar o token se ele faltar.
+
+**Colar no dashboard também funciona** (Workers & Pages → `terreiro-email` →
+Edit code → cola o `worker.js` → Deploy), e continua sendo o plano B. Mas foi o
+paste que falhou em 07/09: duas rotas novas entraram no repo e ninguém colou.
+Por um dia a área do filho não liberou dia de rega e a tela do evento não soube
+dizer "você já está inscrita". Código certo fora do ar é pior que código errado
+no ar, porque não deixa rastro.
 
 A rota do email continua na raiz, então o admin não quebra durante a troca.
+
+#### O que o `wrangler.toml` protege
+
+O deploy por wrangler apaga em silêncio o que não estiver declarado. Três
+coisas foram lidas do que estava NO AR em 08/09 e escritas lá por isso:
+
+| | Se sumir do toml |
+|---|---|
+| `keep_vars = true` | as 8 variáveis do painel são apagadas — inclusive a chave da service account, e aí toda escrita no Firestore para |
+| `[triggers] crons` | o `scheduled()` deixa de rodar, e nada avisa |
+| `[observability]` | o log do painel desliga |
+
+Mudou variável, cron ou compat no painel? Atualiza o toml junto, senão o
+próximo deploy desfaz.
 
 ### 2. Service account do Firebase
 
@@ -101,10 +126,26 @@ Cloudflare → o Worker → **Settings → Variables and Secrets**:
 | `ADMIN_SECRET` | Encrypt | a palavra que já está lá |
 | `DEFAULT_FROM` | Texto | `Terreiro do Candieiro <contato@terreirodocandieiro.com.br>` |
 | `INFINITEPAY_HANDLE` | Texto | `pai-nando` — **sem o `$`** |
-| `SITE_URL` | Texto | `https://hunterms.github.io/terreiro-admin` |
+| `SITE_URL` | Texto | `https://terreirodocandieiro.com.br` |
 | `GCP_SA_EMAIL` | Texto | `xxx@terreiro-pvd.iam.gserviceaccount.com` |
-| `GCP_SA_KEY` | **Encrypt** | `-----BEGIN PRIVATE KEY-----\n...` |
+| `GCP_SA_KEY` | **Encrypt** | `-----BEGIN PRIVATE KEY-----\n...` — ⚠️ ver abaixo |
 | `CAND_API_KEY` | Texto | `AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM` |
+
+### ⚠️ Aberto (08/09): o `GCP_SA_KEY` está no ar como texto, não como secret
+
+A tabela acima sempre disse **Encrypt**. Medido em 08/09 pela API, o binding
+que está no ar é `plain_text` — os 1678 caracteres da chave privada voltam
+legíveis pra qualquer token com Workers Read na conta.
+
+Ela assina toda escrita no Firestore ignorando as security rules. É a
+credencial mais forte do sistema, e é a única das oito que está guardada como
+se fosse um rótulo.
+
+Conserto: Cloudflare → `terreiro-email` → Settings → Variables and Secrets →
+`GCP_SA_KEY` → **Encrypt** → Save. O `keep_vars` não atrapalha: secret também
+sobrevive ao deploy, e o valor não muda. Depois disso um `bash publicar.sh` e
+o `./smoke.sh worker` fecham o ciclo — se a chave tiver sido perdida na troca,
+a rota `/mensalidade` acusa na hora.
 
 ### ⚠️ A service account precisa alcançar os DOIS projetos
 
