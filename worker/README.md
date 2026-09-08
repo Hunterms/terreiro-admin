@@ -131,21 +131,22 @@ Cloudflare → o Worker → **Settings → Variables and Secrets**:
 | `GCP_SA_KEY` | **Encrypt** | `-----BEGIN PRIVATE KEY-----\n...` — ⚠️ ver abaixo |
 | `CAND_API_KEY` | Texto | `AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM` |
 
-### ⚠️ Aberto (08/09): o `GCP_SA_KEY` está no ar como texto, não como secret
+### O `GCP_SA_KEY` é secret — e já não foi
 
 A tabela acima sempre disse **Encrypt**. Medido em 08/09 pela API, o binding
-que está no ar é `plain_text` — os 1678 caracteres da chave privada voltam
-legíveis pra qualquer token com Workers Read na conta.
+que estava no ar era `plain_text`: os 1678 caracteres da chave privada voltavam
+legíveis pra qualquer token com Workers Read na conta. Ela assina toda escrita
+no Firestore ignorando as security rules — a credencial mais forte do sistema,
+guardada como se fosse rótulo, por tempo que ninguém sabe dizer.
 
-Ela assina toda escrita no Firestore ignorando as security rules. É a
-credencial mais forte do sistema, e é a única das oito que está guardada como
-se fosse um rótulo.
+Corrigido no mesmo dia, no painel. Fica registrado porque a lição não é sobre
+esta variável: **o README dizia Encrypt e ninguém tinha conferido.** Documento
+não é medida. O que mede é `GET /accounts/{id}/workers/scripts/terreiro-email/settings`
+— o campo `type` de cada binding.
 
-Conserto: Cloudflare → `terreiro-email` → Settings → Variables and Secrets →
-`GCP_SA_KEY` → **Encrypt** → Save. O `keep_vars` não atrapalha: secret também
-sobrevive ao deploy, e o valor não muda. Depois disso um `bash publicar.sh` e
-o `./smoke.sh worker` fecham o ciclo — se a chave tiver sido perdida na troca,
-a rota `/mensalidade` acusa na hora.
+Hoje só estas cinco são `plain_text`, e nenhuma é segredo: `CAND_API_KEY` (chave
+web do Firebase, está no JS de toda página), `DEFAULT_FROM`, `GCP_SA_EMAIL`,
+`INFINITEPAY_HANDLE` e `SITE_URL`.
 
 ### ⚠️ A service account precisa alcançar os DOIS projetos
 
