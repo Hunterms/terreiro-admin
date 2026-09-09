@@ -303,11 +303,14 @@ body.com-abas{padding-bottom:calc(88px + max(10px,env(safe-area-inset-bottom,0px
 .pin-campo{width:100%;margin-top:20px;padding:16px 12px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:800;letter-spacing:.42em;text-indent:.42em;background:rgba(255,255,255,.05);border:1.5px solid var(--border2);border-radius:12px;color:var(--text);outline:none}
 .pin-campo:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,168,67,.16)}
 .pin-campo.erro{border-color:var(--red);animation:tremer .3s}
+.pin-campo.longo{font-size:21px;letter-spacing:.16em;text-indent:.16em}
 @keyframes tremer{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 @media (prefers-reduced-motion:reduce){.pin-campo.erro{animation:none}}
 .pin-erro{font-size:12.5px;color:var(--red);margin-top:10px;line-height:1.45;min-height:18px}
 .pin-dica{font-size:12px;color:var(--text3);margin-top:16px;line-height:1.55}
 .pin-dica b{color:var(--text2);font-weight:600}
+.pin-dica a{color:#25d366;font-weight:600;text-decoration:none;border-bottom:1px solid rgba(37,211,102,.35)}
+.pin-dica a.fraco{color:var(--text2);font-weight:500;border-bottom-color:rgba(255,255,255,.2)}
 
 .toast{position:fixed;top:24px;right:24px;background:#181412;border:1px solid var(--border2);border-left:3px solid var(--green);border-radius:var(--rad);padding:14px 18px;font-size:14px;z-index:2000;animation:slideIn .2s;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 .toast.err{border-left-color:var(--red)}
@@ -407,7 +410,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         <!-- Pré-auth: convite pra entrar -->
         <div class="entrar-card" id="filho-sel-card">
           <h3>Acesse sua área</h3>
-          <div class="entrar-sub">Digite seu nome — pediremos os últimos 4 dígitos do seu telefone pra confirmar.</div>
+          <div class="entrar-sub">Digite seu nome — pediremos o seu PIN de 4 números pra confirmar. Esqueceu? A própria tela destrava pelo celular do seu cadastro.</div>
           <div class="search-select">
             <input class="fi" id="filho-input" type="text" placeholder="Comece a digitar seu nome..." autocomplete="off" autocapitalize="words" spellcheck="false"/>
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -424,6 +427,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
               <div class="identity-name" id="id-name"></div>
               <div class="identity-roles" id="id-roles"></div>
             </div>
+            <button class="identity-trocar" id="id-pin" onclick="trocarMeuPin()" title="Trocar o meu PIN" aria-label="Trocar o meu PIN" style="margin-right:6px">🔑</button>
             <button class="identity-trocar" id="id-sino" onclick="irParaAvisos()" title="Seus avisos" style="margin-right:6px">🔔</button>
             <button class="identity-trocar" onclick="trocarFilho()" title="Sair desta conta">trocar</button>
           </div>
@@ -1029,7 +1033,15 @@ function _pickSearch(id){
 //
 // Devolve o que foi digitado, ou null se a pessoa desistiu. Quem chama decide
 // o que fazer com o valor; esta função não sabe o que é certo nem errado.
-function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = true }) {
+// `digitos` existe porque a mesma tela pede duas coisas de tamanhos diferentes:
+// o PIN (4) e o celular completo do cadastro (11), que é a prova de quem
+// esqueceu. Duas telas quase iguais divergem na terceira mudança.
+//
+// Devolve os dígitos, `null` se desistiu, ou a string 'esqueci' se a pessoa
+// clicou no link da dica. Sentinela e não callback porque quem chama já está
+// num laço esperando esta promessa — e 'esqueci' nunca é um valor válido de
+// campo, que só sai daqui com dígitos.
+function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = true, digitos = 4 }) {
   return new Promise((resolve) => {
     const tela = document.createElement('div');
     tela.className = 'pin-tela';
@@ -1038,7 +1050,7 @@ function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = 
         ${iniciais ? `<div class="pin-av">${iniciais}</div>` : ''}
         <div class="pin-tit">${titulo}</div>
         <div class="pin-sub">${sub}</div>
-        <input class="pin-campo" id="pin-campo" type="tel" inputmode="numeric" maxlength="4"
+        <input class="pin-campo${digitos > 6 ? ' longo' : ''}" id="pin-campo" type="tel" inputmode="numeric" maxlength="${digitos}"
                autocomplete="off" autocorrect="off" spellcheck="false" aria-label="${titulo}"/>
         <div class="pin-erro" id="pin-erro" role="alert"></div>
         <button class="btn btn-primary" id="pin-ok" style="width:100%" disabled>${botao}</button>
@@ -1052,14 +1064,15 @@ function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = 
     const fechar = (v) => { tela.remove(); resolve(v); };
 
     campo.oninput = () => {
-      campo.value = campo.value.replace(/\D/g, '').slice(0, 4);
+      campo.value = campo.value.replace(/\D/g, '').slice(0, digitos);
       campo.classList.remove('erro');
       tela.querySelector('#pin-erro').textContent = '';
-      ok.disabled = campo.value.length !== 4;
+      ok.disabled = campo.value.length !== digitos;
     };
-    campo.onkeydown = (e) => { if (e.key === 'Enter' && campo.value.length === 4) ok.click(); };
+    campo.onkeydown = (e) => { if (e.key === 'Enter' && campo.value.length === digitos) ok.click(); };
     ok.onclick = () => fechar(campo.value);
     tela.querySelector('#pin-nao')?.addEventListener('click', () => fechar(null));
+    tela.querySelector('#pin-esqueci')?.addEventListener('click', (e) => { e.preventDefault(); fechar('esqueci'); });
     // Escape só fecha o que pode ser fechado. A criação de PIN não pode.
     if (cancelavel) {
       tela.tabIndex = -1;
@@ -1070,6 +1083,38 @@ function pedirPin({ titulo, sub, iniciais, dica, botao = 'Entrar', cancelavel = 
 }
 
 const iniciaisDe = (nome) => (nome || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+
+// ── ESQUECI O PIN: UM LINK, E NÃO UM CONSELHO ─────────────────────────────
+//
+// Não existe recuperação automática possível: 31 dos 56 não têm email e a casa
+// não tem SMS. O chaveiro é humano — o botão "Esqueceu o PIN" do admin, que
+// devolve a pessoa pro modo telefone. Aceitar os 4 dígitos do telefone como
+// atalho aqui seria transformar o PIN em decoração.
+//
+// O que faltava na área do filho era a PORTA: a dica dizia "fala com a
+// administração" e não dizia como falar. Quem esqueceu o PIN está fora do app,
+// então o lugar de pedir o reset é esta tela, e não uma página de dentro.
+// Quem passa esta dica com motivo 'pin' PRECISA tratar o retorno 'esqueci' do
+// `pedirPin` — o link do destrave sai daqui. São três chamadas: entrar, trocar
+// o PIN e liberar a rega.
+function dicaDestrava(filho, motivo = 'pin') {
+  const tel = motivo === 'tel';
+  const wpp = String(APP.cfgAgendamento?.whatsapp || '').replace(/\D/g, '');
+  const msg = tel
+    ? `Oi! Sou ${filho.nome} e não consigo entrar na área do filho — acho que o telefone do meu cadastro está desatualizado.`
+    : `Oi! Sou ${filho.nome} e esqueci meu PIN da área do filho e o celular do meu cadastro mudou. Pode zerar pra mim?`;
+  // `fraco` de propósito: dois links do mesmo peso fazem a pessoa escolher, e
+  // aqui um dos dois resolve em 20 segundos e o outro depende de alguém acordar.
+  const admin = wpp
+    ? `<a class="fraco" href="https://wa.me/${wpp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">chama a administração no WhatsApp</a>`
+    : 'fala com a administração';
+
+  // Cadastro com o telefone velho é o caso em que o destrave sozinho não
+  // resolve — a prova é justamente o número que ela não tem mais.
+  if (tel) return `Não é esse o seu número na casa? Então ${admin} pra corrigir o cadastro.`;
+
+  return `Esqueceu o PIN? <a href="#" id="pin-esqueci">Destrave com o seu celular</a> — ou ${admin}.`;
+}
 
 // ── ENTRAR ────────────────────────────────────────────────────────────────
 //
@@ -1087,11 +1132,19 @@ async function autenticar(filho) {
       sub: filho._temPin === false
         ? 'Só nesta primeira vez: os <b>4 últimos dígitos</b> do celular que a casa tem no seu cadastro.'
         : 'Seu PIN de 4 números.',
-      dica: 'Não lembra? Fala com a administração que ela destrava.',
+      dica: dicaDestrava(filho, filho._temPin === false ? 'tel' : 'pin'),
     });
     tela = true;
-    const digitado = await p;
+    let digitado = await p;
     if (digitado === null) return null;
+
+    // Destravou sozinho: sai daqui com o PIN novo na mão, e ele entra pela
+    // mesma porta de sempre. Uma chamada a mais, e nenhum caminho de login
+    // paralelo — o termo, o telefone e o email continuam vindo de um lugar só.
+    if (digitado === 'esqueci') {
+      digitado = await recuperarPin(filho);
+      if (!digitado) continue;
+    }
 
     const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, digitado);
     if (r.ok) return { ...r, prova: digitado };
@@ -1155,6 +1208,107 @@ async function pedirAceiteDoTermo(filho, termo) {
     }
   }
 }
+
+// ── DESTRAVAR SOZINHO ─────────────────────────────────────────────────────
+//
+// Antes o chaveiro era só humano: quem esquecia o PIN parava, procurava a
+// administração e esperava. Com 56 pessoas isso é toda semana.
+//
+// A prova é o celular COMPLETO do cadastro, e não os 4 finais que a porta já
+// pedia. É fraca — o número circula no grupo da casa — e por isso o Worker
+// avisa o aparelho da pessoa e o admin quando o destrave acontece. O chaveiro
+// humano continua existindo pra quem trocou de número: é o link da dica.
+//
+// Devolve o PIN novo (quem chama entra com ele), ou null se desistiu.
+async function recuperarPin(filho) {
+  for (;;) {
+    const cel = await pedirPin({
+      iniciais: '📱',
+      titulo: 'Destravar sem o PIN',
+      sub: 'Digite o <b>celular completo</b> que a casa tem no seu cadastro — DDD, o 9, tudo.',
+      botao: 'Continuar',
+      digitos: 11,
+      dica: dicaDestrava(filho, 'tel'),
+    });
+    if (cel === null || cel === 'esqueci') return null;
+
+    for (;;) {
+      const novo = await pedirPin({
+        iniciais: '🔒',
+        titulo: 'Agora escolha um PIN novo',
+        sub: 'Quatro números que só você sabe.',
+        botao: 'Guardar e entrar',
+        dica: 'A administração é avisada de que você destravou. É de propósito: assim ninguém entra na sua área sem você saber.',
+      });
+      if (novo === null || novo === 'esqueci') return null;
+
+      try {
+        const r = await Filhos.criarPin(APP.cfgAgendamento, filho.id, null, novo, cel);
+        if (r?.ok) return novo;
+      } catch (e) {
+        // 403 aqui é sempre "o celular não confere" — o PIN novo já passou pela
+        // conferência de formato do Worker. Dizer isso com nome, e não "não
+        // bateu", é a diferença entre a pessoa corrigir o dedo e a pessoa achar
+        // que o PIN escolhido é que foi recusado.
+        if (e.status === 403) {
+          alert('Esse não é o celular que a casa tem no seu cadastro. Se você trocou de número, fala com a administração.');
+          break;   // volta pra tela do celular, e não pra escolha do PIN
+        }
+        alert(Filhos.explicar(e.message));
+        if (e.status === 429) return null;   // travado: insistir só piora
+      }
+    }
+  }
+}
+
+// ── TROCAR O PIN DE DENTRO ────────────────────────────────────────────────
+//
+// A sessão dura 30 dias, então quem está logado quase nunca digita o PIN — e
+// esquece. Trocar de dentro exige o PIN de agora, e não a sessão: sessão é
+// "entrei faz um tempo", e é exatamente o que um celular emprestado tem.
+//
+// Quem não lembra o de agora cai no destrave pelo celular, pelo link da dica.
+async function trocarMeuPin() {
+  const filho = APP.filhoAtual;
+  if (!filho) return;
+
+  const atual = await pedirPin({
+    iniciais: iniciaisDe(filho.nome),
+    titulo: 'Trocar o seu PIN',
+    sub: 'Primeiro o PIN de <b>agora</b>.',
+    botao: 'Continuar',
+    dica: dicaDestrava(filho),
+  });
+  if (atual === null) return;
+  if (atual === 'esqueci') {
+    if (await recuperarPin(filho)) toast('PIN trocado. É esse que vale daqui pra frente.', 'ok');
+    return;
+  }
+
+  for (;;) {
+    const novo = await pedirPin({
+      iniciais: '🔒',
+      titulo: 'O PIN novo',
+      sub: 'Quatro números que só você sabe. O antigo deixa de valer na hora.',
+      botao: 'Guardar',
+    });
+    if (novo === null || novo === 'esqueci') return;
+
+    try {
+      const r = await Filhos.criarPin(APP.cfgAgendamento, filho.id, atual, novo);
+      if (r?.sessao) {
+        APP.sessao = { filho_id: filho.id, sessao: r.sessao };
+        Filhos.guardarSessao(filho.id, r.sessao);
+        toast('PIN trocado. É esse que vale daqui pra frente.', 'ok');
+        return;
+      }
+    } catch (e) {
+      alert(Filhos.explicar(e.message));
+      if (e.status === 429 || e.status === 403) return;
+    }
+  }
+}
+window.trocarMeuPin = trocarMeuPin;
 
 async function criarPinObrigatorio(filho, prova) {
   for (;;) {
@@ -3306,13 +3460,20 @@ async function liberarDiaRega(d) {
     // com outra pessoa passou a ser: ela libera, você reserva. É um passo a
     // mais, e é o passo que faz "meu dia" significar alguma coisa.
     if(!filho) { toast('Não achei o cadastro de quem reservou.','err'); return; }
-    const digitado = await pedirPin({
+    let digitado = await pedirPin({
       iniciais: iniciaisDe(filho.nome),
       titulo: 'Liberar este dia',
       sub: `O dia ${dataFmt} está com <b>${escapaHtml(reserva.filho_nome||'alguém')}</b>. Se for você, confirme com o seu PIN.`,
       botao: 'Liberar o dia',
+      dica: dicaDestrava(filho),
     });
     if(!digitado) return;
+    // Quem mostra a dica trata o 'esqueci' — sem isto o clique manda a palavra
+    // pro campo do PIN e o Worker responde "são 4 números".
+    if(digitado === 'esqueci') {
+      digitado = await recuperarPin(filho);
+      if(!digitado) return;
+    }
     const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, digitado);
     if(!r.ok) {
       toast(r.erro === 'não confere'

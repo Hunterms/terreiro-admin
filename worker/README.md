@@ -32,6 +32,8 @@ dele pra mensalidade, checkout e push; agora depende pra abrir.
 | `POST /webhook` | InfinitePay | `payment_check` + conferência de valor |
 | `POST /filhos` | toda página sem login | nada — é o seletor de nomes, sem os campos privados |
 | `POST /entrar` | toda página sem login | é ELA que confere os 4 dígitos |
+| `POST /criar-pin` | `area-filho.html` | a prova de AGORA: 4 finais do telefone (1ª vez), o PIN atual (troca), ou o celular COMPLETO do cadastro (destrave) |
+| `POST /zerar-pin` | admin (ficha do filho) | `X-Auth-Secret` — o chaveiro humano, pra quem trocou de número |
 | `POST /meu-cadastro` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /mensalidade` | `area-filho.html` | 4 últimos dígitos do telefone do filho |
 | `POST /mensalidade-ajuste` | `area-filho.html` | 4 últimos dígitos, e só até o dia 5 |

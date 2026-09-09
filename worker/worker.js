@@ -29,6 +29,8 @@
  *                       não têm email.
  *   POST /avisos-lidos → marca tudo até agora como lido.
  *   POST /criar-pin  → o filho escolhe o PIN. Obrigatório na primeira vez.
+ *                       Também é por onde ele TROCA (prova: o PIN de agora) e
+ *                       DESTRAVA sozinho (prova: o celular completo do cadastro).
  *   POST /zerar-pin  → admin devolve alguém pro modo telefone (esqueceu).
  *   POST /meu-cadastro → o filho grava a própria data de nascimento e email.
  *                       Só esses dois; o resto do cadastro é da administração.
@@ -2206,6 +2208,37 @@ async function rotaAceitarTermo(body, env) {
   return json({ ok: true, versao });
 }
 
+/**
+ * O celular COMPLETO como prova pra quem esqueceu o PIN.
+ *
+ * Existe porque o chaveiro era só humano: quem esquecia parava, procurava a
+ * administração e esperava. Com 56 pessoas isso acontece toda semana.
+ *
+ * É prova FRACA, e a diferença importa: o número circula no grupo da casa, então
+ * quem está lá dentro consegue destravar a área de outro. O que segura não é o
+ * segredo, são as três coisas em volta —
+ *
+ *   1. os 11 dígitos, não os 4 finais (que a tela de entrada já pedia)
+ *   2. a trava de 5 erros por pessoa, que já existe pro PIN
+ *   3. o aviso: troca por celular avisa o aparelho da pessoa E o admin. Não
+ *      existe tomar a área de alguém em silêncio.
+ *
+ * ponytail: a prova de fundo é um canal (email/SMS) que a casa não tem pra 31
+ * dos 56. Quando tiver, esta rota vira o caminho do código enviado.
+ */
+export function telCheioConfere(telCadastro, digitado) {
+  const norm = (v) => {
+    let d = String(v || '').replace(/\D/g, '');
+    if (d.length > 11 && d.startsWith('55')) d = d.slice(2);   // vem com DDI
+    return d.slice(-11);
+  };
+  const a = norm(telCadastro);
+  // Cadastro sem DDD (ou vazio) não vira chave: 8 dígitos são o número da rua
+  // inteira. Nesse caso a pessoa continua indo na administração.
+  if (a.length < 10) return false;
+  return igual(a, norm(digitado));
+}
+
 async function rotaCriarPin(body, env) {
   const { filho_id, tel4, pin } = body || {};
   if (!filho_id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(filho_id))) {
@@ -2230,9 +2263,18 @@ async function rotaCriarPin(body, env) {
 
   const digitado = String(tel4 || '').replace(/\D/g, '').slice(-4);
   const tel = String(filho.tel || '').replace(/\D/g, '');
-  const confere = filho.pin_hash
+  // Três portas, e a mais forte vale sempre: o celular completo. Quem lembra o
+  // PIN prova pelo PIN. Quem nunca teve prova pelos 4 finais — é o único
+  // momento em que os 4 finais abrem porta.
+  //
+  // O celular vale TAMBÉM pra quem nunca criou PIN, e não é folga: ali os 4
+  // finais já bastam, então exigir 11 dígitos é mais, não menos. O que muda é
+  // só o aviso, que é sobre TROCA — e quem nunca teve PIN não teve nada trocado.
+  const tinhaPin = !!filho.pin_hash;
+  const porTelCheio = telCheioConfere(filho.tel, body?.tel_cheio);
+  const confere = porTelCheio || (tinhaPin
     ? igual(filho.pin_hash, await pinHash(env, id, digitado))
-    : (tel.length >= 4 && digitado === tel.slice(-4));
+    : (tel.length >= 4 && digitado === tel.slice(-4)));
   if (!confere) {
     await registrarErro(token, id);
     return json({ error: 'a prova atual não confere' }, 403);
@@ -2243,7 +2285,30 @@ async function rotaCriarPin(body, env) {
     pin_criado_em: new Date().toISOString(),
   });
   await limparErros(token, id);
-  return json({ ok: true, sessao: await assinarSessao(env, id) });
+
+  // O aviso é o que torna a prova fraca aceitável: quem tomasse a área de
+  // alguém pelo número faria isso na frente da pessoa e do admin. Falhar em
+  // avisar não desfaz a troca — o PIN novo já é o que vale, e devolver erro aqui
+  // deixaria a pessoa achando que não trocou.
+  if (porTelCheio && tinhaPin) {
+    const nome = filho.nome || 'alguém';
+    await Promise.all([
+      avisar(env, token, {
+        para: 'filho', filho_id: id,
+        titulo: 'Seu PIN foi trocado',
+        corpo: 'Foi destravado pelo celular do seu cadastro. Se não foi você, fala com a administração agora.',
+        url: 'area-filho.html', tag: 'pin',
+      }),
+      avisar(env, token, {
+        para: 'admin',
+        titulo: 'PIN trocado pelo celular',
+        corpo: `${nome} destravou o PIN provando pelo celular do cadastro.`,
+        url: 'index.html', tag: 'pin',
+      }),
+    ]).catch((e) => console.error('aviso de troca de PIN não saiu', e?.message || e));
+  }
+
+  return json({ ok: true, sessao: await assinarSessao(env, id), destravou: porTelCheio && tinhaPin });
 }
 
 /**
