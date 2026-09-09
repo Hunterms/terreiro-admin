@@ -7,7 +7,7 @@
 //   node worker/test-sessao.mjs
 
 import assert from 'node:assert/strict';
-import { pinHash, igual, assinarSessao, lerSessao } from './worker.js';
+import { pinHash, igual, assinarSessao, lerSessao, telCheioConfere } from './worker.js';
 
 const env = { ADMIN_SECRET: 'segredo-de-teste-nao-e-o-de-producao' };
 const outro = { ADMIN_SECRET: 'outra-pimenta-qualquer' };
@@ -73,4 +73,32 @@ const corpoNovo = b64url(JSON.stringify({ f: 'filho1', e: Math.floor(Date.now() 
 const sigNova = await pinHash(env, 'sessao', corpoNovo);
 assert.equal(await lerSessao(env, `${corpoNovo}.${sigNova}`), 'filho1');
 
-console.log('ok — 24 asserts de identidade passaram');
+// ── O CELULAR COMPLETO COMO PROVA DE DESTRAVE ──────────────────────────────
+//
+// Isto decide quem entra na área de quem. Um "confere" folgado aqui (aceitar os
+// 4 finais, aceitar prefixo, aceitar cadastro sem DDD) transforma o destrave
+// num jeito de tomar a área alheia — e nada na tela daria sinal.
+const TEL = '19998877665';   // 11 dígitos: DDD + 9 + 8
+
+// o número certo, escrito de todo jeito que uma pessoa escreve
+for (const jeito of ['19998877665', '(19) 99887-7665', '19 99887 7665', '+55 19 99887-7665', '5519998877665']) {
+  assert.equal(telCheioConfere(TEL, jeito), true, `recusou o número certo: ${jeito}`);
+}
+
+// o cadastro também pode estar guardado com DDI
+assert.equal(telCheioConfere('5519998877665', '19998877665'), true);
+
+// número errado, e os quase-certos
+assert.equal(telCheioConfere(TEL, '19998877666'), false);          // um dígito
+assert.equal(telCheioConfere(TEL, '11998877665'), false);          // outro DDD
+assert.equal(telCheioConfere(TEL, '7665'), false);                 // os 4 finais NÃO abrem
+assert.equal(telCheioConfere(TEL, '998877665'), false);            // sem DDD
+assert.equal(telCheioConfere(TEL, ''), false);
+assert.equal(telCheioConfere(TEL, null), false);
+
+// cadastro sem DDD (ou vazio) não vira chave de nada
+assert.equal(telCheioConfere('98877665', '98877665'), false, 'cadastro de 8 dígitos abriu porta');
+assert.equal(telCheioConfere('', ''), false);
+assert.equal(telCheioConfere(null, null), false);
+
+console.log('ok — asserts de identidade passaram (sessão, PIN e destrave por celular)');

@@ -123,14 +123,21 @@ export async function salvarMeuCadastro(cfg, quem, campos) {
 }
 
 /**
- * Cria ou troca o PIN. `prova` é o que abre a porta AGORA: os 4 dígitos do
- * telefone na primeira vez, o PIN atual quando for troca.
+ * Cria, troca ou destrava o PIN. `prova` é o que abre a porta AGORA: os 4
+ * dígitos do telefone na primeira vez, o PIN atual quando for troca.
+ *
+ * `telCheio` é a terceira porta, pra quem esqueceu: o celular COMPLETO do
+ * cadastro. Quem usa ela deixa rastro — o Worker avisa o aparelho da pessoa e
+ * o admin.
  *
  * A sessão sozinha não basta de propósito — sessão é "você entrou faz um
  * tempo", e trocar senha é justamente o momento em que isso é pouco.
  */
-export async function criarPin(cfg, filhoId, prova, novoPin) {
-  return chamar(cfg, '/criar-pin', { filho_id: filhoId, tel4: prova, pin: novoPin });
+export async function criarPin(cfg, filhoId, prova, novoPin, telCheio = null) {
+  return chamar(cfg, '/criar-pin', {
+    filho_id: filhoId, tel4: prova, pin: novoPin,
+    ...(telCheio ? { tel_cheio: telCheio } : {}),
+  });
 }
 
 /** Pede reembolso. Nome e telefone saem do cadastro, não da tela. */

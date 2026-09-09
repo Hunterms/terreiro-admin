@@ -632,6 +632,20 @@ Recomendo (a): no boot do admin, autentica primeiro no `terreiro-pvd`, depois re
 > "Ativar criação de conta pelo usuário". As contas daqui sempre nasceram na
 > mão do admin (ver o Setup do README), então nada depende do cadastro aberto.
 > Fechar o `{document=**}` por collection é o conserto de fundo, e é grande.
+>
+> **Item aberto (09/09) — e agora ele é o gate do destrave por celular.** O
+> `/criar-pin` passou a aceitar o **celular completo do cadastro** como prova de
+> quem esqueceu o PIN (área do filho, "Destrave com o seu celular"). A prova vale
+> o quanto o número for segredo — e hoje ele não é: o `signUp` aberto + o
+> `{document=**}` de leitura são, juntos, "criar conta e ler o `tel` dos 56".
+> Medido de novo em **09/09**: o `accounts:signUp` do `terreiro-pvd` continua
+> respondendo `WEAK_PASSWORD`, e não `ADMIN_ONLY_OPERATION`.
+>
+> Ou seja: **desligar a criação de conta pelo usuário deixou de ser recomendação
+> e passou a ser pré-requisito do deploy do Worker novo.** Sem isso, o destrave
+> automático é um caminho de tomada de conta pra quem está fora da casa — e não
+> só pra quem está no grupo do WhatsApp, que é o risco que a peça aceitou de
+> propósito (por isso a troca por celular avisa o aparelho da pessoa e o admin).
 
 ```js
 rules_version = '2';
