@@ -783,3 +783,25 @@ adm_avisos:         (arquivado ==, publicadoEm DESC)
 3. ~~Notificações~~ ✅ resolvido: só in-app por enquanto. Sem WhatsApp, sem email, sem Cloud Functions.
 4. **Upload de fotos** — Firebase Storage no project `terreiro-pvd`. Regras separadas: admin escreve em `filhos/`, `peji/`. Detalhar quando for implementar foto de filho/peji.
 5. **Sync auth entre projects** — usuário precisa autenticar nos dois Firebase. Solução: ao logar no `terreiro-pvd`, replicar a mesma senha no `terreiro-candieiro` automaticamente (re-cadastrar o user se não existir). Custo: lógica de auth duplicada no boot.
+
+### `adm_cadastros_filho` — fila de quem se cadastrou sozinho
+
+Nasce pelo `/cadastro-filho.html` → Worker `/cadastro-filho` (escrita pública
+não existe; a rule geral só deixa admin escrever). O Worker recusa telefone que
+já está em `fin_filhos` ou na fila, comparando os 8 últimos dígitos.
+
+```
+nome, tel, email|null, data_nascimento|null, mora_perto, trabalha_clt, obs
+status:     'pendente'
+criadoEm:   string ISO
+```
+
+Aprovar abre o form de filho novo preenchido; salvar cria o `fin_filhos` e
+**apaga** o pendente. Recusar também apaga. Não há histórico: a ficha de
+verdade é o `fin_filhos`.
+
+### `vendas_produtos.vagas` e `valor: 0`
+
+`vagas: number|null` — o Worker `/vagas` conta pedidos do produto que não estão
+`cancelado`; o `vendas.html` mostra "vagas esgotadas" ao bater. Trava de
+página, não de rule. `valor: 0` = inscrição gratuita, sem PIX nem checkout.
