@@ -173,6 +173,20 @@ function _highlight(nome, q){
 const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : null;
 const slugifyTxt = txt => (txt||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 
+// Vagas: o Worker conta, porque os pedidos não têm leitura pública. Worker fora
+// do ar = não trava (null): perder inscrição por erro nosso é pior que passar 1.
+async function esgotado(prod) {
+  if(!(prod.vagas > 0) || !CFG_AGENDAMENTO.checkout_worker_url) return false;
+  try {
+    const r = await fetch(CFG_AGENDAMENTO.checkout_worker_url.replace(/\/+$/,'') + '/vagas', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ produto_id: prod.id })
+    });
+    const { inscritos } = await r.json();
+    return typeof inscritos === 'number' && inscritos >= prod.vagas;
+  } catch(e) { console.warn('vagas', e); return false; }
+}
+const ESGOTADO = (prod) => ['Vagas esgotadas', `As ${prod.vagas} vagas de <strong>${escapaHtml(prod.nome)}</strong> já foram preenchidas. Fala com a gente se quiser entrar na lista de espera.`];
+
 function mostrarErro(titulo, msg) {
   $('#loading').style.display = 'none';
   $('#content').style.display = 'none';
@@ -202,6 +216,7 @@ function mostrarErro(titulo, msg) {
       mostrarErro('Vendas encerradas', `As vendas pra <strong>${prod.nome}</strong> foram encerradas. Em caso de dúvida fala com a gente.`);
       return;
     }
+    if(await esgotado(prod)) { mostrarErro(...ESGOTADO(prod)); return; }
     // Evento pros filhos: carrega lista de filhos pro autocomplete
     if(prod.evento_filho) {
       try {
@@ -549,6 +564,8 @@ function renderProduto(prod) {
 
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = gratis ? 'Inscrevendo...' : 'Reservando...';
+    // Confere de novo: a página pode ter ficado aberta enquanto a 20ª vaga saía.
+    if(await esgotado(prod)) { mostrarErro(...ESGOTADO(prod)); return; }
 
     try {
       const efetivoAgora = precoEfetivo(prod, descAfirmativo);

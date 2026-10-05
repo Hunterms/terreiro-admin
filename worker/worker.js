@@ -197,6 +197,7 @@ export default {
       if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
       if (rota === '/liberar-rega') return await rotaLiberarRega(body, env);
       if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
+      if (rota === '/vagas') return await rotaVagas(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2443,6 +2444,24 @@ async function rotaInscricoesDoEvento(body, env) {
       status: i.status || 'aguardando',
     })),
   });
+}
+
+// ── VAGAS DE UM PRODUTO ───────────────────────────────────────────────────
+//
+// `vendas_pedidos` não tem leitura pública (nome e telefone de quem comprou),
+// então o vendas.html não sabe contar. Devolve só o número: pedido cancelado
+// libera a vaga, qualquer outro status ocupa, inclusive carrinho abandonado.
+//
+// ponytail: a página confere antes de gravar, mas quem abre o devtools passa
+// por cima. Se isso acontecer, a trava vira rule com contador no produto.
+async function rotaVagas(body, env) {
+  const produto_id = String(body?.produto_id || '');
+  if (!produto_id || produto_id.length > 200) return json({ error: 'produto_id inválido' }, 400);
+
+  const token = await tokenGoogle(env);
+  const lista = await fsQuery(PROJETO_PVD, 'vendas_pedidos', token,
+    { campo: 'produto_id', valor: produto_id }, 1000);
+  return json({ inscritos: lista.filter((p) => p.status !== 'cancelado').length });
 }
 
 // ── LIBERAR UM DIA DE REGA ────────────────────────────────────────────────
