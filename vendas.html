@@ -244,6 +244,9 @@ function renderProduto(prod) {
 
   const dataBr = prod.data_evento ? fmtData(prod.data_evento) : null;
   const efetivo = precoEfetivo(prod);
+  // Valor 0 = só inscrição (ex: Cine Macumba gratuito): a gente quer saber
+  // quantas pessoas vêm, sem pedir pagamento.
+  const gratis = !(prod.valor > 0);
   const promoAteBr = efetivo.ehPromo ? new Date(efetivo.ate+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long'}) : null;
 
   c.innerHTML = `
@@ -259,7 +262,7 @@ function renderProduto(prod) {
       <dl class="meta-grid">
         <dt>Valor</dt>
         <dd class="preco">
-          R$ ${efetivo.valor.toFixed(0)}
+          ${gratis ? 'Gratuito' : `R$ ${efetivo.valor.toFixed(0)}`}
           ${efetivo.ehPromo ? `<span style="color:var(--text3);text-decoration:line-through;font-size:14px;font-weight:400;margin-left:8px">R$ ${efetivo.valorCheio.toFixed(0)}</span>` : ''}
         </dd>
         ${dataBr ? `<dt>Quando</dt><dd style="text-transform:capitalize">${dataBr}</dd>`:''}
@@ -426,9 +429,9 @@ function renderProduto(prod) {
       ` : ''}
 
       <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
-        ✓ ${prod.evento_filho ? 'Você é registrado ao confirmar — depois o admin valida seu pagamento pelo extrato.' : (prod.parcelamento?.ativo ? 'Sua matrícula é registrada ao confirmar. Você paga a 1ª parcela e o admin valida pelo extrato.' : 'Sua vaga é reservada ao confirmar — instruções de pagamento aparecem em seguida.')}
+        ✓ ${gratis ? 'Entrada gratuita. A inscrição só ajuda a gente a saber quantas pessoas esperar.' : prod.evento_filho ? 'Você é registrado ao confirmar — depois o admin valida seu pagamento pelo extrato.' : (prod.parcelamento?.ativo ? 'Sua matrícula é registrada ao confirmar. Você paga a 1ª parcela e o admin valida pelo extrato.' : 'Sua vaga é reservada ao confirmar — instruções de pagamento aparecem em seguida.')}
       </div>
-      <button class="btn btn-primary" id="b-submit">${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ <span id="b-submit-valor">${efetivo.valor.toFixed(0)}</span>${efetivo.ehPromo?` <span style="font-weight:400;opacity:.7;font-size:13px;margin-left:4px">(promo)</span>`:''}</button>
+      <button class="btn btn-primary" id="b-submit">${gratis ? 'Confirmar inscrição' : `${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ <span id="b-submit-valor">${efetivo.valor.toFixed(0)}</span>${efetivo.ehPromo?` <span style="font-weight:400;opacity:.7;font-size:13px;margin-left:4px">(promo)</span>`:''}`}</button>
       <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
     </div>
   `;
@@ -545,7 +548,7 @@ function renderProduto(prod) {
     }
 
     const btn = $('#b-submit');
-    btn.disabled = true; btn.textContent = 'Reservando...';
+    btn.disabled = true; btn.textContent = gratis ? 'Inscrevendo...' : 'Reservando...';
 
     try {
       const efetivoAgora = precoEfetivo(prod, descAfirmativo);
@@ -581,13 +584,14 @@ function renderProduto(prod) {
         aluno_recorrente: !!APP.alunoMode,
         criadoEm: serverTimestamp()
       });
-      mostrarSucesso(prod, nome, efetivoAgora, pedidoRef.id);
+      if(gratis) mostrarInscrito(prod, nome);
+      else mostrarSucesso(prod, nome, efetivoAgora, pedidoRef.id);
     } catch(e) {
       console.error(e);
       err.textContent = 'Erro ao enviar. Tenta pelo WhatsApp.';
       err.style.display = 'block';
       const efBtn = precoEfetivo(prod, descAfirmativo);
-      btn.disabled = false; btn.textContent = `${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ ${efBtn.valor.toFixed(0)}`;
+      btn.disabled = false; btn.textContent = gratis ? 'Confirmar inscrição' : `${prod.parcelamento?.ativo?'Matricular e pagar 1ª parcela':`Confirmar${prod.evento_filho?'':' reserva'} e pagar`} — R$ ${efBtn.valor.toFixed(0)}`;
     }
   };
 }
@@ -729,6 +733,21 @@ function _pickFilho(id) {
   APP.filhoSel = f;
   const inp = $('#b-filho-input'); if(inp) inp.value = f.nome;
   $('#b-filho-results').classList.remove('open');
+}
+
+// Gratuito: sem PIX, sem checkout, sem comprovante. Só a confirmação.
+function mostrarInscrito(prod, nome) {
+  const dataBr = prod.data_evento ? fmtData(prod.data_evento) : '';
+  $('#content').innerHTML = `
+    <div class="card success-box">
+      <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <div class="success-t">Inscrição feita!</div>
+      <div class="success-d">
+        <strong style="color:var(--gold)">${escapaHtml(prod.nome)}</strong>${dataBr?` · <span style="text-transform:capitalize">${dataBr}</span>`:''}<br>
+        Te esperamos, ${escapaHtml(nome.split(' ')[0])}. A entrada é gratuita.
+      </div>
+    </div>
+  `;
 }
 
 function mostrarSucesso(prod, nome, efetivo, pedidoId) {
