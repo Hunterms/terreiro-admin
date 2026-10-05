@@ -49,6 +49,7 @@ PAGINAS=(
   area-filho.html
   disponibilidade.html
   reembolso.html
+  cadastro-filho.html
   pago.html
   checkout.js
   push.js

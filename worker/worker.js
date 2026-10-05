@@ -198,6 +198,7 @@ export default {
       if (rota === '/liberar-rega') return await rotaLiberarRega(body, env);
       if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
       if (rota === '/vagas') return await rotaVagas(body, env);
+      if (rota === '/cadastro-filho') return await rotaCadastroFilho(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2462,6 +2463,53 @@ async function rotaVagas(body, env) {
   const lista = await fsQuery(PROJETO_PVD, 'vendas_pedidos', token,
     { campo: 'produto_id', valor: produto_id }, 1000);
   return json({ inscritos: lista.filter((p) => p.status !== 'cancelado').length });
+}
+
+// ── CADASTRO DE FILHO NOVO ────────────────────────────────────────────────
+//
+// A pessoa se cadastra pelo /cadastro-filho.html e cai em
+// `adm_cadastros_filho` como pendente. Quem vira filho é o admin, ao aprovar:
+// lá ele escolhe mensalidade e prazo, que a pessoa não decide.
+//
+// Passa pelo Worker porque a collection não tem escrita pública, e porque
+// telefone repetido se confere aqui: quem já é da casa não entra na fila, e
+// quem já está na fila não entra duas vezes. Compara os 8 últimos dígitos, que
+// sobrevivem a DDD e 55 escritos ou não.
+async function rotaCadastroFilho(body, env) {
+  const nome = String(body?.nome || '').trim().replace(/\s+/g, ' ');
+  const tel = String(body?.tel || '').replace(/\D/g, '');
+  const email = String(body?.email || '').trim().toLowerCase();
+  const nasc = String(body?.data_nascimento || '');
+  const obs = String(body?.obs || '').trim();
+  if (nome.length < 3 || nome.length > 120) return json({ error: 'Informe seu nome completo' }, 400);
+  if (tel.length < 10 || tel.length > 13) return json({ error: 'Telefone inválido, com DDD' }, 400);
+  if (email && (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json({ error: 'Email inválido' }, 400);
+  if (nasc && !/^\d{4}-\d{2}-\d{2}$/.test(nasc)) return json({ error: 'Data de nascimento inválida' }, 400);
+  if (obs.length > 1000) return json({ error: 'Texto longo demais' }, 400);
+
+  const token = await tokenGoogle(env);
+  const fim = (t) => String(t || '').replace(/\D/g, '').slice(-8);
+  const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
+  if (filhos.some((f) => fim(f.tel) === fim(tel))) return json({ ok: true, ja_filho: true });
+  const pendentes = (await fsList(PROJETO_PVD, 'adm_cadastros_filho', token))
+    .filter((c) => c.status === 'pendente');
+  if (pendentes.some((c) => fim(c.tel) === fim(tel))) return json({ ok: true, ja_na_fila: true });
+  // ponytail: teto contra robô, sem captcha. Fila cheia = alguém olhar.
+  if (pendentes.length >= 50) return json({ error: 'Muitos cadastros na fila. Fala com a gente no WhatsApp.' }, 429);
+
+  await fsCreate(PROJETO_PVD, 'adm_cadastros_filho', token, {
+    nome, tel, email: email || null, data_nascimento: nasc || null,
+    mora_perto: body?.mora_perto === true, trabalha_clt: body?.trabalha_clt === true,
+    obs, status: 'pendente', criadoEm: new Date().toISOString(),
+  });
+  await avisar(env, token, {
+    para: 'admin',
+    titulo: 'Cadastro de filho pra aprovar',
+    corpo: nome,
+    url: 'index.html#filhos',
+    tag: 'cadastro-filho',
+  });
+  return json({ ok: true });
 }
 
 // ── LIBERAR UM DIA DE REGA ────────────────────────────────────────────────

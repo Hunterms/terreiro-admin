@@ -360,6 +360,7 @@ const S = {
   role: null,            // 'admin' | 'filho'
   filhoDoc: null,        // doc do filho logado (se role=filho)
   filhos: [],
+  cadastrosFilho: [],    // adm_cadastros_filho pendentes — gente que se cadastrou sozinha
   funcoes: [],
   grupos: [],           // adm_grupos — listas de envio pros avisos
   kanban: [],
@@ -904,6 +905,12 @@ function attachListeners() {
   S.unsubs.push(onSnapshot(query(collection(dbPvd,'fin_filhos'), orderBy('nome')), snap => {
     S.filhos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route) renderRoute();
+  }));
+
+  // Cadastros pendentes (página pública /cadastro-filho.html, via Worker)
+  S.unsubs.push(onSnapshot(query(collection(dbPvd,'adm_cadastros_filho'), where('status','==','pendente')), snap => {
+    S.cadastrosFilho = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(S.route === 'filhos') renderRoute();
   }));
 
   // Funções
@@ -2065,12 +2072,36 @@ function renderFilhos(c) {
         <div class="page-sub">${S.filhos.length} cadastrados · ${S.filhos.filter(f=>!f.status||f.status==='ativo').length} ativos</div>
       </div>
       <div class="page-actions">
+        <button class="btn" onclick="navigator.clipboard.writeText('https://terreirodocandieiro.com.br/cadastro-filho.html').then(()=>window._app.toast('Link de cadastro copiado','ok'))">Copiar link de cadastro</button>
         <button class="btn btn-primary" onclick="window._app.openFilhoForm()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Novo filho
         </button>
       </div>
     </div>
+
+    ${S.cadastrosFilho.length ? `
+    <div class="card" style="margin-bottom:14px;border-color:rgba(212,168,67,0.35)">
+      <div style="font-weight:700;margin-bottom:10px">${S.cadastrosFilho.length} cadastro${S.cadastrosFilho.length>1?'s':''} pra aprovar</div>
+      ${S.cadastrosFilho.map(c => `
+        <div class="list-item">
+          <div class="li-avatar">${fmt.initials(c.nome)}</div>
+          <div class="li-main">
+            <div class="li-name">${escapaHtml(c.nome)}</div>
+            <div class="li-meta">
+              <span>📱 ${escapaHtml(c.tel)}</span>
+              ${c.email ? `<span>${escapaHtml(c.email)}</span>` : ''}
+              ${c.mora_perto ? '<span class="chip chip-green">mora perto</span>' : ''}
+              ${c.trabalha_clt ? '<span class="chip">CLT</span>' : ''}
+              ${c.obs ? `<span>${escapaHtml(c.obs)}</span>` : ''}
+            </div>
+          </div>
+          <div class="li-actions">
+            <button class="btn btn-sm" onclick="window._app.recusarCadastro('${c.id}')">Recusar</button>
+            <button class="btn btn-sm btn-primary" onclick="window._app.aprovarCadastro('${c.id}')">Aprovar</button>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
 
     ${cartaoAdesao()}
 
@@ -2136,9 +2167,29 @@ function renderFilhos(c) {
   $('#f-funcao').onchange = e => { filtroFilhos.funcao = e.target.value; renderFilhos(c); };
 }
 
-function openFilhoForm(id=null) {
-  const f = id ? S.filhos.find(x=>x.id===id) : null;
-  const isEdit = !!f;
+// Aprovar abre o formulário de filho novo já preenchido: mensalidade e prazo
+// são decisão da casa, então ficam pra quem aprova. Salvar fecha o pendente.
+function aprovarCadastro(cid) {
+  const c = S.cadastrosFilho.find(x => x.id === cid);
+  if(!c) return;
+  // O form interpola a ficha direto no HTML, e isto aqui veio de fora: escapa.
+  // O navegador desfaz as entidades no value, então salva o texto original.
+  openFilhoForm(null, { _cadastroId: cid, nome: escapaHtml(c.nome), tel: escapaHtml(c.tel), auth_email: c.email ? escapaHtml(c.email) : null,
+    data_nascimento: c.data_nascimento || null, mora_perto: !!c.mora_perto, trabalha_clt: !!c.trabalha_clt,
+    obs: escapaHtml(c.obs || ''), status: 'ativo', valor: 200, prazo: '10' });
+}
+function recusarCadastro(cid) {
+  const c = S.cadastrosFilho.find(x => x.id === cid);
+  if(!c) return;
+  confirmar(`Recusar o cadastro de <strong>${escapaHtml(c.nome)}</strong>? Os dados são apagados.`, async () => {
+    try { await deleteDoc(doc(dbPvd,'adm_cadastros_filho',cid)); toast('Cadastro recusado','ok'); closeModal(); }
+    catch(e) { toast('Erro: '+e.message,'err'); }
+  });
+}
+
+function openFilhoForm(id=null, pre=null) {
+  const f = id ? S.filhos.find(x=>x.id===id) : pre;
+  const isEdit = !!id;
   openModal(`
     <div class="modal-h"><h3>${isEdit?'Editar filho':'Novo filho'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
@@ -2366,6 +2417,9 @@ function openFilhoForm(id=null) {
       } else {
         data.criadoEm = serverTimestamp();
         await addDoc(collection(dbPvd,'fin_filhos'), data);
+        // Veio da fila de cadastro: sai dela. Apagar, e não marcar aprovado,
+        // porque a ficha de verdade agora é o fin_filhos.
+        if(pre?._cadastroId) await deleteDoc(doc(dbPvd,'adm_cadastros_filho',pre._cadastroId));
         toast('Filho cadastrado','ok');
       }
       closeModal();
@@ -9279,6 +9333,8 @@ window._app = {
   navigate,
   setLembTab,
   openFilhoForm,
+  aprovarCadastro,
+  recusarCadastro,
   openFuncaoForm,
   toggleArquivarFuncao,
   seedFuncoes,
