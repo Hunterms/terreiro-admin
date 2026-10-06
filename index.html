@@ -8494,6 +8494,16 @@ async function renderConfigAgendamento(c) {
 
   const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
+  // Pausa = intervalo de datas sem atendimento. Não toca em horarios_semana:
+  // acabou a pausa, a semana volta sozinha com as mesmas janelas.
+  const rowPausa = (p={}) => `
+    <div data-pausa style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+      <input type="date" class="fi" value="${p.de||''}" data-campo="de" style="width:auto"/>
+      <span style="color:var(--text3)">até</span>
+      <input type="date" class="fi" value="${p.ate||''}" data-campo="ate" style="width:auto"/>
+      <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">×</button>
+    </div>`;
+
   const renderDia = (i) => {
     const janelas = (cfg.horarios_semana[String(i)] || []);
     return `
@@ -8578,6 +8588,15 @@ async function renderConfigAgendamento(c) {
       ${[2,3,4,5,6,0,1].map(renderDia).join('')}
     </div>
 
+    <div style="max-width:780px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">Pausas</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Dias sem atendimento, sem mexer nos horários acima. Os dias da pausa somem do agendar.html e, quando ela acaba, a agenda volta sozinha. Pausa que já passou é apagada ao salvar.</div>
+      <div class="card" style="padding:14px">
+        <div id="pausas">${(cfg.pausas||[]).map(rowPausa).join('')}</div>
+        <button type="button" class="btn btn-sm" id="cf-add-pausa">+ Pausa</button>
+      </div>
+    </div>
+
     <div style="max-width:780px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" id="cf-bootstrap-slots" title="Popula pub_slots_ocupados com atendimentos/solicitações existentes. Roda 1x após instalar rules.">🔁 Resincronizar slots públicos</button>
@@ -8587,6 +8606,8 @@ async function renderConfigAgendamento(c) {
     </div>
     ${!gcalIsConnected() ? '<div style="max-width:780px;font-size:12px;color:var(--text3);margin-top:8px">Conecte o Google Calendar (em Atendimentos do Pai → Agenda) pra liberar a importação.</div>' : ''}
   `;
+
+  $('#cf-add-pausa').onclick = () => $('#pausas').insertAdjacentHTML('beforeend', rowPausa());
 
   $('#cf-import-gcal').onclick = async () => {
     if(!gcalIsConnected()) { toast('Conecte o Google Calendar primeiro','err'); return; }
@@ -8704,8 +8725,15 @@ async function renderConfigAgendamento(c) {
       })).filter(j => j.inicio && j.fim);
       horarios_semana[String(i)] = janelas;
     }
+    const hoje = new Date().toLocaleDateString('en-CA');
+    const pausas = Array.from(document.querySelectorAll('#pausas [data-pausa]')).map(div => {
+      const de = div.querySelector('[data-campo=de]').value;
+      const ate = div.querySelector('[data-campo=ate]').value || de;
+      return de <= ate ? { de, ate } : { de: ate, ate: de };
+    }).filter(p => p.de && p.ate >= hoje);
     const payload = {
       ativa: $('#cf-ativa').checked,
+      pausas,
       antecedencia_min_horas: parseInt($('#cf-ant').value) || 0,
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       pix: $('#cf-pix').value.trim() || null,

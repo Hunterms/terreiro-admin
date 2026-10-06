@@ -344,6 +344,7 @@ function slotLivre(data, hora, dur) {
 
 // Gera todos os slots de um dia, respeitando janelas e duração do serviço
 function gerarSlots(dataStr, dur) {
+  if((APP.cfg.pausas||[]).some(p => dataStr >= p.de && dataStr <= p.ate)) return [];
   const dow = new Date(dataStr+'T00:00:00').getDay();
   const janelas = APP.cfg.horarios_semana[String(dow)] || [];
   if(janelas.length === 0) return [];
