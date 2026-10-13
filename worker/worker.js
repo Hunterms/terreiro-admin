@@ -1047,7 +1047,12 @@ async function rotaAgenda(env) {
   const publicas = eventos.filter(ehAtividadePublica)
     .map(paraOPublico)
     .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
-  return json({ eventos: publicas });
+  // Dia de desenvolvimento fecha a agenda de consultas do Pai (agendar.html).
+  // Sai só a data: o nome do trabalho é interno.
+  const semConsulta = eventos
+    .filter((e) => e.tipo === 'desenvolvimento' && e.arquivado !== true && e.data)
+    .map((e) => e.data);
+  return json({ eventos: publicas, sem_consulta: semConsulta });
 }
 
 // ── O MURAL: AVISOS E PRÓXIMAS ATIVIDADES ─────────────────────────────────

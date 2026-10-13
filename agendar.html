@@ -283,6 +283,13 @@ window.closeModal = closeModal;
       }
     } catch(e) { console.warn('Erro servicos', e); }
 
+    // Segunda de desenvolvimento não tem consulta. A lista vem da agenda do site;
+    // se o Worker falhar, fecha toda segunda em vez de abrir horário em cima do trabalho.
+    try {
+      const r = await fetch('https://terreiro-email.hunter-soares-c.workers.dev/agenda');
+      APP.semConsulta = new Set((await r.json()).sem_consulta || []);
+    } catch(e) { APP.semConsulta = null; console.warn('Erro agenda', e); }
+
     // Slots ocupados
     await carregarOcupados();
 
@@ -346,6 +353,7 @@ function slotLivre(data, hora, dur) {
 function gerarSlots(dataStr, dur) {
   if((APP.cfg.pausas||[]).some(p => dataStr >= p.de && dataStr <= p.ate)) return [];
   const dow = new Date(dataStr+'T00:00:00').getDay();
+  if(APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1) return [];
   const janelas = APP.cfg.horarios_semana[String(dow)] || [];
   if(janelas.length === 0) return [];
   const slots = [];
