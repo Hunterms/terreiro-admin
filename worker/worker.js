@@ -39,6 +39,8 @@
  *                       Só até o dia 5, só o mês corrente, mesma prova.
  *   POST /lote        → gera as cobranças do mês. Também roda pelo cron do dia 1.
  *   POST /papel       → grava custom claim (admin/financeiro/loja) numa conta.
+ *   POST /pdv-cadastro → pedido de acesso ao PDV. A conta nasce desabilitada.
+ *   POST /pdv-aprovar  → admin (ID token do Firebase) habilita com papel loja, ou apaga.
  *   POST /lembretes   → { dry: true } devolve a lista de quem deve receber o
  *                       lembrete de mensalidade; { filho_id } manda pra UM.
  *                       Nunca dispara sozinho — quem aprova é o admin.
@@ -199,6 +201,8 @@ export default {
       if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
       if (rota === '/vagas') return await rotaVagas(body, env);
       if (rota === '/cadastro-filho') return await rotaCadastroFilho(body, env);
+      if (rota === '/pdv-cadastro') return await rotaPdvCadastro(body, env);
+      if (rota === '/pdv-aprovar') return await rotaPdvAprovar(body, env);
       if (rota === '/mural') return await rotaMural(body, env);
       if (rota === '/avisar-filho') return await rotaAvisarFilho(body, request, env);
       if (rota === '/avisos') return await rotaAvisos(body, env);
@@ -2513,6 +2517,117 @@ async function rotaCadastroFilho(body, env) {
     corpo: nome,
     url: 'index.html#filhos',
     tag: 'cadastro-filho',
+  });
+  return json({ ok: true });
+}
+
+// ── PEDIDO DE ACESSO AO PDV ───────────────────────────────────────────────
+// Entra: { nome, email, senha }. Público, como o /cadastro-filho.
+//
+// A conta nasce DESABILITADA. Não é detalhe: a regra genérica do Firestore
+// libera leitura pra qualquer conta autenticada, então conta que loga antes de
+// ser aprovada lê o banco inteiro — contabilidade, filhos, config. Desabilitada,
+// ela nem consegue token. Quem habilita é o /pdv-aprovar, junto com o papel.
+//
+// O doc em `pdv_cadastros` usa o uid como id: um pedido por conta, e o
+// /pdv-aprovar acha a conta sem procurar.
+const PVD_API_KEY = 'AIzaSyCVGBtxNCj4iE3OsBY4KD_eYlYXL3SGgs4'; // a mesma que está no HTML dos apps
+// Espelho da rede de segurança das rules (ehAdmin em firestore.rules.pvd).
+const ADMINS_POR_EMAIL = ['hunter.soares.c@gmail.com', 'nandomacedo42@gmail.com'];
+
+async function rotaPdvCadastro(body, env) {
+  const nome = String(body?.nome || '').trim().replace(/\s+/g, ' ');
+  const email = String(body?.email || '').trim().toLowerCase();
+  const senha = String(body?.senha || '');
+  if (nome.length < 3 || nome.length > 120) return json({ error: 'Informe seu nome completo' }, 400);
+  if (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'Email inválido' }, 400);
+  if (senha.length < 8 || senha.length > 100) return json({ error: 'A senha precisa ter pelo menos 8 caracteres' }, 400);
+
+  const token = await tokenGoogle(env);
+  const pendentes = (await fsList(PROJETO_PVD, 'pdv_cadastros', token)).filter((c) => c.status === 'pendente');
+  if (pendentes.some((c) => c.email === email)) return json({ ok: true, ja_na_fila: true });
+  // ponytail: teto contra robô, sem captcha. Fila cheia = alguém olhar.
+  if (pendentes.length >= 20) return json({ error: 'Muitos pedidos na fila. Fala com a gente no WhatsApp.' }, 429);
+
+  const tokenAuth = await tokenGoogle(env, ESCOPO_AUTH);
+  const resp = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${PROJETO_PVD}/accounts`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenAuth}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: senha, displayName: nome, disabled: true }),
+  });
+  const conta = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    if (String(conta?.error?.message || '').includes('EMAIL_EXISTS')) {
+      return json({ error: 'Esse email já tem conta. Tenta entrar, ou fala com quem cuida do sistema.' }, 409);
+    }
+    console.error('pdv-cadastro: criar conta', resp.status, JSON.stringify(conta));
+    return json({ error: 'Não consegui criar a conta agora. Tenta de novo.' }, 502);
+  }
+
+  await fsCreateComId(PROJETO_PVD, 'pdv_cadastros', conta.localId, token, {
+    nome, email, status: 'pendente', criadoEm: new Date().toISOString(),
+  });
+  await avisar(env, token, {
+    para: 'admin',
+    titulo: 'Pedido de acesso ao PDV',
+    corpo: `${nome} · ${email}`,
+    url: 'https://vendas.terreirodocandieiro.com.br/',
+    tag: 'pdv-cadastro',
+  });
+  return json({ ok: true });
+}
+
+// ── APROVAR OU RECUSAR O ACESSO ───────────────────────────────────────────
+// Entra: { idToken, uid, aprovar }. Quem chama é o admin logado no PDV.
+//
+// Sem shared secret de propósito: o segredo teria que morar no navegador, e
+// segredo no navegador é de quem abrir o devtools. A prova aqui é o ID token
+// do Firebase — o Google confere a assinatura no lookup, e a resposta diz o
+// email e os papéis de quem chamou.
+export async function rotaPdvAprovar(body, env) {
+  const uid = String(body?.uid || '');
+  if (!body?.idToken || !uid) return json({ error: 'faltam idToken e uid' }, 400);
+
+  const quem = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${PVD_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken: body.idToken }),
+  }).then((r) => r.json()).catch(() => ({}));
+  const eu = quem.users?.[0];
+  if (!eu) return json({ error: 'sessão inválida, entra de novo' }, 401);
+  const papeis = (() => { try { return JSON.parse(eu.customAttributes || '{}'); } catch { return {}; } })();
+  if (!papeis.admin && !ADMINS_POR_EMAIL.includes(String(eu.email || '').toLowerCase())) {
+    return json({ error: 'só admin aprova acesso' }, 403);
+  }
+
+  const token = await tokenGoogle(env);
+  const pedido = await fsGet(PROJETO_PVD, 'pdv_cadastros', uid, { token });
+  if (!pedido || pedido.status !== 'pendente') return json({ error: 'pedido não está pendente' }, 409);
+
+  const tokenAuth = await tokenGoogle(env, ESCOPO_AUTH);
+  const base = `https://identitytoolkit.googleapis.com/v1/projects/${PROJETO_PVD}/accounts`;
+  // Aprovar = habilita + papel loja numa chamada só. Recusar = apaga a conta:
+  // conta desabilitada esquecida é lixo, e o email fica livre pra pedir de novo.
+  const resp = body.aprovar === true
+    ? await fetch(`${base}:update`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenAuth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ localId: uid, disableUser: false, customAttributes: JSON.stringify({ loja: true }) }),
+      })
+    : await fetch(`${base}:delete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenAuth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ localId: uid }),
+      });
+  if (!resp.ok) {
+    console.error('pdv-aprovar', resp.status, await resp.text());
+    return json({ error: 'não consegui mudar a conta' }, 502);
+  }
+
+  await fsPatch(PROJETO_PVD, 'pdv_cadastros', uid, token, {
+    status: body.aprovar === true ? 'aprovado' : 'recusado',
+    julgadoPor: eu.email || null,
+    julgadoEm: new Date().toISOString(),
   });
   return json({ ok: true });
 }

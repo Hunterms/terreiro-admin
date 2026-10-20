@@ -800,6 +800,22 @@ Aprovar abre o form de filho novo preenchido; salvar cria o `fin_filhos` e
 **apaga** o pendente. Recusar também apaga. Não há histórico: a ficha de
 verdade é o `fin_filhos`.
 
+### `pdv_cadastros/{uid}` — pedido de acesso ao PDV
+
+Nasce pela tela de login do PDV → Worker `/pdv-cadastro`, que cria a conta do
+Firebase Auth **desabilitada** e usa o uid dela como id do doc. O admin julga
+no painel "Acessos" do PDV → Worker `/pdv-aprovar` (prova: ID token de admin).
+
+```
+nome, email
+status:     'pendente' | 'aprovado' | 'recusado'
+criadoEm:   string ISO
+julgadoPor: email|null, julgadoEm: string ISO   (depois do julgamento)
+```
+
+Aprovar habilita a conta com o papel `loja`. Recusar apaga a conta; o doc fica
+como registro de quem pediu e quem julgou.
+
 ### `vendas_produtos.vagas` e `valor: 0`
 
 `vagas: number|null` — o Worker `/vagas` conta pedidos do produto que não estão
