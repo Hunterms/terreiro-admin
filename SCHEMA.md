@@ -804,7 +804,7 @@ verdade é o `fin_filhos`.
 
 Nasce pela tela de login do PDV → Worker `/pdv-cadastro`, que cria a conta do
 Firebase Auth **desabilitada** e usa o uid dela como id do doc. O admin julga
-no painel "Acessos" do PDV → Worker `/pdv-aprovar` (prova: ID token de admin).
+na aba "Acessos ao PDV" do admin → Worker `/pdv-aprovar` (prova: ID token de admin).
 
 ```
 nome, email
