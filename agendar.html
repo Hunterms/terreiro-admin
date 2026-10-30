@@ -357,7 +357,8 @@ function gerarSlots(dataStr, dur) {
   if((APP.cfg.pausas||[]).some(p => dataStr >= p.de && dataStr <= p.ate)) return [];
   const dow = new Date(dataStr+'T00:00:00').getDay();
   if(APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1) return [];
-  const janelas = APP.cfg.horarios_semana[String(dow)] || [];
+  // horarios_extras: janelas a mais numa data só ({ 'AAAA-MM-DD': [{inicio,fim}] }), além das da semana.
+  const janelas = [...(APP.cfg.horarios_semana[String(dow)] || []), ...((APP.cfg.horarios_extras||{})[dataStr] || [])];
   if(janelas.length === 0) return [];
   const slots = [];
   const minBookable = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
