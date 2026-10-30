@@ -5977,12 +5977,14 @@ function calendarioAgenda() {
     const evs = evDia[ds] || [];
     const dev = evs.find(e => e.tipo === 'desenvolvimento');
     const janelas = [...((cfg.horarios_semana||{})[String(dow)] || []), ...((cfg.horarios_extras||{})[ds] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
-    const fechado = pausa ? `🔒 Fechada${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}` : dev ? `Desenv. · ${escapaHtml(dev.nome||'')}` : '';
+    // A pausa fecha só o atendimento: a atividade do dia (desenvolvimento, gira) continua.
+    const fechado = pausa || dev;
     const ats = (porDia[ds] || []).sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
     cells += `
       <div class="cal-day ${ds===h?'today':''}" style="cursor:default;${ds<h?'opacity:.55;':''}${pausa?'background:var(--red-bg);border-color:var(--red-bd);':''}">
         <div class="cal-day-n">${d}</div>
-        ${fechado ? `<div class="cal-evt ${pausa?'':'fechada'}" style="${pausa?'background:transparent;color:var(--red);padding:0':''}">${fechado}</div>` : ''}
+        ${pausa ? `<div style="font-size:10.5px;color:var(--red)">🔒 Sem atendimento${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}</div>` : ''}
+        ${dev ? `<div class="cal-evt fechada" title="${escapaHtml(dev.nome||'')}">Desenv. · ${escapaHtml(dev.nome||'')}</div>` : ''}
         ${evs.filter(e => e !== dev).map(e => `<div class="cal-evt ${e.tipo==='festa'?'festa':(e.tipo==='gira_aberta'?'publico':'trabalho')}" title="${escapaHtml(e.nome||'')}">${e.hora?fmtH(e.hora)+' ':''}${escapaHtml(e.nome||'')}</div>`).join('')}
         ${ats.map(a => {
           const canc = ['cancelado','nao_compareceu'].includes(a.status_atendimento);
@@ -6004,7 +6006,7 @@ function calendarioAgenda() {
       <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--text3)">
         <span><span style="display:inline-block;width:10px;height:10px;border-left:3px solid var(--green);background:var(--glass2)"></span> pago</span>
         <span><span style="display:inline-block;width:10px;height:10px;border-left:3px solid var(--amber);background:var(--glass2)"></span> pendente</span>
-        <span style="color:var(--blue)">desenvolvimento</span><span style="color:var(--green)">gira</span><span style="color:var(--red)">fechada</span>
+        <span style="color:var(--blue)">desenvolvimento</span><span style="color:var(--green)">gira</span><span style="color:var(--red)">sem atendimento</span>
         <span>horário embaixo = janela de consulta</span>
       </div>
     </div>
