@@ -286,8 +286,11 @@ window.closeModal = closeModal;
     // Segunda de desenvolvimento não tem consulta. A lista vem da agenda do site;
     // se o Worker falhar, fecha toda segunda em vez de abrir horário em cima do trabalho.
     try {
-      const r = await fetch('https://terreiro-email.hunter-soares-c.workers.dev/agenda');
-      APP.semConsulta = new Set((await r.json()).sem_consulta || []);
+      // O Worker só aceita POST; GET volta 405 e, lido como lista vazia, abria toda segunda.
+      const r = await fetch('https://terreiro-email.hunter-soares-c.workers.dev/agenda', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+      const d = await r.json();
+      if(!r.ok || !Array.isArray(d.sem_consulta)) throw new Error(d.error || r.status);
+      APP.semConsulta = new Set(d.sem_consulta);
     } catch(e) { APP.semConsulta = null; console.warn('Erro agenda', e); }
 
     // Slots ocupados
