@@ -945,7 +945,7 @@ function attachListeners() {
   // Eventos (candieiro project!)
   S.unsubs.push(onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
     S.eventos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['calendario','dashboard','meu-dashboard','escalas'].includes(S.route)) renderRoute();
+    if(['calendario','dashboard','meu-dashboard','escalas','agenda'].includes(S.route)) renderRoute();
   }));
 
   // Avisos
@@ -5846,7 +5846,8 @@ async function arquivarPergunta(id, arquivar) {
 }
 
 // ── AGENDA DO PAI ─────────────────────────────────────────────────────────
-let agendaFiltro = 'semana'; // 'hoje' | 'semana' | 'mes' | 'todos'
+let agendaFiltro = 'calendario'; // 'calendario' | 'hoje' | 'semana' | 'mes' | 'todos'
+let agendaMes = null; // 'AAAA-MM' do calendário; null = mês atual
 
 function renderAgenda(c) {
   const hoje = new Date().toISOString().slice(0,10);
@@ -5906,13 +5907,14 @@ function renderAgenda(c) {
     </div>
 
     <div class="tabs">
+      <button class="${agendaFiltro==='calendario'?'active':''}" onclick="window._app.setAgendaFiltro('calendario')">Calendário</button>
       <button class="${agendaFiltro==='hoje'?'active':''}" onclick="window._app.setAgendaFiltro('hoje')">Hoje</button>
       <button class="${agendaFiltro==='semana'?'active':''}" onclick="window._app.setAgendaFiltro('semana')">7 dias</button>
       <button class="${agendaFiltro==='mes'?'active':''}" onclick="window._app.setAgendaFiltro('mes')">30 dias</button>
       <button class="${agendaFiltro==='todos'?'active':''}" onclick="window._app.setAgendaFiltro('todos')">Todos</button>
     </div>
 
-    <div>
+    ${agendaFiltro === 'calendario' ? calendarioAgenda() : `<div>
       ${lista.length === 0 ? '<div class="empty"><div class="empty-t">Nenhum atendimento</div><div class="empty-s">Clique em "Novo atendimento" pra agendar.</div></div>' : lista.map(a => {
         const isHoje = a.data === hoje;
         const isPassado = a.data < hoje;
@@ -5941,11 +5943,73 @@ function renderAgenda(c) {
           </div>
         `;
       }).join('')}
-    </div>
+    </div>`}
   `;
 }
 
 function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
+function mudarMesAgenda(n) {
+  const [y,m] = (agendaMes || _iso(new Date()).slice(0,7)).split('-').map(Number);
+  agendaMes = _iso(new Date(y, m-1+n, 1, 12)).slice(0,7); renderRoute();
+}
+
+// Mês da Agenda do Pai: cada dia mostra o que o fecha (pausa, desenvolvimento),
+// a gira, as janelas de consulta e os atendimentos marcados. A lista perde isso.
+function calendarioAgenda() {
+  const h = _iso(new Date());
+  const mes = agendaMes || h.slice(0,7);
+  const [y,m] = mes.split('-').map(Number);
+  const primeiro = new Date(y, m-1, 1, 12), dias = new Date(y, m, 0).getDate();
+  const cfg = S.cfgAgendamento || {};
+  const pausas = cfg.pausas || [];
+  const fmtH = t => t.replace(':00','h').replace(':','h');
+  const porDia = {};
+  S.atendimentos.forEach(a => { if(a.data?.startsWith(mes)) (porDia[a.data] ||= []).push(a); });
+  const evDia = {};
+  (S.eventos || []).forEach(e => { if(e.data?.startsWith(mes) && e.arquivado !== true) (evDia[e.data] ||= []).push(e); });
+
+  let cells = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(l => `<div class="cal-head">${l}</div>`).join('');
+  for(let i=0; i<primeiro.getDay(); i++) cells += '<div></div>';
+  for(let d=1; d<=dias; d++) {
+    const ds = `${mes}-${String(d).padStart(2,'0')}`;
+    const dow = new Date(ds+'T12:00').getDay();
+    const pausa = pausas.find(p => ds >= p.de && ds <= p.ate);
+    const evs = evDia[ds] || [];
+    const dev = evs.find(e => e.tipo === 'desenvolvimento');
+    const janelas = [...((cfg.horarios_semana||{})[String(dow)] || []), ...((cfg.horarios_extras||{})[ds] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
+    const fechado = pausa ? `🔒 Fechada${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}` : dev ? `Desenv. · ${escapaHtml(dev.nome||'')}` : '';
+    const ats = (porDia[ds] || []).sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
+    cells += `
+      <div class="cal-day ${ds===h?'today':''}" style="cursor:default;${ds<h?'opacity:.55;':''}${pausa?'background:var(--red-bg);border-color:var(--red-bd);':''}">
+        <div class="cal-day-n">${d}</div>
+        ${fechado ? `<div class="cal-evt ${pausa?'':'fechada'}" style="${pausa?'background:transparent;color:var(--red);padding:0':''}">${fechado}</div>` : ''}
+        ${evs.filter(e => e !== dev).map(e => `<div class="cal-evt ${e.tipo==='festa'?'festa':(e.tipo==='gira_aberta'?'publico':'trabalho')}" title="${escapaHtml(e.nome||'')}">${e.hora?fmtH(e.hora)+' ':''}${escapaHtml(e.nome||'')}</div>`).join('')}
+        ${ats.map(a => {
+          const canc = ['cancelado','nao_compareceu'].includes(a.status_atendimento);
+          const pago = (a.status_pagamento||'').startsWith('pago') || a.status_pagamento === 'isento';
+          return `<div class="cal-evt" onclick="window._app.openAtendimentoForm('${a.id}')" title="${escapaHtml(a.consulente_nome||'')} · ${_atendLabel(a)} · ${pago?'pago':'pendente'}"
+            style="cursor:pointer;border-left:3px solid ${pago?'var(--green)':'var(--amber)'};${canc?'text-decoration:line-through;opacity:.5':''}">${a.hora||''} ${escapaHtml((a.consulente_nome||'—').split(' ')[0])} · ${_atendLabel(a)}</div>`;
+        }).join('')}
+        ${!fechado && janelas.length ? `<div style="margin-top:auto;font-size:10px;color:var(--text3)">${janelas.map(j => fmtH(j.inicio)+'–'+fmtH(j.fim)).join(' · ')}</div>` : ''}
+      </div>`;
+  }
+  const nome = primeiro.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./, l => l.toUpperCase());
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-sm" onclick="window._app.mudarMesAgenda(-1)">‹</button>
+        <div style="font-weight:700;min-width:150px;text-align:center">${nome}</div>
+        <button class="btn btn-sm" onclick="window._app.mudarMesAgenda(1)">›</button>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--text3)">
+        <span><span style="display:inline-block;width:10px;height:10px;border-left:3px solid var(--green);background:var(--glass2)"></span> pago</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-left:3px solid var(--amber);background:var(--glass2)"></span> pendente</span>
+        <span style="color:var(--blue)">desenvolvimento</span><span style="color:var(--green)">gira</span><span style="color:var(--red)">fechada</span>
+        <span>horário embaixo = janela de consulta</span>
+      </div>
+    </div>
+    <div class="cal-grid" style="grid-template-columns:repeat(7,minmax(0,1fr))">${cells}</div>`;
+}
 
 // Label de atendimento: prefere servico_nome (mais específico — bori, banho,
 // limpeza, etc.) e cai pra tipo_oraculo só se serviço não tiver sido informado.
@@ -9515,7 +9579,7 @@ function renderDados(c) {
 }
 
 window._app = {
-  abrirFecharAgenda, reabrirAgenda,
+  abrirFecharAgenda, reabrirAgenda, mudarMesAgenda,
   julgarAcessoPdv,
   apagarPessoa,
   exportarDados,
