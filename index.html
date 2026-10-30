@@ -1050,7 +1050,8 @@ function attachListeners() {
   // Config do agendamento (pra mensagens do WhatsApp pegarem o PIX, etc.)
   S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','agendamento'), snap => {
     if(snap.exists()) S.cfgAgendamento = snap.data();
-    if(S.route === 'solicitacoes') renderRoute();
+    if(['solicitacoes','agenda'].includes(S.route)) renderRoute();
+    if(S.route === 'config-agendamento' && $('#pausas-painel')) $('#pausas-painel').innerHTML = painelPausas();
   }));
 
   // Atendimentos (só admin)
@@ -5883,6 +5884,8 @@ function renderAgenda(c) {
       </div>
     </div>
 
+    ${painelPausas()}
+
     ${gcalOn ? `
       <div style="padding:10px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <span>🟢 Sync ativo · Calendar de <strong>${gcalEm||'(conta google)'}</strong></span>
@@ -8527,6 +8530,122 @@ function _renderIntelOportunidades(pessoas) {
 // ── CONFIG AGENDAMENTO ─────────────────────────────────────────────────────
 let configAgCarregado = null;
 
+// ── FECHAR A AGENDA ────────────────────────────────────────────────────────
+// Pausa = intervalo { de, ate, motivo? } em adm_config/agendamento.pausas.
+// O agendar.html some com esses dias; acabou, a semana volta sozinha.
+// Grava na hora (sem o "Salvar configuração") e mora na Agenda do Pai,
+// porque é lá que ele está quando decide viajar.
+const _iso = d => d.toLocaleDateString('en-CA');
+const _somaDias = (iso, n) => { const d = new Date(iso+'T12:00'); d.setDate(d.getDate()+n); return _iso(d); };
+const _fmtDia = iso => new Date(iso+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}).replace('.','');
+const _pausasAtivas = () => { const h = _iso(new Date()); return (S.cfgAgendamento?.pausas||[]).filter(p => p.ate >= h).sort((a,b)=>a.de.localeCompare(b.de)); };
+
+function painelPausas() {
+  const ps = _pausasAtivas();
+  const h = _iso(new Date());
+  return `
+    ${ps.map((p,i) => `
+      <div style="padding:12px 14px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;margin-bottom:10px;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>🔒 <strong>${p.de <= h ? 'Agenda fechada' : 'Agenda vai fechar'}</strong> de ${_fmtDia(p.de)} até ${_fmtDia(p.ate)}${p.motivo?` · ${escapaHtml(p.motivo)}`:''}. Abre de novo ${_fmtDia(_somaDias(p.ate,1))}.</span>
+        <button class="btn btn-sm" onclick="window._app.reabrirAgenda(${i})">Reabrir</button>
+      </div>`).join('')}
+    <button class="btn" onclick="window._app.abrirFecharAgenda()" style="margin-bottom:14px">🔒 Fechar a agenda por uns dias</button>`;
+}
+
+async function salvarPausas(pausas) {
+  await setDoc(doc(dbPvd,'adm_config','agendamento'), { pausas, atualizadoEm: serverTimestamp() }, { merge: true });
+}
+
+function reabrirAgenda(i) {
+  const p = _pausasAtivas()[i]; if(!p) return;
+  confirmar(`Reabrir a agenda de <strong>${_fmtDia(p.de)}</strong> até <strong>${_fmtDia(p.ate)}</strong>? Os horários de sempre voltam pro site na hora.`, async () => {
+    try { await salvarPausas(_pausasAtivas().filter(x => x !== p)); toast('Agenda reaberta','ok'); }
+    catch(e) { console.error(e); toast('Não consegui reabrir: '+e.message,'err'); }
+  });
+}
+
+let _fa = null; // estado do modal: { mes:'YYYY-MM', de, ate, motivo }
+function abrirFecharAgenda() {
+  _fa = { mes: _iso(new Date()).slice(0,7), de: null, ate: null, motivo: '' };
+  openModal('<div class="modal-c" id="fa"></div>');
+  _desenharFa();
+}
+function _desenharFa() {
+  const el = $('#fa'); if(!el) return;
+  const h = _iso(new Date());
+  const [y,m] = _fa.mes.split('-').map(Number);
+  const primeiro = new Date(y, m-1, 1, 12), dias = new Date(y, m, 0).getDate();
+  const ocupado = d => _pausasAtivas().some(p => d >= p.de && d <= p.ate);
+  let cells = ['D','S','T','Q','Q','S','S'].map(l => `<div style="text-align:center;font-size:11px;color:var(--text3)">${l}</div>`).join('');
+  for(let i=0; i<primeiro.getDay(); i++) cells += '<div class="disp-day out"></div>';
+  for(let d=1; d<=dias; d++) {
+    const ds = `${_fa.mes}-${String(d).padStart(2,'0')}`;
+    const passado = ds < h;
+    const marcado = _fa.de && ds >= _fa.de && ds <= (_fa.ate||_fa.de);
+    const ponta = ds === _fa.de || ds === _fa.ate;
+    cells += `<div class="disp-day ${passado?'out':''} ${marcado?'indisp':''}" ${passado?'':`data-d="${ds}"`}
+      style="${ponta?'font-weight:700;border-width:2px;':''}${ocupado(ds)&&!marcado?'text-decoration:line-through;':''}">${d}</div>`;
+  }
+  const nomeMes = primeiro.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./, l => l.toUpperCase());
+  const podeVoltar = _fa.mes > h.slice(0,7);
+  const total = _fa.de ? Math.round((new Date((_fa.ate||_fa.de)+'T12:00') - new Date(_fa.de+'T12:00'))/864e5)+1 : 0;
+  const instrucao = !_fa.de ? 'Toque no <strong>primeiro dia</strong> fechado.'
+    : !_fa.ate ? `Agora toque no <strong>último dia</strong> fechado, ou use um atalho. Se for só ${_fmtDia(_fa.de)}, já pode confirmar.`
+    : '';
+  el.innerHTML = `
+    <div style="font-size:17px;font-weight:700;margin-bottom:4px">Fechar a agenda</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px;min-height:18px">${instrucao}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <button class="btn btn-sm" data-nav="-1" ${podeVoltar?'':'disabled style="opacity:.3"'}>‹</button>
+      <div style="font-weight:600">${nomeMes}</div>
+      <button class="btn btn-sm" data-nav="1">›</button>
+    </div>
+    <div class="disp-cal" style="margin-bottom:12px">${cells}</div>
+    ${_fa.de ? `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        ${[[7,'1 semana'],[14,'2 semanas'],[21,'3 semanas'],[30,'1 mês']].map(([n,l]) =>
+          `<button class="btn btn-sm ${total===n?'btn-primary':''}" data-dur="${n}">${l}</button>`).join('')}
+      </div>
+      <div style="padding:10px 12px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:8px;font-size:13.5px;margin-bottom:12px">
+        Fechada de <strong>${_fmtDia(_fa.de)}</strong> até <strong>${_fmtDia(_fa.ate||_fa.de)}</strong> (${total} dia${total===1?'':'s'}). Abre de novo <strong>${_fmtDia(_somaDias(_fa.ate||_fa.de,1))}</strong>.
+      </div>
+      <div class="fi-group"><label>Motivo (só aparece aqui no admin)</label>
+        <input class="fi" id="fa-motivo" value="${escapaHtml(_fa.motivo)}" placeholder="Viagem, resguardo, descanso..."/></div>` : ''}
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="fa-ok" ${_fa.de?'':'disabled style="opacity:.4"'}>Fechar a agenda</button>
+    </div>`;
+
+  const guardaMotivo = () => { const i = $('#fa-motivo'); if(i) _fa.motivo = i.value; };
+  el.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => {
+    guardaMotivo();
+    const d = new Date(y, m-1+Number(b.dataset.nav), 1, 12); _fa.mes = _iso(d).slice(0,7); _desenharFa();
+  });
+  el.querySelectorAll('[data-d]').forEach(c => c.onclick = () => {
+    guardaMotivo();
+    const d = c.dataset.d;
+    // 1º toque marca o início; 2º marca o fim; 3º recomeça.
+    if(!_fa.de || _fa.ate) { _fa.de = d; _fa.ate = null; }
+    else if(d < _fa.de) { _fa.ate = _fa.de; _fa.de = d; }
+    else _fa.ate = d;
+    _desenharFa();
+  });
+  el.querySelectorAll('[data-dur]').forEach(b => b.onclick = () => {
+    guardaMotivo(); _fa.ate = _somaDias(_fa.de, Number(b.dataset.dur)-1); _desenharFa();
+  });
+  $('#fa-ok').onclick = async () => {
+    if(!_fa.de) return;
+    guardaMotivo();
+    const nova = { de: _fa.de, ate: _fa.ate || _fa.de };
+    if(_fa.motivo.trim()) nova.motivo = _fa.motivo.trim();
+    try {
+      await salvarPausas([..._pausasAtivas(), nova]);
+      closeModal();
+      toast(`Agenda fechada até ${_fmtDia(nova.ate)}`,'ok');
+    } catch(e) { console.error(e); toast('Não consegui fechar: '+e.message,'err'); }
+  };
+}
+
 async function renderConfigAgendamento(c) {
   c.innerHTML = `<div class="empty"><div class="spinner" style="width:30px;height:30px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto"></div></div>`;
   let dados = {};
@@ -8557,16 +8676,6 @@ async function renderConfigAgendamento(c) {
   configAgCarregado = cfg;
 
   const diasLabel = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-
-  // Pausa = intervalo de datas sem atendimento. Não toca em horarios_semana:
-  // acabou a pausa, a semana volta sozinha com as mesmas janelas.
-  const rowPausa = (p={}) => `
-    <div data-pausa style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
-      <input type="date" class="fi" value="${p.de||''}" data-campo="de" style="width:auto"/>
-      <span style="color:var(--text3)">até</span>
-      <input type="date" class="fi" value="${p.ate||''}" data-campo="ate" style="width:auto"/>
-      <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">×</button>
-    </div>`;
 
   const renderDia = (i) => {
     const janelas = (cfg.horarios_semana[String(i)] || []);
@@ -8653,12 +8762,9 @@ async function renderConfigAgendamento(c) {
     </div>
 
     <div style="max-width:780px;margin-bottom:14px">
-      <div style="font-weight:700;font-size:14px;margin-bottom:8px">Pausas</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Dias sem atendimento, sem mexer nos horários acima. Os dias da pausa somem do agendar.html e, quando ela acaba, a agenda volta sozinha. Pausa que já passou é apagada ao salvar.</div>
-      <div class="card" style="padding:14px">
-        <div id="pausas">${(cfg.pausas||[]).map(rowPausa).join('')}</div>
-        <button type="button" class="btn btn-sm" id="cf-add-pausa">+ Pausa</button>
-      </div>
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">Agenda fechada</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Dias sem atendimento, sem mexer nos horários acima. Quando acaba, a agenda abre sozinha. Também fica no topo da Agenda do Pai.</div>
+      <div id="pausas-painel">${painelPausas()}</div>
     </div>
 
     <div style="max-width:780px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
@@ -8671,7 +8777,6 @@ async function renderConfigAgendamento(c) {
     ${!gcalIsConnected() ? '<div style="max-width:780px;font-size:12px;color:var(--text3);margin-top:8px">Conecte o Google Calendar (em Atendimentos do Pai → Agenda) pra liberar a importação.</div>' : ''}
   `;
 
-  $('#cf-add-pausa').onclick = () => $('#pausas').insertAdjacentHTML('beforeend', rowPausa());
 
   $('#cf-import-gcal').onclick = async () => {
     if(!gcalIsConnected()) { toast('Conecte o Google Calendar primeiro','err'); return; }
@@ -8789,15 +8894,8 @@ async function renderConfigAgendamento(c) {
       })).filter(j => j.inicio && j.fim);
       horarios_semana[String(i)] = janelas;
     }
-    const hoje = new Date().toLocaleDateString('en-CA');
-    const pausas = Array.from(document.querySelectorAll('#pausas [data-pausa]')).map(div => {
-      const de = div.querySelector('[data-campo=de]').value;
-      const ate = div.querySelector('[data-campo=ate]').value || de;
-      return de <= ate ? { de, ate } : { de: ate, ate: de };
-    }).filter(p => p.de && p.ate >= hoje);
     const payload = {
       ativa: $('#cf-ativa').checked,
-      pausas,
       antecedencia_min_horas: parseInt($('#cf-ant').value) || 0,
       whatsapp: $('#cf-wpp').value.replace(/\D/g,''),
       pix: $('#cf-pix').value.trim() || null,
@@ -9417,6 +9515,7 @@ function renderDados(c) {
 }
 
 window._app = {
+  abrirFecharAgenda, reabrirAgenda,
   julgarAcessoPdv,
   apagarPessoa,
   exportarDados,
