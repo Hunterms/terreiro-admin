@@ -358,7 +358,7 @@ function gerarSlots(dataStr, dur) {
   const dow = new Date(dataStr+'T00:00:00').getDay();
   if(APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1) return [];
   // horarios_extras: janelas a mais numa data só ({ 'AAAA-MM-DD': [{inicio,fim}] }), além das da semana.
-  const janelas = [...(APP.cfg.horarios_semana[String(dow)] || []), ...((APP.cfg.horarios_extras||{})[dataStr] || [])];
+  const janelas = [...(APP.cfg.horarios_semana[String(dow)] || []), ...((APP.cfg.horarios_extras||{})[dataStr] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
   if(janelas.length === 0) return [];
   const slots = [];
   const minBookable = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
@@ -528,6 +528,17 @@ function renderPasso3() {
       </div>
     </div>
   `;
+  // Abre no primeiro dia com horário livre: ninguém precisa ir clicando semana a
+  // semana pra descobrir se tem vaga na frente. Mesmo limite de 60 dias do "Próxima".
+  const durSel = APP.servico.duracao_min || 60;
+  if(!APP.dataSel || !gerarSlots(APP.dataSel, durSel).some(x => !x.busy)) {
+    APP.dataSel = null; APP.horaSel = null;
+    const d = new Date(); d.setHours(12,0,0,0);
+    for(let i=0; i<=60; i++, d.setDate(d.getDate()+1)) {
+      const ds = d.toLocaleDateString('en-CA');
+      if(gerarSlots(ds, durSel).some(x => !x.busy)) { APP.dataSel = ds; break; }
+    }
+  }
   // Se há data selecionada fora da semana atual, re-âncora a viewStart pra ela
   if(APP.dataSel) {
     const selD = new Date(APP.dataSel+'T00:00:00');
