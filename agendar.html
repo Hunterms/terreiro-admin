@@ -309,7 +309,7 @@ window.closeModal = closeModal;
     }
 
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    APP.viewStart = hoje.toISOString().slice(0,10);
+    APP.viewStart = hoje.toLocaleDateString('en-CA');
 
     $('#loading').style.display = 'none';
     $('#content').style.display = '';
@@ -324,8 +324,8 @@ async function carregarOcupados() {
   APP.ocupados.clear();
   const hoje = new Date();
   const limite = new Date(); limite.setMonth(hoje.getMonth() + 3);
-  const inicio = hoje.toISOString().slice(0,10);
-  const fim = limite.toISOString().slice(0,10);
+  const inicio = hoje.toLocaleDateString('en-CA');
+  const fim = limite.toLocaleDateString('en-CA');
   // Lê do espelho público (sem PII) — admin sincroniza atendimentos/solicitações aqui
   try {
     const q1 = query(collection(db,'pub_slots_ocupados'), where('data','>=',inicio), where('data','<=',fim));
@@ -367,7 +367,7 @@ function gerarSlots(dataStr, dur) {
     const fim = toMin(j.fim);
     for(let m = ini; m + dur <= fim; m += dur) {
       const hora = fromMin(m);
-      const ts = new Date(`${dataStr}T${hora}:00`).getTime();
+      const ts = new Date(`${dataStr}T${hora}:00-03:00`).getTime();
       const busy = !slotLivre(dataStr, hora, dur) || ts < minBookable;
       slots.push({ hora, busy });
     }
@@ -573,12 +573,12 @@ function renderDayStrip() {
   const startMs = startD.getTime();
   $('#cal-prev').disabled = startMs <= hoje.getTime();
   $('#cal-next').disabled = startMs >= hoje.getTime() + 60*86400000;
-  const hojeStr = hoje.toISOString().slice(0,10);
+  const hojeStr = hoje.toLocaleDateString('en-CA');
   const dowAb = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const dur = APP.servico.duracao_min || 60;
   let html = '';
   for(const dt of dias) {
-    const dStr = dt.toISOString().slice(0,10);
+    const dStr = dt.toLocaleDateString('en-CA');
     const ehHoje = dStr === hojeStr;
     const slots = gerarSlots(dStr, dur);
     const algumLivre = slots.some(s => !s.busy);
@@ -665,7 +665,7 @@ function atualizarResumoFinal() {
 function navSemana(delta) {
   const d = new Date(APP.viewStart+'T00:00:00');
   d.setDate(d.getDate() + delta*7);
-  APP.viewStart = d.toISOString().slice(0,10);
+  APP.viewStart = d.toLocaleDateString('en-CA');
   renderDayStrip();
   // Se data atual saiu da janela, limpa seleção + slots
   const inView = (() => {
