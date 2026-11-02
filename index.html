@@ -3776,6 +3776,8 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
       : x.status === 'aguardando_pagamento'
       // Não é "pendente": foi pro checkout e não voltou pago. Carrinho abandonado.
       ? '<span class="chip" title="Foi pro checkout e não voltou pago">⏳ Aguardando pagamento</span>'
+      : x.pago_automatico
+      ? '<span class="chip chip-amber">⏳ Pago, falta aprovar</span>'
       : '<span class="chip chip-amber">⏳ Pendente</span>';
     const dt = x.criadoEm?.toDate ? x.criadoEm.toDate() : (x.criadoEm?.seconds ? new Date(x.criadoEm.seconds*1000) : null);
     const quando = dt ? dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
@@ -3793,6 +3795,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
             <div class="li-name">${escapaHtml(x.nome||'(sem nome)')}</div>
             <div class="li-meta">
               ${stChip}
+              ${chipPagoAuto(x)}
               <span style="font-weight:700;color:var(--gold)">${brl(x.valor||0)}</span>
               ${x.ciclo?`<span class="chip" style="font-size:10px;background:rgba(52,152,219,.15);color:var(--blue)">🔁 ${fmtCiclo(x.ciclo)}</span>`:''}
               ${x.turma_nome?`<span class="chip chip-blue" style="font-size:10px">🗓️ ${escapaHtml(x.turma_nome)}</span>`:''}
@@ -3806,6 +3809,7 @@ function _renderPagProdSimpleList(p, pedidos, valorAtivo, brl, filtro) {
           <div class="li-actions">
             ${(x.status==='pendente'||x.status==='aguardando_pagamento'||!x.status) ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${escapaJs(x.id)}')">Confirmar</button>` : ''}
             ${x.status==='confirmado' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${escapaJs(x.id)}')">Desfazer</button>` : ''}
+            <button class="btn btn-sm" onclick="window._app.deletarPedido('${escapaJs(x.id)}','${escapaJs(x.nome||'')}')" title="Apagar compra repetida ou não paga">🗑 Excluir</button>
           </div>
         </div>
         ${d ? `

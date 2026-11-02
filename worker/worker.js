@@ -111,7 +111,10 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 //                               horário. O pagamento entra como
 //                               comprovante_anexado + metodo_pagamento, e a
 //                               tela de aprovação já abre com "já pago" marcado.
-//   ped  pendente → confirmado  pagou = confirmado, mesmo status que o admin põe na mão.
+//   ped  aguardando_pagamento → pendente  pagou NÃO confirma (02/11, pedido do
+//                               Hunter): toda compra passa pela mão dele, que é
+//                               quem vê repetida e conta vaga. Confirmar no
+//                               admin manda o e-mail e cadastra o aluno.
 //   ins  aguardando → pago
 // `campoValor` é o campo de dinheiro que o admin lê depois (relatório, aprovação).
 // O cliente escreve ele na criação do doc, então não é confiável: o Worker
@@ -135,7 +138,7 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 //           5 e pago dia 12 daria "divergente" se recalculasse.
 const TIPOS = {
   sol: { colecao: 'adm_solicitacoes',       fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: 'pendente',   statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto', valorFixado: false },
-  ped: { colecao: 'vendas_pedidos',         fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', statusAguardando: 'aguardando_pagamento', campoValor: 'valor',          valorFixado: false },
+  ped: { colecao: 'vendas_pedidos',         fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'pendente',   statusAguardando: 'aguardando_pagamento', campoValor: 'valor',          valorFixado: false },
   ins: { colecao: 'evento_inscricoes',      fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor',          valorFixado: false },
   men: { colecao: 'fin_mensalidade_pedidos', fonte: 'fin_filhos',     refCampo: 'filho_id',   projetoFonte: PROJETO_PVD,  statusPago: 'pago',       statusAguardando: null,                   campoValor: null,             valorFixado: true  },
 };
@@ -3078,7 +3081,7 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
   // Não precisa de cron: o pagamento avisa a si mesmo.
   await mandarPush(env, {
     tag: 'venda',
-    titulo: tipo === 'men' ? 'Contribuição paga' : 'Pagamento confirmado',
+    titulo: tipo === 'men' ? 'Contribuição paga' : tipo === 'ins' ? 'Pagamento confirmado' : 'Pagou · falta você aprovar',
     corpo: `${pedido.filho_nome || pedido.nome || pedido.produto_nome || 'pedido'} — ${brl(cobrado / 100)} no ${metodo === 'pix' ? 'PIX' : 'cartão'}`,
     url: tipo === 'men' ? 'index.html#filhos' : tipo === 'sol' ? 'index.html#solicitacoes' : 'index.html#pedidos',
   });
