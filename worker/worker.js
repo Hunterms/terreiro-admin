@@ -103,7 +103,10 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 // `statusPago` é diferente em cada uma porque o vocabulário de status é diferente
 // em cada uma — e num caso é null de propósito:
 //
-//   sol  pendente → aprovada    pagar NÃO aprova. Quem aprova é o Pai, porque a
+//   sol  aguardando_pagamento → pendente  pagou VOLTA PRA FILA (02/11: era null,
+//                               e a consulta paga ficava presa em "aguardando",
+//                               sem badge nem aviso; foi assim que a Daiane sumiu).
+//                               Pagar NÃO aprova. Quem aprova é o Pai, porque a
 //                               aprovação é que cria o atendimento e ocupa o
 //                               horário. O pagamento entra como
 //                               comprovante_anexado + metodo_pagamento, e a
@@ -131,7 +134,7 @@ const IP_CHECK = 'https://api.checkout.infinitepay.io/payment_check';
 //           Necessário porque a multa depende da data: link de R$200 gerado dia
 //           5 e pago dia 12 daria "divergente" se recalculasse.
 const TIPOS = {
-  sol: { colecao: 'adm_solicitacoes',       fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: null,         statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto', valorFixado: false },
+  sol: { colecao: 'adm_solicitacoes',       fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: 'pendente',   statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto', valorFixado: false },
   ped: { colecao: 'vendas_pedidos',         fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'confirmado', statusAguardando: 'aguardando_pagamento', campoValor: 'valor',          valorFixado: false },
   ins: { colecao: 'evento_inscricoes',      fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor',          valorFixado: false },
   men: { colecao: 'fin_mensalidade_pedidos', fonte: 'fin_filhos',     refCampo: 'filho_id',   projetoFonte: PROJETO_PVD,  statusPago: 'pago',       statusAguardando: null,                   campoValor: null,             valorFixado: true  },
@@ -1490,7 +1493,10 @@ async function novidades(token, desde) {
 
   const sols = await fsQuery(PROJETO_PVD, 'adm_solicitacoes', token,
     { campo: 'criadoEm', op: 'GREATER_THAN', valor: corte });
-  const pendentes = sols.filter((s) => s.status === 'pendente' && s.origem === 'agendar_publico');
+  // 'aguardando_pagamento' também avisa: o link do checkout sai em segundos e
+  // tira o pedido de 'pendente' antes do cron passar. Sem isto, todo pedido que
+  // foi pro checkout chegava calado.
+  const pendentes = sols.filter((s) => (s.status === 'pendente' || s.status === 'aguardando_pagamento') && s.origem === 'agendar_publico');
   if (pendentes.length) {
     avisos.push({
       tag: 'agendamento',
@@ -3074,7 +3080,7 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
     tag: 'venda',
     titulo: tipo === 'men' ? 'Contribuição paga' : 'Pagamento confirmado',
     corpo: `${pedido.filho_nome || pedido.nome || pedido.produto_nome || 'pedido'} — ${brl(cobrado / 100)} no ${metodo === 'pix' ? 'PIX' : 'cartão'}`,
-    url: tipo === 'men' ? 'index.html#filhos' : 'index.html#pedidos',
+    url: tipo === 'men' ? 'index.html#filhos' : tipo === 'sol' ? 'index.html#solicitacoes' : 'index.html#pedidos',
   });
 
   return { ok: true, centavos: cobrado, metodo };

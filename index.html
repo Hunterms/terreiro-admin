@@ -6994,7 +6994,8 @@ async function delSlotPub(slotId) {
 
 // ── SOLICITAÇÕES (pedidos vindos do agendar.html público) ──────────────────
 function atualizarBadgeSolicitacoes() {
-  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').length;
+  // Aguardando pagamento conta também: escondido do número, ninguém olha.
+  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente' || s.status === 'aguardando_pagamento').length;
   const badge = $('#sol-badge');
   if(!badge) return;
   if(pendentes > 0) { badge.textContent = pendentes; badge.style.display = ''; }
@@ -7075,11 +7076,14 @@ function linkWaConfirmacao(s) {
 
 function renderSolicitacoes(c) {
   atualizarBadgeSolicitacoes();
-  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  // Pago pelo checkout e ainda em 'aguardando' é pendente: até 02/11 o Worker
+  // não tirava a consulta paga de lá, e ela ficava escondida aqui embaixo.
+  const pagoPreso = s => s.status === 'aguardando_pagamento' && s.pago_automatico;
+  const pendentes = S.solicitacoes.filter(s => s.status === 'pendente' || pagoPreso(s)).sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
   // Foram pro checkout e não voltaram pagas. Não entram na fila de aprovação —
   // aprovar cria atendimento, e não se cria atendimento sem dinheiro. Mas
   // também não podem virar histórico: ninguém processou nada.
-  const aguardando = S.solicitacoes.filter(s => s.status === 'aguardando_pagamento').sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  const aguardando = S.solicitacoes.filter(s => s.status === 'aguardando_pagamento' && !pagoPreso(s)).sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
   const processadas = S.solicitacoes.filter(s => s.status !== 'pendente' && s.status !== 'aguardando_pagamento').sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
 
   c.innerHTML = `
@@ -7136,15 +7140,15 @@ function renderSolicitacoes(c) {
     `}
 
     ${aguardando.length ? `
-      <div class="card" style="margin-bottom:14px;border-color:var(--border2)">
+      <div class="card" style="margin-bottom:14px;border-color:var(--gold)">
         <div class="card-h">
-          <div class="card-title" style="color:var(--text2)">⏳ Aguardando pagamento (${aguardando.length})</div>
+          <div class="card-title">⏳ Aguardando pagamento (${aguardando.length})</div>
         </div>
         <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">
           Foram pro checkout e não voltaram pagas. O horário segue reservado. Se a pessoa combinou de pagar de outro jeito, manda pra fila e aprova normal — aprovar é o que cria o atendimento.
         </div>
         ${aguardando.map(s => `
-          <div class="list-item" style="opacity:.85">
+          <div class="list-item">
             <div class="li-avatar">${escapaHtml(fmt.initials(s.nome))}</div>
             <div class="li-main">
               <div class="li-name">${escapaHtml(s.nome)} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${fmt.dataLong(s.data)} · ${s.hora}</span></div>
