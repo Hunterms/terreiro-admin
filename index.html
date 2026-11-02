@@ -1981,10 +1981,61 @@ function renderDashboard(c) {
         ${cardsDoing.slice(0,3).map(k=>`<div class="list-item"><div class="chip chip-blue">EM ANDAMENTO</div><div class="li-main"><div class="li-name">${k.titulo}</div></div></div>`).join('')}
       </div>
     </div>
+
+    <div id="visitas-site" style="margin-top:20px"></div>
   `;
 
   // Depois do innerHTML, senão o alvo #resumo-do-dia ainda não existe.
   renderResumoDoDia();
+  renderVisitasSite();
+}
+
+// ── VISITAS DO SITE ────────────────────────────────────────────────────────
+// O visita.js do site grava cada página aberta; o Worker (/visitas) resume hoje
+// e os últimos 7 dias. Pedido de agendamento conta pelo adm_solicitacoes.
+const NOME_PAGINA = { home:'Início', agendar:'Agendar', buzios:'Búzios', baralho:'Baralho cigano', visitar:'Visitar', evento:'Evento', vendas:'Vendas', outra:'Outra' };
+async function renderVisitasSite() {
+  const alvo = document.getElementById('visitas-site');
+  if (!alvo) return;
+  const cfg = await _carregarEmailCfg();
+  if (!cfg?.worker_url || !cfg?.worker_secret) return;
+  let r;
+  try {
+    const resp = await fetch(cfg.worker_url.replace(/\/+$/,'') + '/visitas', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret }, body: '{}'
+    });
+    r = await resp.json();
+    if (!resp.ok) throw new Error(r?.error || resp.status);
+  } catch (e) { alvo.innerHTML = `<div class="card"><div class="card-title">Visitas no site</div><div class="li-meta">Não deu pra ler agora: ${e.message}</div></div>`; return; }
+  alvo.innerHTML = cartaoVisitas(r);
+}
+
+function cartaoVisitas({ hoje: h, semana: s }) {
+  const num = (rotulo, v) => `<div style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+    <div class="ml" style="font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">${rotulo}</div>
+    <div style="font-size:30px;font-weight:700;line-height:1.15">${v}</div><div style="font-size:11px;color:var(--text3)">pessoas</div></div>`;
+  const equipe = `<a href="https://terreirodocandieiro.com.br/?equipe=1" target="_blank" rel="noopener" style="color:var(--gold)">tirar este aparelho da conta</a>`;
+  const topo = `<div style="display:flex;gap:10px;margin-top:12px">${num('Hoje', h.pessoas)}${num('7 dias', s.pessoas)}</div>`;
+  const cab = `<div class="card-h" style="margin-bottom:0"><div class="card-title">Visitas no site</div></div>`;
+  if (!s.pessoas) return `<div class="card">${cab}${topo}
+    <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-top:12px">A contagem começa quando o site novo sobe. Os números aparecem com a primeira visita.</div>
+    <div style="font-size:12px;color:var(--text3);margin-top:8px">Quem é da casa: ${equipe}.</div></div>`;
+  const funil = [['Só uma página','uma_pagina'],['Abriu agendar','agendar'],['Escolheu horário','horario'],['Enviou pedido','enviou'],['Pedidos no banco','pedidos']];
+  const degraus = [['agendar','horario'],['horario','enviou']].filter(([a]) => s[a] > 0).map(([a,b]) => ({ a, b, perde: s[a]-s[b] })).sort((x,y) => y.perde-x.perde);
+  const nomes = { agendar:'abrir o agendar', horario:'escolher horário', enviou:'enviar' };
+  const lista = (xs, f = x => x) => (xs||[]).map(x => `${f(x.nome)} <b style="color:var(--text)">${x.n}</b>`).join(' · ');
+  const det = [['De onde vêm', lista(s.fontes)], ['Páginas', lista(s.paginas, n => NOME_PAGINA[n] || n)], ['Mais procurado', lista(s.procurados)],
+    ['Pedidos por serviço', lista(s.servicos)], ['Cidades', lista(s.cidades)], ['Aparelho', lista(s.aparelhos)], ['Pico', s.pico ? s.pico.nome + 'h' : '']].filter(([,v]) => v);
+  return `<div class="card">${cab}${topo}
+    <div style="display:grid;grid-template-columns:1fr 52px 52px;margin-top:14px;font-size:13.5px">
+      <span></span><span style="text-align:right;font-size:11px;color:var(--text3)">hoje</span><span style="text-align:right;font-size:11px;color:var(--text3)">7 dias</span>
+      ${funil.map(([t,k]) => `<span style="padding:8px 0;border-top:1px solid var(--border)">${t}</span><b style="padding:8px 0;border-top:1px solid var(--border);text-align:right">${h[k]}</b><b style="padding:8px 0;border-top:1px solid var(--border);text-align:right">${s[k]}</b>`).join('')}
+    </div>
+    ${degraus[0]?.perde ? `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--glass2);border:1px solid var(--border);font-size:13px;line-height:1.45">Maior perda na semana: entre ${nomes[degraus[0].a]} e ${nomes[degraus[0].b]}. ${degraus[0].perde} de ${s[degraus[0].a]} pararam ali.</div>` : ''}
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:14px;font-size:12.5px">
+      ${det.map(([k,v]) => `<span style="font-weight:700">${k}</span><span style="color:var(--text2);overflow-wrap:anywhere">${v}</span>`).join('')}
+    </div>
+    <div style="font-size:11.5px;color:var(--text3);margin-top:12px">Sem robôs. Quem é da casa: ${equipe}.</div></div>`;
 }
 
 // ── FILHOS ────────────────────────────────────────────────────────────────

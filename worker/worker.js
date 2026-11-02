@@ -217,6 +217,8 @@ export default {
       if (rota === '/papel') return await rotaPapel(body, request, env);
       if (rota === '/lembretes') return await rotaLembretes(body, request, env);
       if (rota === '/push') return await rotaPush(body, request, env);
+      if (rota === '/visita') return await rotaVisita(body, request, env);
+      if (rota === '/visitas') return checarSegredo(request, env) || (await rotaVisitas(env));
       return await rotaEmail(body, request, env); // '' e '/email'
     } catch (e) {
       console.error(rota, e?.stack || e);
@@ -3354,4 +3356,80 @@ function b64url(entrada) {
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ── VISITAS DO SITE ────────────────────────────────────────────────────────
+// O visita.js do site manda o tipo da página. Aqui sai robô, sai IP: fica a
+// cidade, o aparelho e um código do dia (hash de ip + navegador + dia). Uma
+// linha por página aberta em site_visitas (terreiro-pvd), só via este Worker.
+
+const VISITA_TIPOS = ['home', 'agendar', 'buzios', 'baralho', 'visitar', 'evento', 'vendas', 'outra', 'horario', 'enviou'];
+const VISITA_ORIGENS = /^https:\/\/(terreirodocandieiro\.com\.br|hunterms\.github\.io)$|^http:\/\/localhost(:\d+)?$/;
+const VISITA_ROBO = /bot|crawl|spider|scan|measurement|curl|python|go-http|wget|headless|zgrab|censys|facebookexternalhit|meta-external|WhatsApp\//i;
+// "Cloudflare London" é o iCloud Private Relay: é gente, não entra aqui.
+const VISITA_DATACENTER = /OVH|Sundance|Web2Objects|Google LLC|DigitalOcean|Amazon|Microsoft|Hetzner|Linode|Akamai|Meta Platforms|Oracle|Contabo|Driftnet|Censys/i;
+
+export async function rotaVisita(body, request, env) {
+  const ua = request.headers.get('user-agent') || '';
+  if (visitaDescartada(body, request.headers.get('origin'), ua, request.cf?.asOrganization)) return json({ ok: false });
+  const dia = hojeSP();
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}|${ua}|${dia}`)));
+  const curto = (v) => String(v || '').slice(0, 60);
+  await fsCreate(PROJETO_PVD, 'site_visitas', await tokenGoogle(env), {
+    dia, hora: horaSP(),
+    sessao: [...h.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join(''),
+    tipo: body.tipo,
+    servico: curto(body.servico) || null,
+    fonte: /Instagram/.test(ua) ? 'Instagram' : curto(body.utm) || (curto(body.ref).replace(/^(www|m|l|lm)\./, '') || 'direto'),
+    aparelho: /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Macintosh/.test(ua) ? 'Mac' : 'outro',
+    cidade: request.cf?.city || null,
+    criado: new Date().toISOString(),
+  });
+  return json({ ok: true });
+}
+
+// ponytail: endpoint público, a trava é origem + lista de tipos. Rate limit se alguém abusar.
+export function visitaDescartada(body, origem, ua, rede) {
+  return !VISITA_ORIGENS.test(origem || '') || !VISITA_TIPOS.includes(body?.tipo) || VISITA_ROBO.test(ua || '') || VISITA_DATACENTER.test(rede || '');
+}
+
+async function rotaVisitas(env) {
+  const token = await tokenGoogle(env);
+  const hoje = hojeSP(), semana = maisDias(hoje, -6);
+  const [linhas, sols] = await Promise.all([
+    // ponytail: teto de 5000 páginas por semana; paginar se o site passar disso.
+    fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000),
+    fsQuery(PROJETO_PVD, 'adm_solicitacoes', token, { campo: 'criadoEm', op: 'GREATER_THAN_OR_EQUAL', valor: new Date(semana + 'T03:00:00Z') }, 1000),
+  ]);
+  return json({ hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) });
+}
+
+// Pessoas e funil a partir das linhas. Pedido que chegou conta pelo banco, não pelo site.
+export function resumoDeVisitas(linhas, sols, desde) {
+  const sessoes = (f) => new Set(linhas.filter(f).map((l) => l.sessao)).size;
+  const conta = (campo, f = () => true) => {
+    const m = {};
+    for (const l of linhas.filter(f)) (m[l[campo]] ??= new Set()).add(l.sessao);
+    return Object.entries(m).filter(([k]) => k && k !== 'null').map(([nome, s]) => ({ nome, n: s.size })).sort((a, b) => b.n - a.n).slice(0, 5);
+  };
+  const paginas = {};
+  for (const l of linhas) if (!['horario', 'enviou'].includes(l.tipo)) paginas[l.sessao] = (paginas[l.sessao] || 0) + 1;
+  const desdeMs = Date.parse(desde + 'T03:00:00Z');
+  const pedidos = sols.filter((s) => s.origem === 'agendar_publico' && new Date(s.criadoEm).getTime() >= desdeMs);
+  const porServico = {};
+  for (const s of pedidos) porServico[s.servico_nome] = (porServico[s.servico_nome] || 0) + 1;
+  return {
+    pessoas: Object.keys(paginas).length,
+    uma_pagina: Object.values(paginas).filter((n) => n === 1).length,
+    agendar: sessoes((l) => l.tipo === 'agendar'),
+    horario: sessoes((l) => l.tipo === 'horario'),
+    enviou: sessoes((l) => l.tipo === 'enviou'),
+    pedidos: pedidos.length,
+    paginas: conta('tipo', (l) => !['horario', 'enviou'].includes(l.tipo)),
+    servicos: Object.entries(porServico).map(([nome, n]) => ({ nome, n })).sort((a, b) => b.n - a.n),
+    procurados: conta('servico', (l) => l.tipo === 'horario'),
+    fontes: conta('fonte'), cidades: conta('cidade'), aparelhos: conta('aparelho'),
+    pico: conta('hora')[0] || null,
+  };
 }

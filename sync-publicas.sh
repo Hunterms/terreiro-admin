@@ -56,6 +56,7 @@ PAGINAS=(
   filhos.js
   sw.js
   manifest-filho.json
+  visita.js
 )
 
 CONFERIR=false

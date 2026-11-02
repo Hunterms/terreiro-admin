@@ -634,6 +634,7 @@ function atualizarSlots() {
     document.querySelectorAll('#slots-grid .slot[data-h]:not(.busy)').forEach(b => {
       b.onclick = () => {
         APP.horaSel = b.dataset.h;
+        window.visita?.('horario', { servico: APP.servico?.nome });
         // Atualiza só visual dos slots + resumo final
         document.querySelectorAll('#slots-grid .slot').forEach(el => el.classList.toggle('selected', el.dataset.h === APP.horaSel));
         atualizarResumoFinal();
@@ -752,6 +753,7 @@ function abrirModalDados() {
         });
       } catch(e) { console.warn('sync slot público falhou:', e); }
       marcarOcupado(APP.dataSel, APP.horaSel, APP.servico.duracao_min || 60);
+      window.visita?.('enviou', { servico: APP.servico.nome });
       mostrarSucesso(nome, solRef.id);
     } catch(e) {
       console.error(e);
@@ -874,5 +876,6 @@ function voltar() {
 
 window._app = { voltar };
 </script>
+<script src="visita.js" defer></script>
 </body>
 </html>
