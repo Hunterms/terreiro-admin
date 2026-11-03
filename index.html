@@ -6031,9 +6031,11 @@ function calendarioAgenda() {
     const pausa = pausas.find(p => ds >= p.de && ds <= p.ate);
     const evs = evDia[ds] || [];
     const dev = evs.find(e => e.tipo === 'desenvolvimento');
-    const janelas = [...((cfg.horarios_semana||{})[String(dow)] || []), ...((cfg.horarios_extras||{})[ds] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
+    const extras = (cfg.horarios_extras||{})[ds] || [];
     // A pausa fecha só o atendimento: a atividade do dia (desenvolvimento, gira) continua.
     const fechado = pausa || dev;
+    // Dia fechado só mostra o horário extra, que vale por cima do fecho (igual ao agendar.html).
+    const janelas = [...(fechado ? [] : ((cfg.horarios_semana||{})[String(dow)] || [])), ...extras].sort((a,b) => a.inicio.localeCompare(b.inicio));
     const ats = (porDia[ds] || []).sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
     cells += `
       <div class="cal-day ${ds===h?'today':''}" style="cursor:default;${ds<h?'opacity:.55;':''}${pausa?'background:var(--red-bg);border-color:var(--red-bd);':''}">
@@ -6047,7 +6049,7 @@ function calendarioAgenda() {
           return `<div class="cal-evt" onclick="window._app.openAtendimentoForm('${a.id}')" title="${escapaHtml(a.consulente_nome||'')} · ${_atendLabel(a)} · ${pago?'pago':'pendente'}"
             style="cursor:pointer;border-left:3px solid ${pago?'var(--green)':'var(--amber)'};${canc?'text-decoration:line-through;opacity:.5':''}">${a.hora||''} ${escapaHtml((a.consulente_nome||'—').split(' ')[0])} · ${_atendLabel(a)}</div>`;
         }).join('')}
-        ${!fechado && janelas.length ? `<div style="margin-top:auto;font-size:10px;color:var(--text3)">${janelas.map(j => fmtH(j.inicio)+'–'+fmtH(j.fim)).join(' · ')}</div>` : ''}
+        ${janelas.length ? `<div style="margin-top:auto;font-size:10px;color:${extras.length?'var(--green)':'var(--text3)'}">${extras.length?'🔓 ':''}${janelas.map(j => fmtH(j.inicio)+'–'+fmtH(j.fim)).join(' · ')}</div>` : ''}
       </div>`;
   }
   const nome = primeiro.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./, l => l.toUpperCase());
@@ -8674,7 +8676,60 @@ function painelPausas() {
         <span>🔒 <strong>${p.de <= h ? 'Agenda fechada' : 'Agenda vai fechar'}</strong> de ${_fmtDia(p.de)} até ${_fmtDia(p.ate)}${p.motivo?` · ${escapaHtml(p.motivo)}`:''}. Abre de novo ${_fmtDia(_somaDias(p.ate,1))}.</span>
         <button class="btn btn-sm" onclick="window._app.reabrirAgenda(${i})">Reabrir</button>
       </div>`).join('')}
-    <button class="btn" onclick="window._app.abrirFecharAgenda()" style="margin-bottom:14px">🔒 Fechar a agenda por uns dias</button>`;
+    ${_extrasAtivos().map(([ds,js]) => `
+      <div style="padding:12px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:10px;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>🔓 <strong>Horário extra</strong> em ${_fmtDia(ds)}: ${js.map(j => `${j.inicio} às ${j.fim}`).join(' · ')}</span>
+        <button class="btn btn-sm" onclick="window._app.removerHorarioExtra('${ds}')">Remover</button>
+      </div>`).join('')}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn" onclick="window._app.abrirFecharAgenda()">🔒 Fechar a agenda por uns dias</button>
+      <button class="btn" onclick="window._app.abrirHorarioExtra()">🔓 Abrir um horário num dia</button>
+    </div>`;
+}
+
+// ── ABRIR UM HORÁRIO NUM DIA ───────────────────────────────────────────────
+// horarios_extras = { 'AAAA-MM-DD': [{inicio,fim}] } em adm_config/agendamento.
+// Soma janelas a uma data só. Vale mesmo em dia fechado (pausa, segunda,
+// desenvolvimento): quem abre um dia específico sabe o que está abrindo.
+const _extrasAtivos = () => { const h = _iso(new Date()); return Object.entries(S.cfgAgendamento?.horarios_extras||{}).filter(([ds,js]) => ds >= h && js?.length).sort(([a],[b]) => a.localeCompare(b)); };
+
+async function salvarExtras(extras) {
+  // updateDoc troca o mapa inteiro; setDoc com merge não apagaria a data removida
+  await updateDoc(doc(dbPvd,'adm_config','agendamento'), { horarios_extras: extras, atualizadoEm: serverTimestamp() });
+}
+
+function abrirHorarioExtra() {
+  const h = _iso(new Date());
+  openModal(`<div class="modal-c">
+    <div style="font-size:17px;font-weight:700;margin-bottom:4px">Abrir um horário num dia</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Some no site só nesse dia, além dos horários de sempre. Abre mesmo se o dia estiver fechado.</div>
+    <div class="fi-group"><label>Dia</label><input class="fi" type="date" id="hx-dia" min="${h}" value="${h}"/></div>
+    <div style="display:flex;gap:10px">
+      <div class="fi-group" style="flex:1"><label>Das</label><input class="fi" type="time" id="hx-ini" value="18:00" step="900"/></div>
+      <div class="fi-group" style="flex:1"><label>Até</label><input class="fi" type="time" id="hx-fim" value="19:30" step="900"/></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="hx-ok">Abrir o horário</button>
+    </div></div>`);
+  $('#hx-ok').onclick = async () => {
+    const ds = $('#hx-dia').value, inicio = $('#hx-ini').value, fim = $('#hx-fim').value;
+    if(!ds || ds < h) return toast('Escolhe um dia de hoje em diante','err');
+    if(!inicio || !fim || fim <= inicio) return toast('O fim tem que ser depois do início','err');
+    const extras = { ...(S.cfgAgendamento?.horarios_extras||{}) };
+    extras[ds] = [...(extras[ds]||[]), { inicio, fim }].sort((a,b) => a.inicio.localeCompare(b.inicio));
+    try { await salvarExtras(extras); closeModal(); toast(`Horário aberto em ${_fmtDia(ds)}, ${inicio} às ${fim}`,'ok'); }
+    catch(e) { console.error(e); toast('Não consegui abrir: '+e.message,'err'); }
+  };
+}
+
+function removerHorarioExtra(ds) {
+  confirmar(`Tirar o horário extra de <strong>${_fmtDia(ds)}</strong> do site? Quem já marcou continua marcado.`, async () => {
+    const extras = { ...(S.cfgAgendamento?.horarios_extras||{}) };
+    delete extras[ds];
+    try { await salvarExtras(extras); toast('Horário extra removido','ok'); }
+    catch(e) { console.error(e); toast('Não consegui remover: '+e.message,'err'); }
+  });
 }
 
 async function salvarPausas(pausas) {
@@ -9640,7 +9695,7 @@ function renderDados(c) {
 }
 
 window._app = {
-  abrirFecharAgenda, reabrirAgenda, mudarMesAgenda,
+  abrirFecharAgenda, reabrirAgenda, mudarMesAgenda, abrirHorarioExtra, removerHorarioExtra,
   julgarAcessoPdv,
   apagarPessoa,
   exportarDados,

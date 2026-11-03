@@ -354,11 +354,12 @@ function slotLivre(data, hora, dur) {
 
 // Gera todos os slots de um dia, respeitando janelas e duração do serviço
 function gerarSlots(dataStr, dur) {
-  if((APP.cfg.pausas||[]).some(p => dataStr >= p.de && dataStr <= p.ate)) return [];
   const dow = new Date(dataStr+'T00:00:00').getDay();
-  if(APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1) return [];
+  const fechado = (APP.cfg.pausas||[]).some(p => dataStr >= p.de && dataStr <= p.ate)
+    || (APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1);
   // horarios_extras: janelas a mais numa data só ({ 'AAAA-MM-DD': [{inicio,fim}] }), além das da semana.
-  const janelas = [...(APP.cfg.horarios_semana[String(dow)] || []), ...((APP.cfg.horarios_extras||{})[dataStr] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
+  // O admin abre de propósito, então vale até em dia fechado (pausa, segunda de desenvolvimento).
+  const janelas = [...(fechado ? [] : (APP.cfg.horarios_semana[String(dow)] || [])), ...((APP.cfg.horarios_extras||{})[dataStr] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
   if(janelas.length === 0) return [];
   const slots = [];
   const minBookable = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
