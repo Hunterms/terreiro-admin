@@ -6040,16 +6040,16 @@ function calendarioAgenda() {
     cells += `
       <div class="cal-day ${ds===h?'today':''}" style="cursor:default;${ds<h?'opacity:.55;':''}${pausa?'background:var(--red-bg);border-color:var(--red-bd);':''}">
         <div class="cal-day-n">${d}</div>
-        ${pausa ? `<div style="font-size:10.5px;color:var(--red)">🔒 Sem atendimento${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}</div>` : ''}
-        ${dev ? `<div class="cal-evt fechada" title="${escapaHtml(dev.nome||'')}">Desenv. · ${escapaHtml(dev.nome||'')}</div>` : ''}
-        ${evs.filter(e => e !== dev).map(e => `<div class="cal-evt ${e.tipo==='festa'?'festa':(e.tipo==='gira_aberta'?'publico':'trabalho')}" title="${escapaHtml(e.nome||'')}">${e.hora?fmtH(e.hora)+' ':''}${escapaHtml(e.nome||'')}</div>`).join('')}
+        ${pausa ? `<div style="font-size:10.5px;color:var(--red)">🔒<span class="cal-longo"> Sem atendimento${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}</span></div>` : ''}
+        ${dev ? `<div class="cal-evt fechada" title="${escapaHtml(dev.nome||'')}"><span class="cal-curto">Dev</span><span class="cal-longo">Desenv. · ${escapaHtml(dev.nome||'')}</span></div>` : ''}
+        ${evs.filter(e => e !== dev).map(e => `<div class="cal-evt ${e.tipo==='festa'?'festa':(e.tipo==='gira_aberta'?'publico':'trabalho')}" title="${escapaHtml(e.nome||'')}"><span class="cal-curto">${e.hora?fmtH(e.hora):escapaHtml((e.nome||'').slice(0,4))}</span><span class="cal-longo">${e.hora?fmtH(e.hora)+' ':''}${escapaHtml(e.nome||'')}</span></div>`).join('')}
         ${ats.map(a => {
           const canc = ['cancelado','nao_compareceu'].includes(a.status_atendimento);
           const pago = (a.status_pagamento||'').startsWith('pago') || a.status_pagamento === 'isento';
           return `<div class="cal-evt" onclick="window._app.openAtendimentoForm('${a.id}')" title="${escapaHtml(a.consulente_nome||'')} · ${_atendLabel(a)} · ${pago?'pago':'pendente'}"
-            style="cursor:pointer;border-left:3px solid ${pago?'var(--green)':'var(--amber)'};${canc?'text-decoration:line-through;opacity:.5':''}">${a.hora||''} ${escapaHtml((a.consulente_nome||'—').split(' ')[0])} · ${_atendLabel(a)}</div>`;
+            style="cursor:pointer;border-left:3px solid ${pago?'var(--green)':'var(--amber)'};${canc?'text-decoration:line-through;opacity:.5':''}"><span class="cal-curto">${fmtH(a.hora||'')}</span><span class="cal-longo">${a.hora||''} ${escapaHtml((a.consulente_nome||'—').split(' ')[0])} · ${_atendLabel(a)}</span></div>`;
         }).join('')}
-        ${janelas.length ? `<div style="margin-top:auto;font-size:10px;color:${extras.length?'var(--green)':'var(--text3)'}">${extras.length?'🔓 ':''}${janelas.map(j => fmtH(j.inicio)+'–'+fmtH(j.fim)).join(' · ')}</div>` : ''}
+        ${janelas.length ? `<div class="cal-janela" style="margin-top:auto;font-size:10px;color:${extras.length?'var(--green)':'var(--text3)'}">${extras.length?'🔓 ':''}${janelas.map(j => fmtH(j.inicio)+'–'+fmtH(j.fim)).join(' · ')}</div>` : ''}
       </div>`;
   }
   const nome = primeiro.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./, l => l.toUpperCase());
@@ -6067,7 +6067,7 @@ function calendarioAgenda() {
         <span>horário embaixo = janela de consulta</span>
       </div>
     </div>
-    <div class="cal-grid" style="grid-template-columns:repeat(7,minmax(0,1fr))">${cells}</div>`;
+    <div class="cal-grid cal-agenda" style="grid-template-columns:repeat(7,minmax(0,1fr))">${cells}</div>`;
 }
 
 // Label de atendimento: prefere servico_nome (mais específico — bori, banho,
