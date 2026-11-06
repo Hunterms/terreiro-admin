@@ -424,6 +424,12 @@ async function pagosDoCiclo(ciclo, token) {
 
 export function precoCentavos(tipo, pedido, fonte, hoje) {
   const reais = (() => {
+    // Cobrança avulsa: o Pai digitou o valor no admin. Dá pra confiar no doc
+    // porque as rules só deixam o público criar com origem 'agendar_publico',
+    // e update é só de quem tem login.
+    if (tipo === 'sol' && pedido.origem === 'cobranca_admin' && Number(pedido.valor_proposto) > 0) {
+      return Number(pedido.valor_proposto);
+    }
     if (tipo === 'sol') return Number(fonte.valor) || 0;
     if (tipo === 'ins') return Number(fonte.valor) || 0;
     if (tipo === 'men') return mensalidadeReais(pedido, fonte, hoje);

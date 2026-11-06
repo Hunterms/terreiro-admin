@@ -13,6 +13,11 @@ const HOJE = '2026-07-30';
 // serviço de consulta: preço é o do adm_servicos, direto
 assert.equal(precoCentavos('sol', {}, { valor: 150 }, HOJE), 15000);
 
+// cobrança avulsa do admin: vale o valor digitado, não o do serviço
+assert.equal(precoCentavos('sol', { origem: 'cobranca_admin', valor_proposto: 350 }, { valor: 150 }, HOJE), 35000);
+// o mesmo campo vindo do público é ignorado
+assert.equal(precoCentavos('sol', { origem: 'agendar_publico', valor_proposto: 1 }, { valor: 150 }, HOJE), 15000);
+
 // evento: preço é o do doc do evento
 assert.equal(precoCentavos('ins', {}, { valor: 40 }, HOJE), 4000);
 

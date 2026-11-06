@@ -7099,6 +7099,7 @@ function renderSolicitacoes(c) {
         <div class="page-sub">${pendentes.length} pendente${pendentes.length===1?'':'s'} · vindas do site público</div>
       </div>
       <div class="page-actions">
+        <button class="btn btn-primary" onclick="window._app.novaCobranca()">+ Nova cobrança</button>
         <a class="btn" href="https://terreirodocandieiro.com.br/agendar.html" target="_blank">↗ Ver página pública</a>
       </div>
     </div>
@@ -7310,6 +7311,83 @@ async function aprovarSolicitacao(id) {
       const sufixo = jaPago ? ' (marcado pago)' : '';
       toast((gcalIsConnected() ? 'Aprovado · atendimento + calendar criado' : 'Aprovado · atendimento criado')+sufixo,'ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+}
+
+// Cobrança avulsa: o Pai escolhe pessoa, serviço, dia e um valor qualquer, e
+// sai um link da InfinitePay pra mandar. Nasce como solicitação comum
+// (origem 'cobranca_admin'), então o resto é o caminho de sempre: o Worker põe
+// em "aguardando pagamento", o pagamento devolve pra fila, e o Pai aprova.
+// O valor digitado só vale porque o público não consegue criar essa origem.
+function novaCobranca() {
+  const servs = S.servicos.filter(s => s.ativo !== false).sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  const cfg = S.cfgAgendamento || {};
+  openModal(`
+    <div class="modal-h">
+      <h3>Nova cobrança</h3>
+      <button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-c">
+      <div class="fi-group"><label>Nome</label><input class="fi" id="cb-nome"/></div>
+      <div class="fi-group"><label>Telefone (WhatsApp)</label><input class="fi" id="cb-tel" inputmode="tel" placeholder="19 99999-9999"/></div>
+      <div class="fi-group"><label>Email (opcional)</label><input class="fi" id="cb-email" type="email"/></div>
+      <div class="fi-group"><label>Serviço</label><select class="fi" id="cb-serv">${servs.map(s => `<option value="${escapaHtml(s.id)}">${escapaHtml(s.nome)}</option>`).join('')}</select></div>
+      <div class="fi-group"><label>Valor (R$)</label><input class="fi" id="cb-valor" type="number" min="1" step="1"/></div>
+      <div style="display:flex;gap:10px">
+        <div class="fi-group" style="flex:1"><label>Dia</label><input class="fi" id="cb-data" type="date"/></div>
+        <div class="fi-group" style="flex:1"><label>Hora</label><input class="fi" id="cb-hora" type="time" step="900"/></div>
+      </div>
+      <div class="fi-group"><label>Modalidade</label><select class="fi" id="cb-mod"><option value="presencial">Presencial</option><option value="online">Online</option></select></div>
+      <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="cb-obs"></textarea></div>
+      <div id="cb-err" style="color:var(--red);font-size:13px;display:none"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="cb-ok">Gerar link</button>
+    </div>
+  `);
+  const preencher = () => { const s = servs.find(x => x.id === $('#cb-serv').value); if(s?.valor) $('#cb-valor').value = s.valor; };
+  $('#cb-serv').onchange = preencher; preencher();
+
+  $('#cb-ok').onclick = async () => {
+    const serv = servs.find(x => x.id === $('#cb-serv').value);
+    const nome = $('#cb-nome').value.trim(), tel = $('#cb-tel').value.replace(/\D/g,'');
+    const email = $('#cb-email').value.trim(), valor = Number($('#cb-valor').value);
+    const data = $('#cb-data').value, hora = $('#cb-hora').value, err = $('#cb-err');
+    const falta = !nome ? 'Informe o nome' : tel.length < 10 ? 'Telefone inválido' : !serv ? 'Escolha o serviço'
+      : !(valor > 0) ? 'Informe o valor' : !data || !hora ? 'Informe dia e hora' : null;
+    if(falta) { err.textContent = falta; err.style.display = 'block'; return; }
+    if(!cfg.checkout_ativo || !cfg.checkout_worker_url) { err.textContent = 'Checkout desligado em Config. do agendamento.'; err.style.display = 'block'; return; }
+    const btn = $('#cb-ok'); btn.disabled = true; btn.textContent = 'Gerando...';
+    try {
+      const dur = Number(serv.duracao_min) || 60;
+      const ref = await addDoc(collection(dbPvd,'adm_solicitacoes'), {
+        nome, tel, email: email || null, observacao: $('#cb-obs').value.trim(),
+        data, hora, duracao_min: dur, servico_id: serv.id, servico_nome: serv.nome,
+        modalidade: $('#cb-mod').value, metodo_pagamento: null, comprovante_anexado: false,
+        tipo_oraculo: 'outro', valor_proposto: valor, status: 'pendente',
+        origem: 'cobranca_admin', criadoEm: serverTimestamp()
+      });
+      await syncSlotPub('sol_'+ref.id, data, hora, dur, 'solicitacao');
+      const r = await fetch(cfg.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tipo:'sol', doc_id: ref.id })
+      });
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok || !d.url) throw new Error('pedido criado, mas o link falhou: ' + (d.error || r.status));
+      const msg = `Oi ${nome.split(' ')[0]}, é do Terreiro do Candieiro 🪷\n\n${serv.nome}\n📅 ${fmt.data(data)} às ${hora}\n💰 R$ ${valor}\n\nPra confirmar, é só pagar por este link:\n${d.url}\n\nAxé!`;
+      $('.modal-c').innerHTML = `
+        <div style="font-size:13.5px;color:var(--text2);margin-bottom:10px">Link de R$ ${valor} pronto. O pedido fica em "Aguardando pagamento" e volta pra fila quando pagar.</div>
+        <input class="fi" readonly value="${escapaHtml(d.url)}" onclick="this.select()" style="margin-bottom:12px"/>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="cb-copy">📋 Copiar link</button>
+          <a class="btn" style="background:#25d366;color:#fff;border-color:transparent" href="https://wa.me/${telLimpoBR(tel)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">💬 Mandar no WhatsApp</a>
+        </div>`;
+      $('.modal-f').innerHTML = `<button class="btn btn-primary" onclick="closeModal()">Fechar</button>`;
+      $('#cb-copy').onclick = () => navigator.clipboard.writeText(d.url).then(() => toast('Link copiado','ok'));
+    } catch(e) {
+      err.textContent = 'Erro: ' + e.message; err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Gerar link';
+    }
   };
 }
 
@@ -9735,7 +9813,7 @@ window._app = {
   openConsulenteForm,
   toggleArquivarConsulente,
   setAgendaFiltro,
-  aprovarSolicitacao,
+  aprovarSolicitacao, novaCobranca,
   rejeitarSolicitacao,
   solicitacaoPraFila,
   openAvisoForm,
