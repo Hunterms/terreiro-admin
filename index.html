@@ -3528,7 +3528,7 @@ async function _carregarEmailCfg() {
   return _emailCfg;
 }
 
-async function enviarEmailConfirmacao(pedidoId, correcao = false) {
+async function enviarEmailConfirmacao(pedidoId) {
   try {
     // Pequeno delay pra o listener atualizar S.pedidos com o status novo
     await new Promise(r => setTimeout(r, 250));
@@ -3549,7 +3549,7 @@ async function enviarEmailConfirmacao(pedidoId, correcao = false) {
       });
       return;
     }
-    if (correcao ? p.email_correcao_parcelas_em : p.email_confirmacao_enviado_em) return; // idempotente
+    if (p.email_confirmacao_enviado_em) return; // idempotente
 
     const cfg = await _carregarEmailCfg();
     if (!cfg?.enabled) { console.warn('Email desativado (adm_config/email.enabled=false)'); return; }
@@ -3559,13 +3559,8 @@ async function enviarEmailConfirmacao(pedidoId, correcao = false) {
     }
 
     const produto = S.produtos.find(x => x.id === p.produto_id) || {};
-    let subject = _emailConfirmacaoSubject(p, produto);
-    let html = _buildEmailConfirmacaoHTML(p, produto, S);
-    if (correcao) {
-      subject = 'Correção das datas das parcelas · ' + (p.produto_nome || 'Terreiro do Candieiro');
-      html = html.replace('<!-- Hero confirmação -->', `<tr><td style="padding:28px 32px 0"><div style="background:#fff3cd;border-left:3px solid #d4a843;border-radius:8px;padding:16px 18px;color:#3a2f24;font-size:14px;line-height:1.6"><strong>Correção:</strong> no email anterior, as datas das próximas parcelas saíram erradas. As certas estão aqui embaixo. Desculpa a confusão.</div></td></tr>
-      <!-- Hero confirmação -->`);
-    }
+    const subject = _emailConfirmacaoSubject(p, produto);
+    const html = _buildEmailConfirmacaoHTML(p, produto, S);
     const text = _buildEmailConfirmacaoText(p, produto);
 
     const resp = await fetch(cfg.worker_url, {
@@ -3588,9 +3583,9 @@ async function enviarEmailConfirmacao(pedidoId, correcao = false) {
     }
 
     await updateDoc(doc(dbPvd, 'vendas_pedidos', pedidoId), {
-      [correcao ? 'email_correcao_parcelas_em' : 'email_confirmacao_enviado_em']: serverTimestamp()
+      email_confirmacao_enviado_em: serverTimestamp()
     });
-    toast(correcao ? '📧 Correção enviada' : '📧 Email enviado','ok');
+    toast('📧 Email enviado','ok');
   } catch(e) {
     console.warn('Falha ao enviar email:', e?.message || e);
     // Não bloqueia o fluxo do admin
@@ -3649,17 +3644,6 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
 
 
 // Backfill: reenvia confirmação pra todos os pedidos confirmados sem email_confirmacao_enviado_em
-// Correção das datas de parcela pra quem já recebeu a confirmação do produto.
-async function enviarCorrecaoParcelas(produtoId) {
-  const produto = S.produtos.find(x => x.id === produtoId);
-  if (!produto?.parcelamento?.segunda_parcela_mes) { toast('Preencha e salve o "Mês da 2ª parcela" antes','err'); return; }
-  const alvo = (S.pedidos||[]).filter(p => p.produto_id === produtoId && p.status === 'confirmado'
-    && p.email_confirmacao_enviado_em && !p.email_correcao_parcelas_em && (Number(p.parcelas_total)||1) > 1);
-  if (!alvo.length) { toast('Ninguém pra corrigir neste produto','ok'); return; }
-  if (!confirm(`Mandar a correção das datas pra ${alvo.length} pessoa(s)?\n\n${alvo.map(p => p.nome).join('\n')}`)) return;
-  for (const p of alvo) { await enviarEmailConfirmacao(p.id, true); await new Promise(r => setTimeout(r, 600)); }
-}
-
 async function reenviarEmailsPendentes() {
   const candidatos = (S.pedidos||[]).filter(p =>
     p.status === 'confirmado' && !p.email_confirmacao_enviado_em
@@ -8002,7 +7986,6 @@ function openProdutoForm(id=null) {
     </div>
     <div class="modal-f">
       ${isEdit?'<button class="btn btn-danger" id="pd-del">Excluir</button>':''}
-      ${isEdit && p?.parcelamento?.ativo ? `<button class="btn" onclick="window._app.enviarCorrecaoParcelas('${p.id}')">📧 Corrigir datas das parcelas</button>` : ''}
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="pd-save">${isEdit?'Salvar':'Criar'}</button>
     </div>
@@ -9884,7 +9867,7 @@ window._app = {
   setPedTab,
   setPedidoStatus,
   deletarPedido,
-  reenviarEmailsPendentes, enviarCorrecaoParcelas,
+  reenviarEmailsPendentes,
   backfillAlunosRecorrentes,
   // Debug helpers
   _checarEmailsPendentes: () => {
