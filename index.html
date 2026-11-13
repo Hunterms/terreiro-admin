@@ -323,7 +323,9 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 import * as Push from "./push.js";
 import {
   _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText,
-  _emailConfirmacaoSubject, _proximasParcelas, _buildEmailConfirmacaoHTML, _buildEmailConfirmacaoText
+  _emailConfirmacaoSubject, _proximasParcelas, _buildEmailConfirmacaoHTML, _buildEmailConfirmacaoText,
+  _buildLembreteHTML, _buildLembreteText,
+  _emailBoasVindasSubject, _buildEmailBoasVindasHTML, _buildEmailBoasVindasText
 } from "./email-textos.js";
 
 // Registra o service worker já na carga, antes de qualquer login: é ele que faz
@@ -2537,6 +2539,9 @@ function openFilhoForm(id=null, pre=null) {
         // porque a ficha de verdade agora é o fin_filhos.
         if(pre?._cadastroId) await deleteDoc(doc(dbPvd,'adm_cadastros_filho',pre._cadastroId));
         toast('Filho cadastrado','ok');
+        // Aprovação de cadastro com email: manda o guia de entrada na área.
+        // Não bloqueia nem desfaz nada se falhar; o toast diz o que houve.
+        if(pre?._cadastroId && data.auth_email && data.status === 'ativo') enviarEmailBoasVindas(data);
       }
       closeModal();
     } catch(e) {
@@ -3594,6 +3599,27 @@ async function enviarEmailConfirmacao(pedidoId) {
 
 // Envia email de confirmação de atendimento (consulta/trabalho).
 // Aceita email diretamente pra rodar logo após aprovação (antes do listener atualizar S).
+async function enviarEmailBoasVindas(f) {
+  try {
+    const cfg = await _carregarEmailCfg();
+    if (!cfg?.enabled || !cfg.worker_url || !cfg.worker_secret) { toast('Email desligado: boas-vindas não saiu','err'); return; }
+    const resp = await fetch(cfg.worker_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+      body: JSON.stringify({
+        to: f.auth_email, to_name: f.nome,
+        from: cfg.from || undefined, reply_to: cfg.reply_to || undefined,
+        subject: _emailBoasVindasSubject(f), html: _buildEmailBoasVindasHTML(f), text: _buildEmailBoasVindasText(f)
+      })
+    });
+    if (!resp.ok) throw new Error(`Worker ${resp.status}: ${(await resp.text().catch(()=> '')).slice(0,200)}`);
+    toast('📧 Email de boas-vindas enviado','ok');
+  } catch(e) {
+    console.warn('Falha email boas-vindas:', e?.message || e);
+    toast('Boas-vindas não saiu: '+(e?.message||e),'err');
+  }
+}
+
 async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
   try {
     await new Promise(r => setTimeout(r, 250));
@@ -5608,52 +5634,6 @@ async function enviarLembretesMensalidade(marcados) {
   await carregarListaMensalidade();
 }
 
-function _buildLembreteHTML(filho, dataBr) {
-  const nomePrim = (filho.nome||'').split(' ')[0];
-  const itensHTML = filho.itens.map(it => `
-    <li style="margin-bottom:10px;color:#3e2f1c;font-size:15px;line-height:1.45"><strong>${it.desc}</strong></li>
-  `).join('');
-  return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background:#1a1410;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
-  <table cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#1a1410">
-    <tr><td align="center" style="padding:30px 16px">
-      <table cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;background:#fdf8ee;border-radius:14px;overflow:hidden">
-        <tr><td align="center" style="padding:30px 24px 18px;background:#2a1f17">
-          <img src="https://terreirodocandieiro.com.br/logocandieiro.png" alt="Candieiro" width="58" height="58" style="display:block;margin:0 auto 12px;background:#fff;border-radius:50%;padding:5px;box-shadow:0 4px 14px rgba(0,0,0,0.35)"/>
-          <div style="font-size:12px;color:#d4a843;letter-spacing:.2em;text-transform:uppercase;font-weight:700">Terreiro do Candieiro</div>
-        </td></tr>
-        <tr><td style="padding:30px 28px 24px;color:#3e2f1c">
-          <p style="font-size:17px;margin:0 0 16px;line-height:1.4">Salve <strong>${nomePrim}</strong>,</p>
-          <p style="font-size:15px;margin:0 0 18px;line-height:1.55;color:#5a4738">Amanhã <strong>(${dataBr})</strong> você tem na casa:</p>
-          <ul style="padding-left:22px;margin:0 0 24px">${itensHTML}</ul>
-          <div style="padding:14px 18px;background:rgba(212,168,67,.15);border-left:3px solid #d4a843;border-radius:6px;margin-bottom:22px;font-size:13.5px;color:#5a4738;line-height:1.5">Se rolar imprevisto, avisa antes pra gente encaixar alguém no seu lugar.</div>
-          <p style="margin:0 0 6px"><a href="https://terreirodocandieiro.com.br/area-filho.html" style="display:inline-block;padding:12px 22px;background:#d4a843;color:#1a1209;text-decoration:none;border-radius:8px;font-weight:700;font-size:14.5px">Ver área pessoal</a></p>
-        </td></tr>
-        <tr><td align="center" style="padding:18px 28px 24px;background:#fdf8ee;border-top:1px solid #e5d5b8;font-size:11px;color:#8a7560">
-          Terreiro do Candieiro · R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
-}
-
-function _buildLembreteText(filho, dataBr) {
-  const nomePrim = (filho.nome||'').split(' ')[0];
-  return `Salve ${nomePrim},
-
-Amanhã (${dataBr}) você tem na casa:
-
-${filho.itens.map(it => `• ${it.desc}`).join('\n')}
-
-Se rolar imprevisto, avisa antes pra gente encaixar alguém no seu lugar.
-
-Sua área pessoal: https://terreirodocandieiro.com.br/area-filho.html
-
-Terreiro do Candieiro`;
-}
-
 // ── PERGUNTAS (quiz de alinhamento de conhecimento) ──────────────────────
 // Admin cria perguntas com opções e gabarito (correta_idx é interno —
 // nunca exposto ao filho). Filho responde uma vez por pergunta. Aqui o
@@ -6199,6 +6179,10 @@ function openAtendimentoForm(id=null) {
           </select>
         </div>
       </div>
+      ${a ? '' : `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:2px 0 14px">
+        <input type="checkbox" id="at-cobrar" style="width:18px;height:18px"/>
+        <span style="font-size:13px">Ainda não pagou: o email de confirmação manda PIX e cartão</span>
+      </label>`}
       <div class="row-2">
         <div class="fi-group"><label>Status do atendimento</label>
           <select class="fi" id="at-st">
@@ -6276,6 +6260,7 @@ function openAtendimentoForm(id=null) {
         await updateDoc(doc(dbPvd,'adm_atendimentos',id), payload);
       } else {
         payload.criadoEm = serverTimestamp();
+        payload.cobrar_no_email = !stPag.startsWith('pago') && stPag !== 'isento' && !!$('#at-cobrar')?.checked;
         const ref = await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
         docId = ref.id;
         if(stAt !== 'cancelado') enviarEmailAtendimento(docId, { ...payload, email: cons.email || '' });
@@ -7245,6 +7230,11 @@ async function aprovarSolicitacao(id) {
           <span>Pagamento já confirmado (recebi PIX/dinheiro/etc)</span>
         </label>
         <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Se ainda não recebeu, deixa desmarcado. Dá pra mudar depois editando o atendimento.</div>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:12px">
+          <input type="checkbox" id="ap-cobrar" style="width:18px;height:18px;cursor:pointer"/>
+          <span>A pessoa ainda não pagou: o email manda PIX e cartão</span>
+        </label>
+        <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Desmarcado, o email confirma o horário e não fala de pagamento.</div>
       </div>
     </div>
     <div class="modal-f">
@@ -7254,6 +7244,7 @@ async function aprovarSolicitacao(id) {
   `);
   $('#ap-ok').onclick = async () => {
     const jaPago = $('#ap-pago').checked;
+    const cobrar = !jaPago && $('#ap-cobrar').checked;
     closeModal();
     try {
       // 1. Verifica se consulente já existe (pelo tel)
@@ -7308,6 +7299,7 @@ async function aprovarSolicitacao(id) {
         status_atendimento: 'agendado',
         observacao: s.observacao || '',
         origem_solicitacao_id: id,
+        cobrar_no_email: cobrar,
         criadoEm: serverTimestamp(),
         atualizadoEm: serverTimestamp()
       };
