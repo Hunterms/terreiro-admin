@@ -1,0 +1,16 @@
+import * as E from './email-textos.js';
+import assert from 'node:assert';
+const prod = { parcelamento:{ ativo:true, qtd:4, vencimento_dia:10, segunda_parcela_mes:'2027-02' } };
+const par = E._proximasParcelas({ parcelas_total:4, valor:150 }, prod);
+console.log(par.map(x=>x.data));
+assert.deepStrictEqual(par.map(x=>x.data), ['10 de fevereiro de 2027','10 de março de 2027','10 de abril de 2027']);
+const semMes = E._proximasParcelas({ parcelas_total:2, valor:1, criadoEm:{toDate:()=>new Date(2026,10,13)} }, { parcelamento:{ativo:true,vencimento_dia:10} });
+assert.strictEqual(semMes[0].data, '10 de dezembro de 2026');
+const S = { cfgAgendamento:{ pix:'chave@pix' }, servicos:[] };
+const a0 = { consulente_nome:'Ana Souza', servico_nome:'Bori', data:'2026-12-17', hora:'16:00', valor:0, status_pagamento:'pendente' };
+const h0 = E._buildEmailAtendHTML(a0,S), t0 = E._buildEmailAtendText(a0,S);
+assert(!/R\$|PIX|a confirmar/.test(h0) && !/R\$|PIX|a confirmar/.test(t0), 'sem valor ainda fala de pagamento');
+assert(/Endereço/.test(h0) && /Endereço/.test(t0), 'sem modalidade deveria ser presencial');
+const h1 = E._buildEmailAtendHTML({ ...a0, valor:100 }, S);
+assert(/R\$ 100,00/.test(h1) && /PIX/.test(h1));
+console.log('ok');

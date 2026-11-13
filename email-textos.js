@@ -36,6 +36,7 @@ export function _buildEmailAtendHTML(a, S) {
   const modalidade = a.modalidade === 'online' ? '💻 Online' : '🏠 Presencial';
   const valor = Number(a.valor)||0;
   const pago = (a.status_pagamento||'').startsWith('pago');
+  const semCobranca = valor <= 0 || a.status_pagamento === 'isento';
   const cfgA = S.cfgAgendamento || {};
   const endereco = cfgA.endereco || 'R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP';
   const pixKey = (cfgA.pix || '').trim();
@@ -64,13 +65,13 @@ export function _buildEmailAtendHTML(a, S) {
               <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Data e horário</div>
               <div style="font-size:15px;color:#3e2f1c;font-weight:600;margin-bottom:12px;text-transform:capitalize">${dataBr} · ${a.hora||''}</div>
               <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Modalidade</div>
-              <div style="font-size:15px;color:#3e2f1c;font-weight:600;margin-bottom:12px">${modalidade}</div>
-              <div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Valor</div>
-              <div style="font-size:17px;color:#d4a843;font-weight:800">R$ ${valor.toFixed(2).replace('.',',')} ${pago?'<span style="color:#2a7a3a;font-size:13px;font-weight:600">· pago ✓</span>':'<span style="color:#a8825a;font-size:13px;font-weight:600">· a confirmar</span>'}</div>
+              <div style="font-size:15px;color:#3e2f1c;font-weight:600;${semCobranca?'':'margin-bottom:12px'}">${modalidade}</div>
+              ${semCobranca ? '' : `<div style="font-size:12px;color:#8a7560;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Valor</div>
+              <div style="font-size:17px;color:#d4a843;font-weight:800">R$ ${valor.toFixed(2).replace('.',',')} ${pago?'<span style="color:#2a7a3a;font-size:13px;font-weight:600">· pago ✓</span>':'<span style="color:#a8825a;font-size:13px;font-weight:600">· a confirmar</span>'}</div>`}
             </td></tr>
           </table>
 
-          ${a.modalidade === 'presencial' ? `
+          ${a.modalidade !== 'online' ? `
             <div style="padding:14px 18px;background:rgba(46,204,113,.1);border-left:3px solid #2a7a3a;border-radius:6px;margin-bottom:18px">
               <div style="font-size:12px;color:#2a7a3a;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📍 Endereço</div>
               <div style="font-size:14px;color:#3e2f1c;line-height:1.5">${endereco}</div>
@@ -81,7 +82,7 @@ export function _buildEmailAtendHTML(a, S) {
             </div>
           `}
 
-          ${!pago ? (() => {
+          ${!pago && !semCobranca ? (() => {
             const servicoDoc = (S.servicos||[]).find(x => x.id === a.servico_id);
             const cardLink = servicoDoc?.infinity_link;
             const indCartao = ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m));
@@ -121,6 +122,7 @@ export function _buildEmailAtendText(a, S) {
   const valor = Number(a.valor)||0;
   const pago = (a.status_pagamento||'').startsWith('pago');
   const cfgA = S.cfgAgendamento || {};
+  const semCobranca = valor <= 0 || a.status_pagamento === 'isento';
   const pixKey = (cfgA.pix || '').trim();
   const servicoDoc = (S.servicos||[]).find(x => x.id === a.servico_id);
   const cardLink = servicoDoc?.infinity_link;
@@ -132,10 +134,9 @@ Agendamento confirmado por aqui.
 Serviço: ${servico}
 Quando: ${dataBr} às ${a.hora||''}
 Modalidade: ${modalidade}
-Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a confirmar)'}
-
-${a.modalidade === 'presencial' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: o link da chamada chega por email ou WhatsApp uns minutos antes.\n`}
-${!pago ? `${pixKey?`PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n`:''}${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
+${semCobranca ? '' : `Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a confirmar)'}\n`}
+${a.modalidade !== 'online' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: o link da chamada chega por email ou WhatsApp uns minutos antes.\n`}
+${!pago && !semCobranca ? `${pixKey?`PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n`:''}${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
 Qualquer coisa antes do dia, chama: https://wa.me/5519992494267
 
 Terreiro do Candieiro
@@ -155,11 +156,13 @@ export function _proximasParcelas(p, produto) {
   const dia = Number(produto.parcelamento.vencimento_dia) || 10;
   const valor = Number(p.valor) || 0;
   const out = [];
-  const hoje = new Date();
-  // Próximo dia X — se hoje > dia X do mês atual, pula pro próximo mês
-  let baseMes = hoje.getDate() > dia ? hoje.getMonth() + 1 : hoje.getMonth() + 1; // sempre próximo mês como 2ª parcela
+  // 2ª parcela: o mês que o produto declara (ex.: turma que começa no ano que vem);
+  // sem isso, o mês seguinte ao da matrícula. Contar do dia do envio errava as datas.
+  const ini = produto.parcelamento.segunda_parcela_mes || '';
+  const base = /^\d{4}-\d{2}$/.test(ini) ? new Date(+ini.slice(0, 4), +ini.slice(5) - 1, 1)
+    : (() => { const h = p.criadoEm?.toDate?.() || new Date(); return new Date(h.getFullYear(), h.getMonth() + 1, 1); })();
   for (let i = 2; i <= total; i++) {
-    const d = new Date(hoje.getFullYear(), baseMes + (i - 2), dia);
+    const d = new Date(base.getFullYear(), base.getMonth() + (i - 2), dia);
     out.push({
       n: i,
       data: d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),

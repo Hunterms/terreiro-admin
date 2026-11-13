@@ -6258,6 +6258,7 @@ function openAtendimentoForm(id=null) {
       data, hora,
       duracao_min: parseInt($('#at-dur').value) || 60,
       tipo_oraculo: tipo,
+      modalidade: a?.modalidade || 'presencial',
       servico_id: sv.real ? sv.id : (a?.servico_id || null),
       servico_nome: sv.real ? sv.nome : (a?.servico_nome || null),
       publico: tipo !== 'buzios' && sv.publico !== false,
@@ -6277,6 +6278,7 @@ function openAtendimentoForm(id=null) {
         payload.criadoEm = serverTimestamp();
         const ref = await addDoc(collection(dbPvd,'adm_atendimentos'), payload);
         docId = ref.id;
+        if(stAt !== 'cancelado') enviarEmailAtendimento(docId, { ...payload, email: cons.email || '' });
       }
       // Sync slot público (sem PII) — cancelado vira delete, resto vira upsert
       if(stAt === 'cancelado') {
@@ -7964,6 +7966,7 @@ function openProdutoForm(id=null) {
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Qtd de parcelas</label><input type="number" min="2" max="24" class="fi" id="pd-parc-qtd" value="${p?.parcelamento?.qtd||4}"/></div>
             <div><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Vencimento (dia)</label><input type="number" min="1" max="28" class="fi" id="pd-parc-dia" value="${p?.parcelamento?.vencimento_dia||10}"/></div>
           </div>
+          <div style="margin-top:8px"><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Mês da 2ª parcela (vazio = mês seguinte à matrícula)</label><input type="month" class="fi" id="pd-parc-ini" value="${p?.parcelamento?.segunda_parcela_mes||''}"/></div>
           <div style="margin-top:8px"><label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Texto extra (opcional)</label><input class="fi" id="pd-parc-texto" value="${(p?.parcelamento?.texto||'1ª parcela paga no ato da matrícula. Demais via PIX.').replace(/"/g,'&quot;')}"/></div>
         </div>
       </div>
@@ -8066,7 +8069,8 @@ function openProdutoForm(id=null) {
         ativo: true,
         qtd: parseInt($('#pd-parc-qtd').value) || 4,
         vencimento_dia: parseInt($('#pd-parc-dia').value) || 10,
-        texto: $('#pd-parc-texto').value.trim() || ''
+        texto: $('#pd-parc-texto').value.trim() || '',
+        segunda_parcela_mes: $('#pd-parc-ini').value || null
       };
     } else {
       data.parcelamento = { ativo: false };
