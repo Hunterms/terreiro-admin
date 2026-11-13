@@ -6147,6 +6147,19 @@ function renderGcalEventos(events) {
   `;
 }
 
+// Serviços do form manual: os ativos de adm_servicos; sem eles, os dois oráculos de antes.
+function _tipoDoServico(nome='') {
+  const n = nome.toLowerCase();
+  return /b[uú]zios/.test(n) ? 'buzios' : /baralho/.test(n) ? 'baralho_cigano' : 'outro';
+}
+function _servicosDoForm(a) {
+  let l = (S.servicos||[]).filter(s => s.ativo !== false).map(s => ({ ...s, real: true }));
+  if (!l.length) l = [{ id:'baralho_cigano', nome:'Baralho cigano', valor:100, duracao_min:60 }, { id:'buzios', nome:'Búzios', valor:100, duracao_min:60 }];
+  const alvo = a && (l.find(s => s.id === a.servico_id) || l.find(s => _tipoDoServico(s.nome) === a.tipo_oraculo));
+  (alvo || l[0]).sel = true;
+  return l;
+}
+
 function openAtendimentoForm(id=null) {
   const a = id ? S.atendimentos.find(x=>x.id===id) : null;
   const isEdit = !!a;
@@ -6167,10 +6180,9 @@ function openAtendimentoForm(id=null) {
         <div class="fi-group"><label>Hora *</label><input type="time" class="fi" id="at-hora" value="${a?.hora||''}"/></div>
       </div>
       <div class="row-2">
-        <div class="fi-group"><label>Tipo de oráculo *</label>
+        <div class="fi-group"><label>Serviço *</label>
           <select class="fi" id="at-tipo">
-            <option value="baralho_cigano" ${(!a||a?.tipo_oraculo==='baralho_cigano')?'selected':''}>Baralho cigano (público)</option>
-            <option value="buzios" ${a?.tipo_oraculo==='buzios'?'selected':''}>Búzios (privado)</option>
+            ${_servicosDoForm(a).map(sv => `<option value="${sv.id}" ${sv.sel?'selected':''}>${escapaHtml(sv.nome)}${_tipoDoServico(sv.nome)==='buzios'?' (privado)':''}</option>`).join('')}
           </select>
         </div>
         <div class="fi-group"><label>Duração (min)</label><input type="number" class="fi" id="at-dur" value="${a?.duracao_min||60}" min="15" step="15"/></div>
@@ -6219,6 +6231,12 @@ function openAtendimentoForm(id=null) {
     </div>
   `, { lg: true });
 
+  if(!isEdit) $('#at-tipo').onchange = () => {
+    const sv = _servicosDoForm(null).find(x => x.id === $('#at-tipo').value);
+    if(sv?.valor != null) $('#at-valor').value = sv.valor;
+    if(sv?.duracao_min) $('#at-dur').value = sv.duracao_min;
+  };
+  if(!isEdit) $('#at-tipo').onchange();
   $('#at-save').onclick = async () => {
     const consId = $('#at-cons').value;
     if(!consId) { toast('Selecione um consulente','err'); return; }
@@ -6227,7 +6245,8 @@ function openAtendimentoForm(id=null) {
     const data = $('#at-data').value;
     const hora = $('#at-hora').value;
     if(!data || !hora) { toast('Informe data e hora','err'); return; }
-    const tipo = $('#at-tipo').value;
+    const sv = _servicosDoForm(a).find(x => x.id === $('#at-tipo').value);
+    const tipo = _tipoDoServico(sv.nome);
     const valor = parseFloat($('#at-valor').value) || 0;
     const stPag = $('#at-pag').value;
     const stAt = $('#at-st').value;
@@ -6239,7 +6258,9 @@ function openAtendimentoForm(id=null) {
       data, hora,
       duracao_min: parseInt($('#at-dur').value) || 60,
       tipo_oraculo: tipo,
-      publico: tipo !== 'buzios',
+      servico_id: sv.real ? sv.id : (a?.servico_id || null),
+      servico_nome: sv.real ? sv.nome : (a?.servico_nome || null),
+      publico: tipo !== 'buzios' && sv.publico !== false,
       valor,
       status_pagamento: stPag,
       pago_em: stPag.startsWith('pago') && (!a || !a.status_pagamento || !a.status_pagamento.startsWith('pago')) ? serverTimestamp() : (a?.pago_em||null),
