@@ -5922,6 +5922,8 @@ function renderAgenda(c) {
 
     ${painelPausas()}
 
+    <div id="vagas-site" style="margin-bottom:14px"></div>
+
     ${gcalOn ? `
       <div style="padding:10px 14px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--green);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <span>🟢 Sync ativo · Calendar de <strong>${gcalEm||'(conta google)'}</strong></span>
@@ -5980,6 +5982,76 @@ function renderAgenda(c) {
       }).join('')}
     </div>`}
   `;
+  painelVagasSite();
+}
+
+// ── HORÁRIOS ABERTOS NO SITE ──────────────────────────────────────────────
+// Mesma conta do agendar.html (janelas, pausas, segunda de desenvolvimento pelo
+// Worker, pub_slots_ocupados, antecedência), nos mesmos 60 dias que o site mostra.
+// Se o agendar.html mudar a regra, mudar aqui também.
+async function painelVagasSite() {
+  const el = document.getElementById('vagas-site'); if(!el) return;
+  el.innerHTML = '<div style="font-size:13px;color:var(--text3)">Contando horários abertos no site…</div>';
+  try {
+    const pad = n => String(n).padStart(2,'0');
+    const toMin = h => { const [a,b] = h.split(':').map(Number); return a*60+b; };
+    const fromMin = m => `${pad(Math.floor(m/60))}:${pad(m%60)}`;
+    const cfg = S.cfgAgendamento || {};
+    const semanaPadrao = { '2':[{inicio:'10:00',fim:'18:00'}], '3':[{inicio:'10:00',fim:'18:00'}], '4':[{inicio:'10:00',fim:'18:00'}], '5':[{inicio:'10:00',fim:'18:00'}], '6':[{inicio:'10:00',fim:'18:00'}] };
+    const semana = cfg.horarios_semana || semanaPadrao;
+    const antec = cfg.antecedencia_min_horas ?? 24;
+    const servs = (S.servicos||[]).filter(s => s.ativo !== false && s.publico !== false);
+    const dur = servs.length ? Math.min(...servs.map(s => s.duracao_min || 60)) : 60;
+
+    const hoje = new Date(); hoje.setHours(12,0,0,0);
+    const fim = new Date(hoje); fim.setDate(fim.getDate()+60);
+    let semConsulta = null;
+    try {
+      const r = await fetch(WORKER_PDV+'/agenda', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+      const d = await r.json(); if(r.ok && Array.isArray(d.sem_consulta)) semConsulta = new Set(d.sem_consulta);
+    } catch(e) {}
+    const oc = new Set();
+    (await getDocs(query(collection(dbPvd,'pub_slots_ocupados'), where('data','>=',_iso(hoje)), where('data','<=',_iso(fim))))).forEach(d => {
+      const a = d.data(); if(!a.data || !a.hora) return;
+      for(let m = toMin(a.hora); m < toMin(a.hora) + (a.dur||60); m += 15) oc.add(`${a.data} ${fromMin(m)}`);
+    });
+    const minB = Date.now() + antec*3600*1000;
+    const livre = (ds, m) => !oc.has(`${ds} ${fromMin(m)}`) && new Date(`${ds}T${fromMin(m)}:00-03:00`).getTime() >= minB;
+
+    const dias = [];
+    for(let d = new Date(hoje); d <= fim; d.setDate(d.getDate()+1)) {
+      const ds = _iso(d), dow = d.getDay();
+      const fechado = (cfg.pausas||[]).some(p => ds >= p.de && ds <= p.ate) || (semConsulta ? semConsulta.has(ds) : dow === 1);
+      const janelas = [...(fechado ? [] : (semana[String(dow)] || [])), ...((cfg.horarios_extras||{})[ds] || [])];
+      let slots = 0, sobra = 0;
+      for(const j of janelas) {
+        for(let m = toMin(j.inicio); m + dur <= toMin(j.fim); m += dur) {
+          let ok = true; for(let x = m; x < m + dur; x += 15) if(!livre(ds, x)) ok = false;
+          if(ok) slots++;
+        }
+        for(let m = toMin(j.inicio); m < toMin(j.fim); m += 15) if(livre(ds, m)) sobra += 15;
+      }
+      if(slots || sobra) dias.push({ ds, slots, livreMin: sobra });
+    }
+    const total = dias.reduce((s,d) => s + d.slots, 0);
+    const fmtT = min => { const h = Math.floor(min/60), m = min%60; return h ? `${h}h${m?pad(m):''}` : `${m}min`; };
+    el.innerHTML = `
+      <details class="card" style="padding:0" open>
+        <summary style="padding:14px 18px;cursor:pointer;list-style:none;user-select:none">
+          <div style="font-size:15px;font-weight:700">🗓️ Horários abertos no site: ${total} · ${fmtT(total*dur)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Próximos 60 dias, horários de ${dur} min, como o consulente vê no agendar</div>
+        </summary>
+        <div style="padding:0 18px 14px">
+          ${dias.length === 0 ? '<div style="font-size:13px;color:var(--text3)">Nenhum horário aberto.</div>' : `
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <tr style="color:var(--text3);text-align:left"><th style="padding:4px 0">Dia</th><th>Horários</th><th>Tempo pra agendar</th><th>Tempo livre</th></tr>
+            ${dias.map(d => `<tr style="border-top:1px solid var(--border)${d.slots?'':';color:var(--text3)'}"><td style="padding:6px 0;text-transform:capitalize">${_fmtDia(d.ds)}</td><td>${d.slots}</td><td>${d.slots ? fmtT(d.slots*dur) : '—'}</td><td>${fmtT(d.livreMin)}${d.slots ? '' : ' (não cabe um horário)'}</td></tr>`).join('')}
+          </table>`}
+        </div>
+      </details>`;
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:13px;color:var(--red)">Não consegui contar os horários do site: ${escapaHtml(e.message)}</div>`;
+  }
 }
 
 function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
