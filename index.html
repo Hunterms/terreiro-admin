@@ -129,6 +129,10 @@
       </button>
 
       <div class="section-label">Análise</div>
+      <button data-route="entradas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Entradas
+      </button>
       <button data-route="dados">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Dados
@@ -321,6 +325,7 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
   return _onSnapshotOriginal(ref, aoReceber, aoFalhar || ((e) => _falhaDeLeitura(ref, e)));
 }
 import * as Push from "./push.js";
+import { linhasDeEntrada, somarPor } from "./entradas.js";
 import {
   _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText,
   _emailConfirmacaoSubject, _proximasParcelas, _buildEmailConfirmacaoHTML, _buildEmailConfirmacaoText,
@@ -973,6 +978,7 @@ function attachListeners() {
     S.eventoInscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     // Re-render modal de pagamentos se aberto
     if(window._app && window._app.renderPagamentos) window._app.renderPagamentos();
+    if(S.route === 'entradas') renderRoute();
   }));
 
   // Rega diária (1 doc por dia coberto)
@@ -1037,7 +1043,7 @@ function attachListeners() {
         if (p.status === 'confirmado' && p.pago_automatico && !p.confirmadoEm && (p.pagoEm||'') >= '2026-11-02') p.status = 'pendente';
         return p;
       });
-      if(['pedidos','dashboard','produtos'].includes(S.route)) renderRoute();
+      if(['pedidos','dashboard','produtos','entradas'].includes(S.route)) renderRoute();
       atualizarBadgePedidos();
       // Re-render modal de pagamentos do produto se estiver aberto
       if(window._app && window._app.renderPagProd) window._app.renderPagProd();
@@ -1069,7 +1075,7 @@ function attachListeners() {
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
       S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      if(['agenda','consulentes','dashboard'].includes(S.route)) renderRoute();
+      if(['agenda','consulentes','dashboard','entradas'].includes(S.route)) renderRoute();
     }));
 
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_consulentes'), snap => {
@@ -1079,7 +1085,13 @@ function attachListeners() {
 
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_solicitacoes'), snap => {
       S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      if(['solicitacoes','agenda','dashboard'].includes(S.route)) renderRoute();
+      if(['solicitacoes','agenda','dashboard','entradas'].includes(S.route)) renderRoute();
+    }));
+
+    // Mensalidade paga pelo checkout da área do filho (o Worker escreve)
+    S.unsubs.push(onSnapshot(collection(dbPvd,'fin_mensalidade_pedidos'), snap => {
+      S.mensalidades = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(S.route === 'entradas') renderRoute();
     }));
 
     // Contas fixas. A collection é do financeiro (fin_gastos) — aqui o admin
@@ -1163,6 +1175,7 @@ function renderRoute() {
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
     case 'inteligencia':  return renderInteligencia(c);
+    case 'entradas':      return renderEntradas(c);
     case 'avisos':        return renderAvisos(c);
     case 'lembretes':     return renderLembretes(c);
     case 'perguntas':     return renderPerguntas(c);
@@ -8407,6 +8420,88 @@ function _intelConstruirPessoas() {
   return lista.sort((a,b) => b.valorTotal - a.valorTotal);
 }
 
+// ── ENTRADAS ──────────────────────────────────────────────────────────────
+// Quanto entrou por período: mensalidade x resto, por grupo, por item, por dia.
+// O cálculo mora em entradas.js (testado em test-entradas.mjs).
+const _entHoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const _diasAtras = n => { const d = new Date(); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+let _ent = { de: _entHoje().slice(0,8)+'01', ate: _entHoje(), grupo: '' };
+
+function setEntradas(campo, valor) {
+  if (campo === 'rapido') {
+    const n = Number(valor);
+    _ent = { ..._ent, de: n === -1 ? _entHoje().slice(0,8)+'01' : _diasAtras(n), ate: _entHoje() };
+  } else _ent = { ..._ent, [campo]: valor };
+  renderRoute();
+}
+
+function renderEntradas(c) {
+  const esc = t => String(t ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const brl = v => 'R$ ' + (Number(v)||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const { de, ate } = _ent;
+  const todas = linhasDeEntrada({
+    mensalidades: S.mensalidades, atendimentos: S.atendimentos, solicitacoes: S.solicitacoes,
+    pedidos: S.pedidos, inscricoes: S.eventoInscricoes, eventos: S.eventos,
+  });
+  const noPeriodo = todas.filter(l => l.data && l.data >= de && l.data <= ate);
+  const L = _ent.grupo ? noPeriodo.filter(l => l.grupo === _ent.grupo) : noPeriodo;
+  const soma = xs => xs.reduce((s,l) => s+l.valor, 0);
+  const total = soma(L), mens = soma(L.filter(l => l.mensalidade)), checkout = soma(L.filter(l => l.metodo.startsWith('checkout')));
+  const grupos = somarPor(noPeriodo, 'grupo');
+  const itens = somarPor(L, 'item');
+  const porDia = somarPor(L, 'data').sort((a,b) => a.chave < b.chave ? -1 : 1);
+  const maxDia = Math.max(1, ...porDia.map(d => d.total));
+  const nDias = Math.round((new Date(ate) - new Date(de)) / 864e5) + 1;
+  const th = 'text-align:left;padding:8px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text3)';
+  const td = 'padding:8px;border-bottom:1px solid var(--border)';
+  const tabela = (cab, linhas) => `<table style="width:100%;border-collapse:collapse;font-size:13.5px"><tr>${cab.map((h,i) => `<th style="${th}${i?';text-align:right':''}">${h}</th>`).join('')}</tr>${linhas}</table>`;
+
+  c.innerHTML = `
+    <div class="page-head">
+      <div>
+        <div class="page-title">Entradas</div>
+        <div class="page-sub">${nDias} dia${nDias===1?'':'s'} · ${L.length} pagamento${L.length===1?'':'s'} · <strong style="color:var(--green)">${brl(total)}</strong></div>
+      </div>
+      <div class="page-actions" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-sm" onclick="window._app.setEntradas('rapido',0)">Hoje</button>
+        <button class="btn btn-sm" onclick="window._app.setEntradas('rapido',6)">7 dias</button>
+        <button class="btn btn-sm" onclick="window._app.setEntradas('rapido',29)">30 dias</button>
+        <button class="btn btn-sm" onclick="window._app.setEntradas('rapido',-1)">Este mês</button>
+        <input type="date" class="fi" value="${de}" max="${ate}" onchange="window._app.setEntradas('de',this.value)" style="padding:6px 8px">
+        <input type="date" class="fi" value="${ate}" min="${de}" onchange="window._app.setEntradas('ate',this.value)" style="padding:6px 8px">
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:20px">
+      <div class="metric" style="--clr:var(--green)"><div class="ml">Total</div><div class="mv">${brl(total)}</div><div class="mh">${L.length} pagamentos</div></div>
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Mensalidade</div><div class="mv">${brl(mens)}</div><div class="mh">pelo checkout da área do filho</div></div>
+      <div class="metric" style="--clr:var(--blue)"><div class="ml">Fora mensalidade</div><div class="mv">${brl(total-mens)}</div><div class="mh">jogos, produtos, eventos</div></div>
+      <div class="metric" style="--clr:var(--amber)"><div class="ml">Via checkout</div><div class="mv">${brl(checkout)}</div><div class="mh">${brl(total-checkout)} manual</div></div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-h"><div class="card-title">Por tipo</div>${_ent.grupo?`<button class="btn btn-sm" onclick="window._app.setEntradas('grupo','')">Ver todos</button>`:''}</div>
+        ${grupos.length ? tabela(['Tipo','Qtd','Total'], grupos.map(g => `<tr style="cursor:pointer;${_ent.grupo===g.chave?'background:var(--glass2)':''}" onclick="window._app.setEntradas('grupo',${JSON.stringify(g.chave).replace(/"/g,'&quot;')})"><td style="${td}">${esc(g.chave)}</td><td style="${td};text-align:right">${g.qtd}</td><td style="${td};text-align:right">${brl(g.total)}</td></tr>`).join('')) : '<div class="empty"><div class="empty-s">Nada entrou nesse período</div></div>'}
+      </div>
+      <div class="card">
+        <div class="card-h"><div class="card-title">Por dia</div></div>
+        ${porDia.length ? porDia.map(d => `<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin:3px 0"><span style="width:44px;color:var(--text3)">${d.chave.slice(8)}/${d.chave.slice(5,7)}</span><div style="flex:1;background:var(--border);border-radius:3px;height:10px"><div style="width:${(d.total/maxDia*100).toFixed(1)}%;background:var(--green);height:100%;border-radius:3px"></div></div><span style="width:90px;text-align:right">${brl(d.total)}</span></div>`).join('') : '<div class="empty"><div class="empty-s">—</div></div>'}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-h"><div class="card-title">Por item${_ent.grupo?` · ${esc(_ent.grupo)}`:''}</div></div>
+      ${itens.length ? tabela(['Item','Qtd','Total'], itens.map(i => `<tr><td style="${td}">${esc(i.chave)}</td><td style="${td};text-align:right">${i.qtd}</td><td style="${td};text-align:right">${brl(i.total)}</td></tr>`).join('')) : '<div class="empty"><div class="empty-s">—</div></div>'}
+    </div>
+
+    <div class="card">
+      <div class="card-h"><div class="card-title">Pagamentos</div></div>
+      ${L.length ? tabela(['Data','Quem','Item','Como','Valor'], [...L].sort((a,b) => a.data < b.data ? 1 : -1).map(l => `<tr><td style="${td}">${l.data.slice(8)}/${l.data.slice(5,7)}</td><td style="${td};text-align:right">${esc(l.nome)}</td><td style="${td};text-align:right">${esc(l.item)}</td><td style="${td};text-align:right">${esc(l.metodo)}</td><td style="${td};text-align:right">${brl(l.valor)}</td></tr>`).join('')) : '<div class="empty"><div class="empty-s">—</div></div>'}
+      <div style="font-size:12px;color:var(--text3);margin-top:10px">Mensalidade marcada à mão no financeiro não entra: lá ela não tem data nem valor.</div>
+    </div>`;
+}
+
 function renderInteligencia(c) {
   const pessoas = _intelConstruirPessoas();
   const totalReceita = pessoas.reduce((s,p)=>s+p.valorTotal, 0);
@@ -9873,6 +9968,7 @@ function renderDados(c) {
 }
 
 window._app = {
+  setEntradas,
   abrirFecharAgenda, reabrirAgenda, mudarMesAgenda, abrirHorarioExtra, removerHorarioExtra,
   julgarAcessoPdv,
   apagarPessoa,
