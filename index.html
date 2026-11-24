@@ -3422,6 +3422,7 @@ function _renderPagProdContent() {
           </div>
         </div>
         <div class="li-actions">
+          ${r.status === 'aguardando' ? `<button class="btn btn-sm" onclick="window._app.deletarPedido('${escapaJs(r.pedido.id)}','${escapaJs(r.filho.nome||'')}')" title="Apagar pedido repetido ou não pago">🗑 Excluir</button>` : ''}
           ${r.status === 'aguardando' ? `<button class="btn btn-sm btn-primary" onclick="window._app.confirmarPedido('${r.pedido.id}')">Confirmar pago</button>` : ''}
           ${r.status === 'pago' ? `<button class="btn btn-sm" onclick="window._app.reverterPedido('${r.pedido.id}')">Desfazer</button>` : ''}
           ${r.status === 'nao_pago' ? `<button class="btn btn-sm" onclick="window._app.marcarPagoSemPedido('${produtoId}','${r.filho.id}', '${escapaJs(r.filho.nome)}', ${valorAtivo})" title="Cria um pedido já confirmado (ex: pagou em dinheiro)">+ Marcar pago</button>` : ''}
