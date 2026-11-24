@@ -347,7 +347,11 @@ service cloud.firestore {
     match /vendas_pedidos/{id} {
       allow read: if request.auth != null;
       allow create: if request.resource.data.status == 'pendente'
-                    && request.resource.data.origem == 'vendas_publico'
+                    // vendas.html grava as três; antes só a primeira passava, e
+                    // pedido de filho e de aluno antigo caía em "Erro ao enviar".
+                    && request.resource.data.origem in ['vendas_publico', 'vendas_filho', 'vendas_aluno_recorrente']
+                    && (request.resource.data.origem != 'vendas_filho'
+                        || (request.resource.data.filho_id is string && request.resource.data.filho_id.size() > 0))
                     && request.resource.data.nome is string
                     && request.resource.data.nome.size() > 1
                     && request.resource.data.nome.size() < 200
