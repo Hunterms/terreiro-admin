@@ -6101,7 +6101,7 @@ function calendarioAgenda() {
     const ats = (porDia[ds] || []).sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
     cells += `
       <div class="cal-day ${ds===h?'today':''}" style="cursor:default;${ds<h?'opacity:.55;':''}${pausa?'background:var(--red-bg);border-color:var(--red-bd);':''}">
-        <div class="cal-day-n">${d}</div>
+        <div class="cal-day-n" style="display:flex;justify-content:space-between;align-items:center">${d}${ds>=h?`<button onclick="window._app.abrirHorarioExtra('${ds}')" title="Abrir um horário neste dia" style="background:none;border:1px solid var(--border2);color:var(--text2);border-radius:6px;width:20px;height:20px;line-height:16px;font-size:14px;cursor:pointer;padding:0">+</button>`:''}</div>
         ${pausa ? `<div style="font-size:10.5px;color:var(--red)">🔒<span class="cal-longo"> Sem atendimento${pausa.motivo?` · ${escapaHtml(pausa.motivo)}`:''}</span></div>` : ''}
         ${dev ? `<div class="cal-evt fechada" title="${escapaHtml(dev.nome||'')}"><span class="cal-curto">Dev</span><span class="cal-longo">Desenv. · ${escapaHtml(dev.nome||'')}</span></div>` : ''}
         ${evs.filter(e => e !== dev).map(e => `<div class="cal-evt ${e.tipo==='festa'?'festa':(e.tipo==='gira_aberta'?'publico':'trabalho')}" title="${escapaHtml(e.nome||'')}"><span class="cal-curto">${e.hora?fmtH(e.hora):escapaHtml((e.nome||'').slice(0,4))}</span><span class="cal-longo">${e.hora?fmtH(e.hora)+' ':''}${escapaHtml(e.nome||'')}</span></div>`).join('')}
@@ -8875,12 +8875,13 @@ async function salvarExtras(extras) {
   await updateDoc(doc(dbPvd,'adm_config','agendamento'), { horarios_extras: extras, atualizadoEm: serverTimestamp() });
 }
 
-function abrirHorarioExtra() {
+function abrirHorarioExtra(dia) {
   const h = _iso(new Date());
+  const diaIni = dia && dia >= h ? dia : h; // o + de cada dia da agenda já traz a data
   openModal(`<div class="modal-c">
     <div style="font-size:17px;font-weight:700;margin-bottom:4px">Abrir um horário num dia</div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Some no site só nesse dia, além dos horários de sempre. Abre mesmo se o dia estiver fechado.</div>
-    <div class="fi-group"><label>Dia</label><input class="fi" type="date" id="hx-dia" min="${h}" value="${h}"/></div>
+    <div class="fi-group"><label>Dia</label><input class="fi" type="date" id="hx-dia" min="${h}" value="${diaIni}"/></div>
     <div style="display:flex;gap:10px">
       <div class="fi-group" style="flex:1"><label>Das</label><input class="fi" type="time" id="hx-ini" value="18:00" step="900"/></div>
       <div class="fi-group" style="flex:1"><label>Até</label><input class="fi" type="time" id="hx-fim" value="19:30" step="900"/></div>
