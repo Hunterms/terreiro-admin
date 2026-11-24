@@ -1027,7 +1027,16 @@ function attachListeners() {
   // Pedidos vindos do form público vendas.html (só admin precisa ver)
   if(S.role === 'admin') {
     S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_pedidos'), snap => {
-      S.pedidos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      // Compra paga pelo site e que você ainda não aprovou volta pra fila de
+      // pendentes. O Worker de 02/11 já grava `pendente`, mas o que está no ar
+      // pode gravar `confirmado` direto (24/11: compras pulando a aprovação).
+      // Toda aprovação no admin grava `confirmadoEm`, então a falta dele é a
+      // prova de que ninguém olhou. Antes de 02/11 a regra era outra: fica fora.
+      S.pedidos = snap.docs.map(d => {
+        const p = { id:d.id, ...d.data() };
+        if (p.status === 'confirmado' && p.pago_automatico && !p.confirmadoEm && (p.pagoEm||'') >= '2026-11-02') p.status = 'pendente';
+        return p;
+      });
       if(['pedidos','dashboard','produtos'].includes(S.route)) renderRoute();
       atualizarBadgePedidos();
       // Re-render modal de pagamentos do produto se estiver aberto
