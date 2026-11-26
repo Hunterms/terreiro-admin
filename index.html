@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Candieiro"/>
 <!-- Google Identity Services pra OAuth com Calendar -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="css/main.css?v=20261126a"/><!-- troca o ?v= quando mudar o CSS: o navegador guarda o velho -->
+<link rel="stylesheet" href="css/main.css?v=20261126b"/><!-- troca o ?v= quando mudar o CSS: o navegador guarda o velho -->
 </head>
 <body>
 
@@ -2365,8 +2365,8 @@ function openFilhoForm(id=null, pre=null) {
   const catsSel = new Set(f?.despensa_categorias || []);
   openModal(`
     <style>
-      .ff-sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin:22px 0 10px}
-      .ff-sec:first-child{margin-top:0}
+      .ff-sec{font-size:15px;font-weight:700;color:var(--text);margin:26px 0 12px;padding-top:18px;border-top:1px solid var(--border)}
+      .ff-sec:first-child{margin-top:0;padding-top:0;border-top:0}
       .ff-togs{display:flex;flex-wrap:wrap;gap:8px}
       .ff-tog{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--border2);border-radius:20px;cursor:pointer;font-size:13.5px;min-height:40px}
       .ff-tog input{accent-color:var(--gold);margin:0;width:16px;height:16px}

@@ -267,3 +267,15 @@ select.fi option{background:#1a1a1a;color:var(--text)}
   main{padding-bottom:calc(86px + env(safe-area-inset-bottom,0px)) !important}
   .menu-toggle{display:none !important}
 }
+
+/* Modal no celular vira tela cheia: a caixa centrada de computador sobra margem
+   e esconde o botão. Cabeçalho e rodapé ficam presos, o meio rola, e o Salvar
+   mora embaixo, na zona do polegar. */
+@media (max-width:640px){
+  .modal-backdrop{padding:0;align-items:stretch}
+  .modal,.modal-lg{width:100%;max-width:100%;max-height:none;height:100%;border-radius:0;border:0;display:flex;flex-direction:column}
+  .modal-h{position:sticky;top:0;background:#181412;z-index:2;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 14px}
+  .modal-c{padding:18px;flex:1}
+  .modal-f{position:sticky;bottom:0;background:#181412;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px))}
+  .modal-f .btn{flex:1;justify-content:center;min-height:46px}
+}
