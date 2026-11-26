@@ -254,6 +254,7 @@ window.closeModal = closeModal;
 
     // Carrega todos serviços ativos. Se tem ?s=, mantém o privado também.
     try {
+      if(urlParams.get('reserva')) throw new Error('modo reserva forçado');
       const snap = await getDocs(collection(db,'adm_servicos'));
       const todos = snap.docs.map(d => ({ id:d.id, ...d.data() }))
         .filter(s => s.ativo !== false)
@@ -282,16 +283,19 @@ window.closeModal = closeModal;
         APP.servicos = todos.filter(s => s.publico !== false);
       }
     } catch(e) {
-      // Banco fora (cota do dia estourada): segue com a lista fixa e os horários
-      // publicados no site, e o pedido sai pelo WhatsApp em vez do banco.
+      // Banco fora (cota do dia estourada): o pedido sai pelo WhatsApp em vez do banco.
+      // ?reserva=1 força esse modo, pra testar.
       console.warn('Erro servicos', e);
       APP.semBanco = true;
-      APP.servicos = [
-        { id:'baralho', nome:'Baralho Cigano', duracao_min:60, presencial:true, online:true },
-        { id:'buzios', nome:'Jogo de Búzios', duracao_min:60, presencial:true, online:false },
-      ];
-      APP.cfg.horarios_semana = { '0':[], '1':[{inicio:'15:00',fim:'18:00'}], '2':[], '3':[{inicio:'18:00',fim:'21:00'}], '4':[],
-        '5':[{inicio:'09:00',fim:'12:00'},{inicio:'14:00',fim:'18:00'}], '6':[] };
+      // Foto da agenda real (agenda-reserva.json, tirada do banco): mesmos
+      // serviços, janelas do Pai, pausas e horários já ocupados.
+      try {
+        const r = await fetch('agenda-reserva.json', { cache:'no-store' });
+        const f = await r.json();
+        APP.cfg = { ...cfgDefault, ...f.cfg };
+        APP.servicos = f.servicos || [];
+        APP.ocupadosFoto = f.ocupados || [];
+      } catch(e2) { console.warn('sem foto da agenda', e2); }
     }
 
     // Segunda de desenvolvimento não tem consulta. A lista vem da agenda do site;
@@ -306,6 +310,7 @@ window.closeModal = closeModal;
 
     // Slots ocupados
     if(!APP.semBanco) await carregarOcupados();
+    else (APP.ocupadosFoto||[]).forEach(o => marcarOcupado(o.data, o.hora, o.dur || 60));
 
     if(APP.cfg.texto_intro) $('#intro-text').textContent = APP.cfg.texto_intro;
     $('#footer-whats').href = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Tenho dúvidas sobre o agendamento.')}`;
