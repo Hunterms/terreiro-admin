@@ -1559,7 +1559,7 @@ async function tick(env) {
     for (const pct of [60, 90]) {
       const limite = COTA_LEITURAS * pct / 100;
       if (u.leituras >= limite && u.antes < limite) {
-        const msg = `O banco já usou ${u.leituras.toLocaleString('pt-BR')} de ${COTA_LEITURAS.toLocaleString('pt-BR')} leituras grátis hoje (${pct}%). Zera às 5h. Evitem recarregar o admin à toa até lá; o agendar tem backup pelo WhatsApp.`;
+        const msg = `O banco já usou ${u.leituras.toLocaleString('pt-BR')} de ${COTA_LEITURAS.toLocaleString('pt-BR')} leituras grátis hoje (${pct}%). Zera ${quandoZeraCota()}. Evitem recarregar o admin à toa até lá; o agendar tem backup pelo WhatsApp.`;
         await enviarEmail(env, { to: EMAIL_CASA, subject: `Banco do terreiro em ${pct}% da cota de hoje`, text: msg }).catch(() => {});
         await mandarPush(env, { tag: `cota-${pct}`, titulo: `Banco em ${pct}% da cota de hoje`, corpo: msg, url: 'index.html' }).catch(() => {});
         feito.push(`cota:${pct}`);
@@ -1580,9 +1580,9 @@ async function avisarCotaEstourada(env, e) {
   const chave = new Request(`https://cota.local/${inicioDiaPacifico().toISOString().slice(0, 10)}`);
   if (await caches.default.match(chave)) return;
   await caches.default.put(chave, new Response('1', { headers: { 'Cache-Control': 'max-age=86400' } }));
-  const msg = 'O banco do terreiro estourou a cota grátis de leituras de hoje. Zera às 5h (horário de Brasília). Até lá o admin e a área do filho podem abrir vazios; o agendar segue pelo backup do WhatsApp. Evitem recarregar o admin.';
-  await enviarEmail(env, { to: EMAIL_CASA, subject: 'Banco do terreiro sem cota até as 5h', text: msg }).catch(() => {});
-  await mandarPush(env, { tag: 'cota-estouro', titulo: 'Banco sem cota até as 5h', corpo: msg, url: 'index.html' }).catch(() => {});
+  const msg = `O banco do terreiro estourou a cota grátis de leituras de hoje. Zera ${quandoZeraCota()}. Até lá o admin e a área do filho podem abrir vazios; o agendar segue pelo backup do WhatsApp. Evitem recarregar o admin.`;
+  await enviarEmail(env, { to: EMAIL_CASA, subject: `Banco do terreiro sem cota até ${quandoZeraCota(true)}`, text: msg }).catch(() => {});
+  await mandarPush(env, { tag: 'cota-estouro', titulo: `Banco sem cota até ${quandoZeraCota(true)}`, corpo: msg, url: 'index.html' }).catch(() => {});
 }
 
 // ── USO DO FIRESTORE NO DIA (cota grátis zera à meia-noite do Pacífico) ────
@@ -1595,6 +1595,16 @@ function inicioDiaPacifico(agora = new Date()) {
   const g = (t) => Number(p.find((x) => x.type === t).value) % (t === 'hour' ? 24 : 60);
   const ms = ((g('hour') * 60 + g('minute')) * 60 + g('second')) * 1000 + agora.getMilliseconds();
   return new Date(agora.getTime() - ms);
+}
+/** Quando a cota volta, no relógio de Brasília. Muda com o horário de verão
+ *  da Califórnia: 05:00 de novembro a março, 04:00 no resto do ano. */
+function quandoZeraCota(curto = false) {
+  // +26h e normaliza: cai na meia-noite seguinte mesmo em dia de 23 ou 25 horas.
+  const prox = inicioDiaPacifico(new Date(inicioDiaPacifico().getTime() + 26 * 3600000));
+  const f = (o) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', ...o }).format(prox);
+  const hora = f({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const dia = f({ day: '2-digit', month: '2-digit' });
+  return curto ? `${hora} de ${dia}` : `às ${hora} de ${f({ weekday: 'long' })}, ${dia} (horário de Brasília)`;
 }
 /** { leituras, gravacoes, antes } do dia de cota atual. `antes` = leituras até 15 min atrás. */
 async function usoFirestoreHoje(env) {
