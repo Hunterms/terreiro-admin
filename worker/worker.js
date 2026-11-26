@@ -1547,7 +1547,17 @@ async function tick(env) {
     if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
   });
 
-  // 7) Alarme de cota do Firestore (pvd). Lê o Monitoring do Google, que não
+  // 7) Segunda, 9h: o email da conversão da semana.
+  const diaSemana = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/Sao_Paulo' });
+  if (diaSemana === 'Mon' && hora >= 9 && estado.conversao_em !== hoje) {
+    await passo('conversao', async () => {
+      await marcar({ conversao_em: hoje });
+      await emailDaConversao(env);
+      feito.push('conversao');
+    });
+  }
+
+  // 8) Alarme de cota do Firestore (pvd). Lê o Monitoring do Google, que não
   // gasta leitura do banco, e avisa quando o dia cruza 60% e 90% das 50 mil.
   // Sem estado: compara o total de agora com o de 15 min atrás.
   await passo('cota', async () => {
@@ -3560,6 +3570,7 @@ export async function rotaVisita(body, request, env) {
     sessao: [...h.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join(''),
     tipo: body.tipo,
     servico: curto(body.servico) || null,
+    campanha: curto(body.campanha) || null,
     fonte: /Instagram/.test(ua) ? 'Instagram' : curto(body.utm) || (curto(body.ref).replace(/^(www|m|l|lm)\./, '') || 'direto'),
     aparelho: /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Macintosh/.test(ua) ? 'Mac' : 'outro',
     cidade: request.cf?.city || null,
@@ -3575,8 +3586,9 @@ export function visitaDescartada(body, origem, ua, rede) {
 
 // Cada chamada lê todas as visitas da semana (milhares). Guarda 10 min.
 let _visitasMemo = null;
-async function rotaVisitas(env) {
-  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) return json(_visitasMemo.corpo);
+async function rotaVisitas(env) { return json(await dadosVisitas(env)); }
+async function dadosVisitas(env) {
+  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) return _visitasMemo.corpo;
   const token = await tokenGoogle(env);
   const hoje = hojeSP(), semana = maisDias(hoje, -6);
   const [linhas, sols] = await Promise.all([
@@ -3586,7 +3598,28 @@ async function rotaVisitas(env) {
   ]);
   const corpo = { hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) };
   _visitasMemo = { em: Date.now(), corpo };
-  return json(corpo);
+  return corpo;
+}
+
+// Toda segunda: a semana do site por email. O que trouxe gente, o que virou
+// pedido e pagamento, onde a pessoa desiste, e uma coisa pra testar.
+async function emailDaConversao(env) {
+  const { semana: s } = await dadosVisitas(env);
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '-');
+  const tabela = (s.origens || []).map((o) =>
+    `${o.nome}: ${o.pessoas} pessoas, ${o.horario} viram horário, ${o.pedidos} pedidos, ${o.pagos} pagos${o.valor ? ` (R$ ${o.valor.toLocaleString('pt-BR')})` : ''}`).join('\n');
+  const text = `Semana do site (7 dias)
+
+${s.pessoas} pessoas visitaram. ${s.agendar} abriram o agendar (${pct(s.agendar, s.pessoas)}). ${s.horario} escolheram horário. ${s.enviou} enviaram pedido.
+
+POR ORIGEM
+${tabela || 'Sem dado ainda.'}
+
+PRA TESTAR ESTA SEMANA
+${sugestaoDaSemana(s)}
+
+Link com nome pra cada post: admin, tela Hoje, cartão Visitas no site.`;
+  await enviarEmail(env, { to: EMAIL_CASA, subject: `Site na semana: ${s.pessoas} pessoas, ${s.pedidos} pedidos`, text });
 }
 
 // Pessoas e funil a partir das linhas. Pedido que chegou conta pelo banco, não pelo site.
@@ -3615,5 +3648,44 @@ export function resumoDeVisitas(linhas, sols, desde) {
     procurados: conta('servico', (l) => l.tipo === 'horario'),
     fontes: conta('fonte'), cidades: conta('cidade'), aparelhos: conta('aparelho'),
     pico: conta('hora')[0] || null,
+    origens: porOrigem(linhas, pedidos),
   };
+}
+
+/** Funil por origem: o post (?c=) quando tem, senão a fonte. Pessoa = sessão do
+ *  dia; a origem dela é a da primeira linha que trouxe uma. Pedido conta pela
+ *  origem gravada nele, e "pago" é o pago no checkout ou a aprovação do Pai. */
+export function porOrigem(linhas, pedidos) {
+  const sess = {};
+  for (const l of linhas) {
+    const s = (sess[l.sessao] ??= { chave: null, tipos: new Set() });
+    s.chave ??= l.campanha || null;
+    s.fonte ??= l.fonte || null;
+    s.tipos.add(l.tipo);
+  }
+  const m = {};
+  const linha = (k) => (m[k] ??= { nome: k, pessoas: 0, agendar: 0, horario: 0, enviou: 0, pedidos: 0, pagos: 0, valor: 0 });
+  for (const s of Object.values(sess)) {
+    const r = linha(s.chave || s.fonte || 'direto');
+    r.pessoas++;
+    for (const t of ['agendar', 'horario', 'enviou']) if (s.tipos.has(t)) r[t]++;
+  }
+  for (const p of pedidos) {
+    const r = linha(p.campanha || p.fonte || 'antes da medição');
+    r.pedidos++;
+    if (p.pago_automatico === true || p.status === 'aprovada') { r.pagos++; r.valor += Number(p.valor_proposto) || 0; }
+  }
+  return Object.values(m).sort((a, b) => b.pedidos - a.pedidos || b.pessoas - a.pessoas).slice(0, 12);
+}
+
+/** Uma frase do que testar na semana, tirada do maior vazamento. */
+export function sugestaoDaSemana(s) {
+  const fraco = (s.origens || []).find((o) => o.pessoas >= 15 && o.pedidos === 0 && o.nome !== 'direto');
+  if (fraco) return `"${fraco.nome}" trouxe ${fraco.pessoas} pessoas e nenhum pedido. Vale mudar a chamada ou mandar o link direto pro serviço (agendar.html?s=...).`;
+  const perdas = [['agendar', 'horario', 'Muita gente abre o agendar e não escolhe horário. Testar: mostrar horários mais perto, ou um aviso de "tem vaga esta semana".'],
+    ['horario', 'enviou', 'Muita gente escolhe horário e não envia. Testar: formulário mais curto, ou dizer o valor e a forma de pagar antes de pedir os dados.']]
+    .filter(([a]) => s[a] > 0).map(([a, b, t]) => ({ perde: (s[a] - s[b]) / s[a], t })).sort((x, y) => y.perde - x.perde);
+  if (perdas[0]?.perde > 0.4) return perdas[0].t;
+  if (s.pessoas && s.agendar / s.pessoas < 0.2) return 'Pouca gente sai da página inicial pro agendar. Testar: botão de agendar mais alto, ou link de post apontando direto pro agendar.';
+  return 'Funil sem vazamento grande. Testar um post novo com link próprio e comparar na semana que vem.';
 }

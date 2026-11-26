@@ -2244,7 +2244,41 @@ function cartaoVisitas({ hoje: h, semana: s }) {
     <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:14px;font-size:12.5px">
       ${det.map(([k,v]) => `<span style="font-weight:700">${k}</span><span style="color:var(--text2);overflow-wrap:anywhere">${v}</span>`).join('')}
     </div>
-    <div style="font-size:11.5px;color:var(--text3);margin-top:12px">Sem robôs. Quem é da casa: ${equipe}.</div></div>`;
+    ${tabelaOrigens(s.origens)}
+    ${geradorDeLink()}
+    <div style="font-size:11.5px;color:var(--text3);margin-top:12px">Sem robôs. Quem é da casa: ${equipe}. Toda segunda às 9h o resumo da semana vai por email.</div></div>`;
+}
+
+// Funil por origem (o post do link ?c=, senão a fonte). Pago = pago no
+// checkout ou aprovado pelo Pai.
+function tabelaOrigens(origens) {
+  if (!origens?.length) return '';
+  const th = t => `<th style="text-align:right;font-weight:600;color:var(--text3);font-size:11px;padding:6px 4px">${t}</th>`;
+  const td = v => `<td style="text-align:right;padding:7px 4px;border-top:1px solid var(--border)">${v}</td>`;
+  return `<div style="font-weight:700;font-size:13px;margin-top:16px">Por origem · 7 dias</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px">
+      <tr><th style="text-align:left;font-weight:600;color:var(--text3);font-size:11px;padding:6px 4px">Origem</th>${th('Pessoas')}${th('Horário')}${th('Pedidos')}${th('Pagos')}${th('R$')}</tr>
+      ${origens.map(o => `<tr><td style="padding:7px 4px;border-top:1px solid var(--border);overflow-wrap:anywhere">${escapaHtml(o.nome)}</td>${td(o.pessoas)}${td(o.horario)}${td(o.pedidos)}${td(o.pagos)}${td(o.valor ? o.valor.toLocaleString('pt-BR') : '')}</tr>`).join('')}
+    </table></div>`;
+}
+
+// Link com nome pra cada post: quem chega por ele carrega o nome até o pedido.
+function geradorDeLink() {
+  const pags = [['agendar.html','Agendar'],['','Início'],['buzios.html','Búzios'],['baralho-cigano.html','Baralho cigano'],['visitar.html','Visitar'],['vendas.html','Vendas']];
+  return `<div style="margin-top:16px;padding:12px;border:1px solid var(--border);border-radius:10px">
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px">Link pra post ou story</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select class="fi" id="lk-pag" style="flex:1;min-width:130px">${pags.map(([v,t]) => `<option value="${v}">${t}</option>`).join('')}</select>
+      <input class="fi" id="lk-nome" placeholder="nome do post, ex: story-buzios-dez" style="flex:2;min-width:180px"/>
+      <button class="btn btn-primary" onclick="window._app.copiarLinkDePost()">Copiar link</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--text3);margin-top:6px">Um nome por post. Ele aparece na tabela acima quando alguém chega por ele.</div></div>`;
+}
+function copiarLinkDePost() {
+  const nome = (document.getElementById('lk-nome').value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'').slice(0,60);
+  if (!nome) { toast('Dá um nome pro post primeiro.', 'err'); return; }
+  const link = `https://terreirodocandieiro.com.br/${document.getElementById('lk-pag').value}?c=${nome}`;
+  navigator.clipboard.writeText(link).then(() => toast('Copiado: ' + link, 'ok'), () => prompt('Copie o link:', link));
 }
 
 // ── FILHOS ────────────────────────────────────────────────────────────────
@@ -10208,7 +10242,7 @@ window._app = {
   setPedTab,
   setPedidoStatus,
   deletarPedido,
-  reenviarEmailsPendentes, cobrarPedidoPorEmail, abrirFichaEmergencia,
+  reenviarEmailsPendentes, cobrarPedidoPorEmail, abrirFichaEmergencia, copiarLinkDePost,
   backfillAlunosRecorrentes,
   // Debug helpers
   _checarEmailsPendentes: () => {

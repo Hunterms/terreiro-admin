@@ -787,6 +787,9 @@ function abrirModalDados() {
         valor_proposto: APP.servico.valor || 0,
         status: 'pendente',
         origem: 'agendar_publico',
+        // de onde a pessoa veio (visita.js): é o que liga post a consulta paga
+        fonte: window.origemVisita?.fonte || null,
+        campanha: window.origemVisita?.campanha || null,
         criadoEm: serverTimestamp()
       });
       // Espelha no pub_slots_ocupados (sem PII) pra outros agendamentos verem ocupado
