@@ -2355,155 +2355,93 @@ function recusarCadastro(cid) {
 function openFilhoForm(id=null, pre=null) {
   const f = id ? S.filhos.find(x=>x.id===id) : pre;
   const isEdit = !!id;
+  // Ficha em blocos: o que se mexe sempre fica aberto, o resto é uma linha.
+  // Saíram da tela (26/11, faxina): "mora junto com", PIN de reserva e e-mail
+  // de login. O valor gravado continua no documento; só não se edita mais aqui.
+  const tog = (idc, txt, on, extra='') => `<label class="ff-tog"><input type="checkbox" id="${idc}" ${on?'checked':''} ${extra}/><span>${txt}</span></label>`;
+  const sel = (v, opts) => opts.map(([val, txt]) => `<option value="${val}" ${String(v)===String(val)?'selected':''}>${txt}</option>`).join('');
+  const padrinhos = S.filhos.filter(x => x.id !== id && x.e_padrinho);
+  const cats = [...new Set(S.despensa.map(p => p.categoria).filter(Boolean))].sort();
+  const catsSel = new Set(f?.despensa_categorias || []);
   openModal(`
-    <div class="modal-h"><h3>${isEdit?'Editar filho':'Novo filho'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <style>
+      .ff-sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin:22px 0 10px}
+      .ff-sec:first-child{margin-top:0}
+      .ff-togs{display:flex;flex-wrap:wrap;gap:8px}
+      .ff-tog{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--border2);border-radius:20px;cursor:pointer;font-size:13.5px;min-height:40px}
+      .ff-tog input{accent-color:var(--gold);margin:0;width:16px;height:16px}
+      .ff-tog:has(input:checked){border-color:var(--gold);background:rgba(212,168,67,.12)}
+      .ff-dica{font-size:12px;color:var(--text3);margin-top:8px;line-height:1.45}
+      .ff-apagar{background:none;border:0;color:var(--red);font-size:13px;cursor:pointer;padding:18px 0 0;text-decoration:underline}
+    </style>
+    <div class="modal-h"><h3>${isEdit ? escapaHtml(f?.nome||'Filho') : 'Novo filho'}</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div class="fi-group"><label>Nome *</label><input class="fi" id="ff-nome" value="${f?.nome||''}"/></div>
+      <div class="ff-sec">Pessoa</div>
+      <div class="fi-group"><label>Nome</label><input class="fi" id="ff-nome" value="${escapaHtml(f?.nome||'')}"/></div>
       <div class="row-2">
-        <div class="fi-group"><label>Telefone</label><input class="fi" id="ff-tel" value="${f?.tel||''}" placeholder="11999999999"/></div>
-        <div class="fi-group"><label>Status</label>
-          <select class="fi" id="ff-status">
-            <option value="ativo" ${(f?.status||'ativo')==='ativo'?'selected':''}>Ativo</option>
-            <option value="afastado" ${f?.status==='afastado'?'selected':''}>Afastado</option>
-            <option value="visitante" ${f?.status==='visitante'?'selected':''}>Visitante</option>
-          </select>
-        </div>
+        <div class="fi-group"><label>Telefone</label><input class="fi" id="ff-tel" inputmode="tel" value="${f?.tel||''}" placeholder="19 99999-9999"/></div>
+        <div class="fi-group"><label>Nascimento</label><input type="date" class="fi" id="ff-nasc" value="${f?.data_nascimento||''}"/></div>
       </div>
-      <div class="row-2">
-        <div class="fi-group"><label>Mensalidade (R$)</label>
-          <select class="fi" id="ff-valor">
-            <option value="0" ${f?.valor===0?'selected':''}>R$ 0 (isento)</option>
-            <option value="100" ${f?.valor===100?'selected':''}>R$ 100</option>
-            <option value="150" ${f?.valor===150?'selected':''}>R$ 150</option>
-            <option value="200" ${(!f||f?.valor===200)?'selected':''}>R$ 200</option>
-            <option value="250" ${f?.valor===250?'selected':''}>R$ 250</option>
-            <option value="300" ${f?.valor===300?'selected':''}>R$ 300</option>
-          </select>
-        </div>
-        <div class="fi-group"><label>Prazo (dia)</label>
-          <select class="fi" id="ff-prazo">
-            <option value="10" ${(!f||f?.prazo==='10')?'selected':''}>Dia 10</option>
-            <option value="15" ${f?.prazo==='15'?'selected':''}>Dia 15</option>
-            <option value="20" ${f?.prazo==='20'?'selected':''}>Dia 20</option>
-            <option value="ultimo" ${f?.prazo==='ultimo'?'selected':''}>Último dia</option>
-            <option value="combinado" ${f?.prazo==='combinado'?'selected':''}>Combinado</option>
-          </select>
-        </div>
+      <div class="fi-group"><label>Situação</label>
+        <select class="fi" id="ff-status">${sel(f?.status||'ativo', [['ativo','Ativo'],['afastado','Afastado'],['visitante','Visitante']])}</select>
       </div>
-      <div class="fi-group"><label>Funções (postos)</label>
+
+      <div class="ff-sec">Na casa</div>
+      <div class="fi-group"><label>Funções</label>
         <div class="chips" id="ff-postos">
           ${S.funcoes.filter(fn=>!fn.arquivada).map(fn => {
-            const sel = (f?.postos||[]).includes(fn.id);
-            return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${fn.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${fn.nome}</button>`;
-          }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhuma função cadastrada. Crie em Funções.</span>'}
+            const on = (f?.postos||[]).includes(fn.id);
+            return `<button type="button" class="chip ${on?'chip-gold':''}" data-fid="${fn.id}" data-sel="${on}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${escapaHtml(fn.nome)}</button>`;
+          }).join('') || '<span style="color:var(--text3);font-size:13px">Nenhuma função ainda. Crie em Pessoas › Funções.</span>'}
         </div>
       </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-padrinho-flag" ${f?.e_padrinho?'checked':''}/>
-          Esse filho é padrinho/madrinha
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Marque só pros filhos que assumem o papel de padrinho. Eles aparecerão como opção pra apadrinhar outros.</div>
-      </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-lojinha-flag" ${f?.gerencia_lojinha?'checked':''}/>
-          Esse filho gerencia a escala da lojinha
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra Giovana/Aline e quem mais cuidar da lojinha. Habilita a seção "Escala da lojinha" na área pessoal dela.</div>
-      </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-despensa-flag" ${f?.gerencia_despensa?'checked':''} onchange="document.getElementById('ff-despensa-cats-wrap').style.display=this.checked?'block':'none'"/>
-          Esse filho gerencia a despensa
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Habilita acesso à página pública <code>/despensa</code> pra atualizar estoques sem precisar entrar no admin. Acesso via nome + 4 últimos do celular.</div>
-        <div id="ff-despensa-cats-wrap" style="display:${f?.gerencia_despensa?'block':'none'};margin-top:12px;padding:12px 14px;background:rgba(212,168,67,0.05);border:1px solid rgba(212,168,67,0.15);border-radius:8px">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px">Categorias visíveis pra esse filho</div>
-          <div id="ff-despensa-cats" style="display:flex;flex-wrap:wrap;gap:6px">
-            ${(() => {
-              const cats = [...new Set(S.despensa.map(p => p.categoria).filter(Boolean))].sort();
-              const sel = new Set(f?.despensa_categorias || []);
-              if (cats.length === 0) return '<div style="font-size:12px;color:var(--text3)">Cadastre itens na despensa primeiro pra escolher categorias.</div>';
-              return cats.map(c => `
-                <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:${sel.has(c)?'rgba(212,168,67,.15)':'var(--glass)'};border:1px solid ${sel.has(c)?'var(--gold)':'var(--border2)'};border-radius:18px;cursor:pointer;font-size:13px;transition:all .12s">
-                  <input type="checkbox" class="ff-cat-chk" value="${c.replace(/"/g,'&quot;')}" ${sel.has(c)?'checked':''} style="accent-color:var(--gold);margin:0" onchange="this.closest('label').style.background=this.checked?'rgba(212,168,67,.15)':'var(--glass)';this.closest('label').style.borderColor=this.checked?'var(--gold)':'var(--border2)'"/>
-                  ${c}
-                </label>
-              `).join('');
-            })()}
-          </div>
-          <div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4">Marque vazio pra ver todas as categorias. Cada filho pode ter o conjunto que faz sentido pro que ele cuida.</div>
-        </div>
-      </div>
-      <div class="fi-group"><label>Padrinho/madrinha (de quem é apadrinhado)</label>
+      <div class="fi-group"><label>Padrinho ou madrinha</label>
         <select class="fi" id="ff-padrinho">
-          <option value="">— Sem padrinho —</option>
-          ${(() => {
-            const padrinhosDispo = S.filhos.filter(x => x.id !== id && x.e_padrinho);
-            if(padrinhosDispo.length === 0) return '<option value="" disabled>Nenhum padrinho cadastrado — marque "É padrinho" em outro filho primeiro</option>';
-            return padrinhosDispo.map(x=>`<option value="${x.id}" ${f?.padrinho_id===x.id?'selected':''}>${x.nome}</option>`).join('');
-          })()}
+          <option value="">Sem padrinho</option>
+          ${padrinhos.map(x=>`<option value="${x.id}" ${f?.padrinho_id===x.id?'selected':''}>${escapaHtml(x.nome)}</option>`).join('')}
         </select>
       </div>
+      <div class="ff-togs">
+        ${tog('ff-padrinho-flag','Pode apadrinhar', f?.e_padrinho)}
+        ${tog('ff-lojinha-flag','Cuida da escala da lojinha', f?.gerencia_lojinha)}
+        ${tog('ff-despensa-flag','Cuida da despensa', f?.gerencia_despensa, `onchange="document.getElementById('ff-despensa-cats-wrap').hidden=!this.checked"`)}
+      </div>
+      <div id="ff-despensa-cats-wrap" ${f?.gerencia_despensa?'':'hidden'} style="margin-top:10px">
+        ${cats.length ? `<div class="ff-dica" style="margin:0 0 6px">Categorias que ${escapaHtml((f?.nome||'essa pessoa').split(' ')[0])} vê (nenhuma marcada = todas)</div>
+        <div class="ff-togs">${cats.map(c => `<label class="ff-tog"><input type="checkbox" class="ff-cat-chk" value="${escapaHtml(c)}" ${catsSel.has(c)?'checked':''}/><span>${escapaHtml(c)}</span></label>`).join('')}</div>` : ''}
+      </div>
+
+      <div class="ff-sec">Escala</div>
+      <div class="ff-togs">
+        ${tog('ff-perto','Mora perto', f?.mora_perto)}
+        ${tog('ff-clt','Trabalha em horário comercial', f?.trabalha_clt)}
+        ${tog('ff-isento-limpeza','Não entra na limpeza', f?.isento_limpeza)}
+      </div>
+      <div class="ff-dica">A escala automática usa isso. "Mora perto" e "horário comercial" o próprio filho responde na área dele.</div>
+
+      <div class="ff-sec">Mensalidade</div>
       <div class="row-2">
-        <div class="fi-group"><label>Email (auth — opcional, pra logar e receber lembretes)</label><input class="fi" id="ff-email" placeholder="exemplo@email.com" value="${f?.auth_email||''}"/></div>
-        <div class="fi-group"><label>Data de nascimento <span style="color:var(--text3);font-weight:400">(aniversário)</span></label><input type="date" class="fi" id="ff-nasc" value="${f?.data_nascimento||''}"/></div>
-      </div>
-      <div class="fi-group">
-        <label>PIN de 4 dígitos (fallback — só pra quem não tem telefone cadastrado)</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="fi" id="ff-pin" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" placeholder="(vazio — usa últimos 4 do telefone)" value="${f?.pin||''}" style="flex:1;font-family:monospace;letter-spacing:.3em;text-align:center;font-size:18px"/>
-          <button type="button" class="btn btn-sm" onclick="document.getElementById('ff-pin').value=Math.floor(1000+Math.random()*9000)">Sorteia</button>
+        <div class="fi-group"><label>Valor</label>
+          <select class="fi" id="ff-valor">${sel(f ? f.valor : 200, [[0,'Isento'],[100,'R$ 100'],[150,'R$ 150'],[200,'R$ 200'],[250,'R$ 250'],[300,'R$ 300']])}</select>
         </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">A página pública pede os <strong>últimos 4 dígitos do telefone</strong> automaticamente — sem cadastro de PIN aqui. Esse campo só é usado se o filho não tem tel cadastrado.</div>
+        <div class="fi-group"><label>Vence</label>
+          <select class="fi" id="ff-prazo">${sel(f?.prazo||'10', [['10','Dia 10'],['15','Dia 15'],['20','Dia 20'],['ultimo','Último dia'],['combinado','Combinado']])}</select>
+        </div>
       </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-perto" ${f?.mora_perto?'checked':''}/>
-          Mora perto do ilê
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Quando marcado, esse filho é priorizado nas escalas de domingo (pra não desgastar quem mora longe).</div>
-      </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-isento-limpeza" ${f?.isento_limpeza?'checked':''}/>
-          Isenta de limpeza
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Pra filhos mais velhos, gestantes ou com restrição. Não entra na auto-geração das escalas de limpeza, mas continua aparecendo como filho ativo em tudo mais.</div>
-      </div>
-      <div class="fi-group">
-        <label class="checkbox-row">
-          <input type="checkbox" id="ff-clt" ${f?.trabalha_clt?'checked':''}/>
-          Trabalha em horário comercial (CLT)
-        </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Quando marcado, não entra em limpezas de giras em dias úteis (seg-sex). Em fins de semana (sáb/dom) entra normal.</div>
-      </div>
-      <div class="fi-group">
-        <label>Mora junto com (grupo de carona)</label>
-        <input class="fi" id="ff-casa" list="casas-existentes" value="${f?.casa_id||''}" placeholder="Ex: casa-rose-elis (deixe vazio se mora sozinho)" autocomplete="off"/>
-        <datalist id="casas-existentes">
-          ${[...new Set(S.filhos.map(x => x.casa_id).filter(Boolean))].map(c => `<option value="${c}">`).join('')}
-        </datalist>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Use o <strong>mesmo nome de grupo</strong> pros filhos que moram juntos (ex: "casa-rose-elis"). A auto-geração tenta colocá-los na mesma gira pra economizar passagem.</div>
-      </div>
-      <div class="fi-group"><label>Observações</label><textarea class="fi" id="ff-obs">${f?.obs||''}</textarea></div>
+
+      <div class="fi-group" style="margin-top:6px"><label>Observações</label><textarea class="fi" id="ff-obs" rows="2">${escapaHtml(f?.obs||'')}</textarea></div>
+
       ${isEdit ? `
-      <div class="fi-group">
-        <label>Acesso à área do filho</label>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;background:var(--glass2);border:1px solid var(--border);border-radius:10px">
-          <div style="flex:1;min-width:180px;font-size:13px;color:var(--text2);line-height:1.5" id="ff-pin-estado">
-            ${f?.pin_hash
-              ? `Entra com o <strong style="color:var(--text)">PIN que ${(f.nome||'').split(' ')[0]} criou</strong>.`
-              : `Ainda sem PIN. Entra com os 4 últimos dígitos do telefone e cria um na próxima vez.`}
-          </div>
-          ${f?.pin_hash ? `<button class="btn" id="ff-zerar-pin" style="width:auto">Esqueceu o PIN</button>` : ''}
+      <div class="ff-sec">Acesso à área do filho</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px;font-size:13.5px;color:var(--text2)" id="ff-pin-estado">
+          ${f?.pin_hash ? 'Entra com o PIN que criou.' : 'Ainda sem PIN. Entra com os 4 últimos dígitos do telefone.'}
         </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Não existe recuperação automática: 31 dos 56 não têm email e não temos SMS. Quem esquece o PIN procura você, e este botão é o chaveiro — ele devolve a pessoa pro modo telefone, e ela cria um PIN novo ao entrar.</div>
-      </div>` : ''}
+        ${f?.pin_hash ? `<button class="btn btn-sm" id="ff-zerar-pin">Esqueceu o PIN</button>` : ''}
+      </div>
+      <button type="button" class="ff-apagar" id="ff-del">Apagar o cadastro desta pessoa</button>` : ''}
     </div>
     <div class="modal-f">
-      ${isEdit?`<button class="btn btn-danger" id="ff-del">Excluir</button>`:''}
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="ff-save">${isEdit?'Salvar':'Cadastrar'}</button>
     </div>
@@ -2541,7 +2479,7 @@ function openFilhoForm(id=null, pre=null) {
 
   $('#ff-save').onclick = async () => {
     const nome = $('#ff-nome').value.trim();
-    if(!nome) { toast('Informe o nome','err'); return; }
+    if(!nome) { toast('Escreva o nome','err'); $('#ff-nome').focus(); return; }
     const postos = $$('#ff-postos [data-sel="true"]').map(b=>b.dataset.fid);
     const data = {
       nome,
@@ -2558,13 +2496,10 @@ function openFilhoForm(id=null, pre=null) {
         ? Array.from(document.querySelectorAll('.ff-cat-chk:checked')).map(c => c.value)
         : [],
       padrinho_id: $('#ff-padrinho').value || null,
-      auth_email: $('#ff-email').value.trim() || null,
       data_nascimento: $('#ff-nasc').value || null,
-      pin: ($('#ff-pin').value||'').replace(/\D/g,'').slice(0,4) || null,
       mora_perto: $('#ff-perto').checked,
       isento_limpeza: $('#ff-isento-limpeza').checked,
       trabalha_clt: $('#ff-clt').checked,
-      casa_id: ($('#ff-casa').value||'').trim().toLowerCase().replace(/\s+/g,'-') || null,
       obs: $('#ff-obs').value.trim(),
       atualizadoEm: serverTimestamp()
     };
