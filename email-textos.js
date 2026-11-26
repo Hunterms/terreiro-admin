@@ -79,9 +79,14 @@ function moldura({ cabecalho, alt, titulo, aviso = '', corpo }) {
 <html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark">
+<style>
+  /* Email, telefone e chave PIX viram link sozinhos no Gmail e no iPhone, em
+     azul escuro, que some no papel preto. Isto devolve a cor do texto. */
+  a[x-apple-data-detectors], u + #corpo a, #MessageViewBody a { color: inherit !important; text-decoration: none !important; }
+</style>
 <title>${alt}</title>
 </head>
-<body style="margin:0;padding:0;background:${C.fundo} url(${SITE}/email/papel.jpg);-webkit-text-size-adjust:100%">
+<body id="corpo" style="margin:0;padding:0;background:${C.fundo} url(${SITE}/email/papel.jpg);-webkit-text-size-adjust:100%">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${C.fundo}">${aviso}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${C.fundo}" background="${SITE}/email/papel.jpg" style="background:${C.fundo} url(${SITE}/email/papel.jpg) repeat"><tr><td align="center" style="padding:0">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px">
@@ -150,9 +155,9 @@ export function _buildEmailAtendHTML(a, S) {
   const cobrar = !pago && !semCobranca && a.cobrar_no_email === true;
   let pagar = '';
   if (cobrar) {
-    const cardLink = (S.servicos||[]).find(x => x.id === a.servico_id)?.infinity_link;
+    const cardLink = a.checkout_url || (S.servicos||[]).find(x => x.id === a.servico_id)?.infinity_link;
     const indCartao = ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m));
-    const pix = pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all">${pixKey}</span>${pixTit?`<br>${pixTit}`:''}<br>Manda o comprovante no WhatsApp pra gente confirmar.`, C.verde) : '';
+    const pix = pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all"><a style="color:${C.osso};text-decoration:none">${pixKey}</a></span>${pixTit?`<br>${pixTit}`:''}<br>Manda o comprovante no WhatsApp pra gente confirmar.`, C.verde) : '';
     const cartaoBox = cardLink ? nota('Cartão de crédito ou débito', `Confirma na hora, sem comprovante.${botao(cardLink, 'Pagar com cartão')}`, C.vermelho) : '';
     pagar = (pix || cartaoBox) ? `${rotulo('Como pagar', C.osso)}<div style="height:6px"></div>${indCartao ? cartaoBox + pix : pix + cartaoBox}` : '';
   }
@@ -192,7 +197,7 @@ export function _buildEmailAtendText(a, S) {
   const semCobranca = valor <= 0 || a.status_pagamento === 'isento';
   const pixKey = (cfgA.pix || '').trim();
   const servicoDoc = (S.servicos||[]).find(x => x.id === a.servico_id);
-  const cardLink = servicoDoc?.infinity_link;
+  const cardLink = a.checkout_url || servicoDoc?.infinity_link;
   const cobrar = !pago && !semCobranca && a.cobrar_no_email === true;
 
   return `Salve ${nomePrim},
@@ -263,7 +268,7 @@ export function _buildEmailConfirmacaoHTML(p, produto, S) {
         <td style="padding:10px 0;font:700 14px/1.4 ${SANS};color:${C.osso}">${x.n}ª parcela<div style="font-weight:400;font-size:13px;color:${C.apagado}">${x.data}</div></td>
         <td align="right" style="padding:10px 0;font:700 15px/1.4 ${SANS};color:${C.osso}">R$ ${x.valor}</td>
       </tr></table>`).join(''))}
-    ${pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all">${pixKey}</span>`, C.verde) : ''}` : '';
+    ${pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all"><a style="color:${C.osso};text-decoration:none">${pixKey}</a></span>`, C.verde) : ''}` : '';
 
   return moldura({
     cabecalho: 'pedido', alt: acaoTitulo,

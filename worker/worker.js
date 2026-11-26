@@ -140,6 +140,9 @@ const TIPOS = {
   sol: { colecao: 'adm_solicitacoes',       fonte: 'adm_servicos',    refCampo: 'servico_id', projetoFonte: PROJETO_PVD,  statusPago: 'pendente',   statusAguardando: 'aguardando_pagamento', campoValor: 'valor_proposto', valorFixado: false },
   ped: { colecao: 'vendas_pedidos',         fonte: 'vendas_produtos', refCampo: 'produto_id', projetoFonte: PROJETO_PVD,  statusPago: 'pendente',   statusAguardando: 'aguardando_pagamento', campoValor: 'valor',          valorFixado: false },
   ins: { colecao: 'evento_inscricoes',      fonte: 'eventos',         refCampo: 'evento_id',  projetoFonte: PROJETO_CAND, statusPago: 'pago',       statusAguardando: null,                   campoValor: 'valor',          valorFixado: false },
+  // atd: consulta já marcada que o Pai cobra pelo email de confirmação. Só o admin
+  // escreve adm_atendimentos (rules: auth), então o `valor` do doc é confiável.
+  atd: { colecao: 'adm_atendimentos',       fonte: null,              refCampo: null,         projetoFonte: PROJETO_PVD,  statusPago: null,         statusAguardando: null,                   campoValor: null,             valorFixado: false },
   men: { colecao: 'fin_mensalidade_pedidos', fonte: 'fin_filhos',     refCampo: 'filho_id',   projetoFonte: PROJETO_PVD,  statusPago: 'pago',       statusAguardando: null,                   campoValor: null,             valorFixado: true  },
 };
 
@@ -457,6 +460,10 @@ export function precoCentavos(tipo, pedido, fonte, hoje) {
 // Recalculando, o número vem sempre do produto/serviço/evento.
 async function valorEsperado(tipo, pedido, env, token) {
   const t = TIPOS[tipo];
+  if (tipo === 'atd') {
+    const centavos = Math.round((Number(pedido.valor) || 0) * 100);
+    return centavos > 0 ? { centavos, fonte: { nome: pedido.servico_nome || 'Consulta' } } : { erro: 'atendimento sem valor' };
+  }
   const refId = pedido[t.refCampo];
   if (!refId) return { erro: `pedido sem ${t.refCampo}` };
 
@@ -492,6 +499,10 @@ async function rotaCheckout(body, env, origem) {
   const pedido = await fsGet(PROJETO_PVD, t.colecao, doc_id, { token });
   if (!pedido) return json({ error: 'pedido não encontrado' }, 404);
   if (pedido.pago_automatico) return json({ error: 'pedido já está pago' }, 409);
+  // Atendimento tem baixa manual no admin (PIX conferido, dinheiro, isento).
+  if (tipo === 'atd' && (/^pago/.test(pedido.status_pagamento || '') || pedido.status_pagamento === 'isento')) {
+    return json({ error: 'esta consulta já consta como paga' }, 409);
+  }
 
   // Mensalidade tem uma segunda origem de "pago" que não vive no pedido: a
   // baixa manual do financeiro. Sem esta trava, o filho que pagou no PIX do Pai
@@ -3065,6 +3076,8 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
     pagamento_parcelas: Number(d.installments || check.installments) || 1,
     pagamento_recibo_url: d.receipt_url || null,
     comprovante_anexado: true, // pagou pelo checkout: não precisa mandar print
+    // O admin lê status_pagamento no atendimento, não pago_automatico.
+    ...(tipo === 'atd' && { status_pagamento: metodo === 'pix' ? 'pago_pix' : 'pago_cartao', pago_em: new Date().toISOString() }),
     // Mensalidade congela o que foi cobrado — daqui pra frente mudar o cadastro
     // do filho não reescreve o passado.
     ...(tipo === 'men' && {
@@ -3087,9 +3100,9 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
   // Não precisa de cron: o pagamento avisa a si mesmo.
   await mandarPush(env, {
     tag: 'venda',
-    titulo: tipo === 'men' ? 'Contribuição paga' : tipo === 'ins' ? 'Pagamento confirmado' : 'Pagou · falta você aprovar',
-    corpo: `${pedido.filho_nome || pedido.nome || pedido.produto_nome || 'pedido'} — ${brl(cobrado / 100)} no ${metodo === 'pix' ? 'PIX' : 'cartão'}`,
-    url: tipo === 'men' ? 'index.html#filhos' : tipo === 'sol' ? 'index.html#solicitacoes' : 'index.html#pedidos',
+    titulo: tipo === 'men' ? 'Contribuição paga' : tipo === 'ins' || tipo === 'atd' ? 'Pagamento confirmado' : 'Pagou · falta você aprovar',
+    corpo: `${pedido.filho_nome || pedido.nome || pedido.consulente_nome || pedido.produto_nome || 'pedido'} — ${brl(cobrado / 100)} no ${metodo === 'pix' ? 'PIX' : 'cartão'}`,
+    url: tipo === 'men' ? 'index.html#filhos' : tipo === 'atd' ? 'index.html#agenda' : tipo === 'sol' ? 'index.html#solicitacoes' : 'index.html#pedidos',
   });
 
   return { ok: true, centavos: cobrado, metodo };

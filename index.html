@@ -3664,6 +3664,18 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
       console.warn('Config de email incompleta — pulando');
       return;
     }
+    // Quem ainda não pagou recebe o link do checkout (cartão ou PIX, confirma
+    // sozinho). Falhou o link? O email sai igual, com o PIX.
+    const ck = S.cfgAgendamento || {};
+    if (a.cobrar_no_email === true && !a.checkout_url && ck.checkout_ativo && ck.checkout_worker_url) {
+      try {
+        const r = await fetch(ck.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: 'atd', doc_id: atendimentoId })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (d.url) a = { ...a, checkout_url: d.url }; else console.warn('checkout do atendimento falhou', r.status, d.error);
+      } catch (e) { console.warn('checkout do atendimento falhou', e?.message); }
+    }
     const subject = _emailAtendSubject(a);
     const html = _buildEmailAtendHTML(a, S);
     const text = _buildEmailAtendText(a, S);
