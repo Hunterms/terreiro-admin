@@ -6276,6 +6276,12 @@ function openAtendimentoForm(id=null) {
         </div>
         <div class="fi-group"><label>Duração (min)</label><input type="number" class="fi" id="at-dur" value="${a?.duracao_min||60}" min="15" step="15"/></div>
       </div>
+      <div class="fi-group"><label>Modalidade</label>
+        <select class="fi" id="at-mod">
+          <option value="presencial" ${a?.modalidade!=='online'?'selected':''}>Presencial</option>
+          <option value="online" ${a?.modalidade==='online'?'selected':''}>Online</option>
+        </select>
+      </div>
       <div class="row-2">
         <div class="fi-group"><label>Valor (R$) *</label><input type="number" class="fi" id="at-valor" value="${a?.valor||100}" min="0" step="10"/></div>
         <div class="fi-group"><label>Status do pagamento</label>
@@ -6351,7 +6357,7 @@ function openAtendimentoForm(id=null) {
       data, hora,
       duracao_min: parseInt($('#at-dur').value) || 60,
       tipo_oraculo: tipo,
-      modalidade: a?.modalidade || 'presencial',
+      modalidade: $('#at-mod').value,
       servico_id: sv.real ? sv.id : (a?.servico_id || null),
       servico_nome: sv.real ? sv.nome : (a?.servico_nome || null),
       publico: tipo !== 'buzios' && sv.publico !== false,
