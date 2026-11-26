@@ -281,7 +281,18 @@ window.closeModal = closeModal;
         // Modo lista: só públicos
         APP.servicos = todos.filter(s => s.publico !== false);
       }
-    } catch(e) { console.warn('Erro servicos', e); APP.semBanco = true; }
+    } catch(e) {
+      // Banco fora (cota do dia estourada): segue com a lista fixa e os horários
+      // publicados no site, e o pedido sai pelo WhatsApp em vez do banco.
+      console.warn('Erro servicos', e);
+      APP.semBanco = true;
+      APP.servicos = [
+        { id:'baralho', nome:'Baralho Cigano', duracao_min:60, presencial:true, online:true },
+        { id:'buzios', nome:'Jogo de Búzios', duracao_min:60, presencial:true, online:false },
+      ];
+      APP.cfg.horarios_semana = { '0':[], '1':[{inicio:'15:00',fim:'18:00'}], '2':[], '3':[{inicio:'18:00',fim:'21:00'}], '4':[],
+        '5':[{inicio:'09:00',fim:'12:00'},{inicio:'14:00',fim:'18:00'}], '6':[] };
+    }
 
     // Segunda de desenvolvimento não tem consulta. A lista vem da agenda do site;
     // se o Worker falhar, fecha toda segunda em vez de abrir horário em cima do trabalho.
@@ -294,19 +305,13 @@ window.closeModal = closeModal;
     } catch(e) { APP.semConsulta = null; console.warn('Erro agenda', e); }
 
     // Slots ocupados
-    await carregarOcupados();
+    if(!APP.semBanco) await carregarOcupados();
 
     if(APP.cfg.texto_intro) $('#intro-text').textContent = APP.cfg.texto_intro;
     $('#footer-whats').href = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Tenho dúvidas sobre o agendamento.')}`;
 
     if(!APP.cfg.ativa) {
       $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Agendamentos temporariamente fechados. <a style="color:var(--gold)" href="${$('#footer-whats').href}">Fale com a gente no WhatsApp</a>.</div>`;
-      return;
-    }
-    if(APP.semBanco) {
-      // Banco fora (ex.: cota do dia estourada): manda pro WhatsApp com o pedido pronto.
-      const wa = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Quero agendar uma consulta. O agendamento do site estava fora do ar.')}`;
-      $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto;line-height:1.6">O agendamento pelo site está fora do ar agora.<br>Agende pelo WhatsApp, que a gente marca o seu horário.<br><a class="success-whats" style="margin-top:16px" href="${wa}" target="_blank">Agendar pelo WhatsApp</a></div>`;
       return;
     }
     if(APP.servicos.length === 0) {
@@ -440,7 +445,7 @@ function renderPasso1() {
           <div class="servico ${APP.servico && APP.servico.id === s.id ? 'sel' : ''}" data-id="${s.id}">
             <div class="servico-nome">${s.nome}</div>
             <div class="servico-meta">
-              <span><strong>R$ ${(s.valor||0).toFixed(0)}</strong></span>
+              ${s.valor!=null?`<span><strong>R$ ${s.valor.toFixed(0)}</strong></span>`:''}
               <span>${s.duracao_min||60} min</span>
               ${s.presencial!==false?'<span class="chip chip-green">presencial</span>':''}
               ${s.online?'<span class="chip chip-blue">online</span>':''}
@@ -473,7 +478,7 @@ function renderPasso1() {
 function renderPasso2() {
   $('#passo').innerHTML = `
     <div class="resumo">
-      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome}${APP.servico.valor!=null?` · R$ ${APP.servico.valor.toFixed(0)}`:""}</strong></div>
     </div>
     <div class="card">
       <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Como prefere o atendimento?</h2>
@@ -508,7 +513,7 @@ function renderPasso2() {
 function renderPasso3() {
   $('#passo').innerHTML = `
     <div class="resumo">
-      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome} · R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>Serviço</span><strong>${APP.servico.nome}${APP.servico.valor!=null?` · R$ ${APP.servico.valor.toFixed(0)}`:""}</strong></div>
       <div class="resumo-row"><span>Modalidade</span><strong>${APP.modalidade==='online'?'Online':'Presencial'}</strong></div>
     </div>
     <div class="card">
@@ -698,7 +703,7 @@ function abrirModalDados() {
     <h3 style="font-size:17px;font-weight:700;margin-bottom:6px">Confirmar agendamento</h3>
     <div style="font-size:13px;color:var(--gold);margin-bottom:14px;text-transform:capitalize">${fmtData(APP.dataSel)} · ${APP.horaSel}</div>
     <div class="resumo" style="margin-bottom:14px">
-      <div class="resumo-row"><span>${APP.servico.nome}</span><strong>R$ ${(APP.servico.valor||0).toFixed(0)}</strong></div>
+      <div class="resumo-row"><span>${APP.servico.nome}</span><strong>${APP.servico.valor!=null?'R$ '+APP.servico.valor.toFixed(0):''}</strong></div>
       <div class="resumo-row"><span>${APP.modalidade==='online'?'Online':'Presencial'}</span><span>${APP.servico.duracao_min||60} min</span></div>
     </div>
     <div class="fi-group"><label>Seu nome <span class="req">*</span></label><input class="fi" id="b-nome" autocomplete="name" required/></div>
@@ -706,9 +711,9 @@ function abrirModalDados() {
     <div class="fi-group"><label>Email <span class="req">*</span></label><input class="fi" id="b-email" type="email" placeholder="seu@email.com" autocomplete="email" required/></div>
     <div class="fi-group"><label>Observação (opcional)</label><textarea class="fi" id="b-obs" placeholder="Algo que queira contar?"></textarea></div>
     <div style="padding:10px 12px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.55;text-align:center">
-      ✓ Seu horário é reservado ao confirmar — instruções de pagamento aparecem em seguida.
+      ${APP.semBanco ? 'Ao enviar, o WhatsApp abre com o seu pedido pronto. A gente confirma o horário e passa o pagamento por lá.' : '✓ Seu horário é reservado ao confirmar — instruções de pagamento aparecem em seguida.'}
     </div>
-    <button class="btn btn-primary btn-block" id="b-submit">Confirmar agendamento e pagar →</button>
+    <button class="btn btn-primary btn-block" id="b-submit">${APP.semBanco ? 'Enviar pedido pelo WhatsApp →' : 'Confirmar agendamento e pagar →'}</button>
     <button class="btn btn-block" style="margin-top:10px" onclick="window._app.voltar()">← Voltar</button>
     <div id="b-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
   `;
@@ -729,6 +734,12 @@ function abrirModalDados() {
     if(!tel || tel.length < 10) { err.textContent='Telefone inválido'; err.style.display='block'; return; }
     if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent='Informe um email válido pra contato'; err.style.display='block'; return; }
 
+    if(APP.semBanco) {
+      const msg = `Olá! Quero agendar pelo site:\n\n🪷 ${APP.servico.nome}\n📅 ${fmtData(APP.dataSel)}\n🕐 ${APP.horaSel}\n📍 ${APP.modalidade==='online'?'Online':'Presencial'}\n👤 ${nome}\n📞 ${tel}\n✉️ ${email}${obs?`\n📝 ${obs}`:''}\n\n(O agendamento do site estava fora do ar.)`;
+      window.visita?.('enviou_whats', { servico: APP.servico.nome });
+      location.href = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent(msg)}`;
+      return;
+    }
     const btn = $('#b-submit');
     btn.disabled = true; btn.textContent = 'Reservando...';
 
