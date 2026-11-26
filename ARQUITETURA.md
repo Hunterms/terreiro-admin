@@ -515,3 +515,9 @@ O que melhorar:
 Ordem: **B → C → E**, e D quando vocês decidirem.
 
 Fontes de preço: cloud.google.com/firestore/pricing (26/11) e developers.cloudflare.com/d1/platform/pricing (26/11).
+
+### Aplicado em 26/11
+- **B:** o admin publica `config/agenda_publica` no projeto terreiro-candieiro (`publicarAgendaPublica`). Publica quando muda config, serviço ou horário ocupado, e ao abrir se a publicação tiver mais de 6h. O agendar lê esse doc. Depois busca no pvd só o que foi reservado depois da publicação. Sem o doc, usa o caminho antigo. Sem banco, usa `agenda-reserva.json` + WhatsApp.
+- **C:** um passo `cota` no cron do Worker, mais a rota `/uso`. Lê `document/read_count` no Cloud Monitoring e avisa por email (terreiro.candieiro@gmail.com) e push em 60% e 90%. **Depende do papel "Monitoring Viewer"** para `firebase-adminsdk-fbsvc@terreiro-pvd.iam.gserviceaccount.com` no IAM do terreiro-pvd.
+- **E:** a tela "Uso do banco" em Ajustes mostra a cota do dia, as telas abertas e as leituras por coleção, contadas no localStorage do aparelho.
+- **Extra:** o `/agenda` do Worker guarda a resposta por 10 min. Antes, lia os 47 eventos a cada visita.
