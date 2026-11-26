@@ -158,7 +158,11 @@ export function _buildEmailAtendHTML(a, S) {
     const cardLink = a.checkout_url || (S.servicos||[]).find(x => x.id === a.servico_id)?.infinity_link;
     const indCartao = ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m));
     const pix = pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all"><a style="color:${C.osso};text-decoration:none">${pixKey}</a></span>${pixTit?`<br>${pixTit}`:''}<br>Manda o comprovante no WhatsApp pra gente confirmar.`, C.verde) : '';
-    const cartaoBox = cardLink ? nota('Cartão de crédito ou débito', `Confirma na hora, sem comprovante.${botao(cardLink, 'Pagar com cartão')}`, C.vermelho) : '';
+    // Sem link de cartão, o cartão continua possível: o Pai manda o link pelo WhatsApp.
+    const zapCartao = `${ZAP}?text=${encodeURIComponent('Salve! Quero pagar minha consulta de '+dataBr+' no cartão de crédito.')}`;
+    const cartaoBox = cardLink
+      ? nota('Cartão de crédito ou débito', `Confirma na hora, sem comprovante.${botao(cardLink, 'Pagar com cartão')}`, C.vermelho)
+      : nota('Cartão de crédito', `Prefere pagar no cartão? <a href="${zapCartao}" target="_blank" style="color:${C.osso};font-weight:700;text-decoration:underline">Manda uma mensagem no WhatsApp</a> que a gente te envia o link.`, C.vermelho);
     pagar = (pix || cartaoBox) ? `${rotulo('Como pagar', C.osso)}<div style="height:6px"></div>${indCartao ? cartaoBox + pix : pix + cartaoBox}` : '';
   }
 
@@ -209,7 +213,7 @@ Quando: ${dataBr} às ${a.hora||''}
 Modalidade: ${modalidade}
 ${(pago && !semCobranca) || cobrar ? `Valor: R$ ${valor.toFixed(2).replace('.',',')} ${pago?'(pago)':'(a pagar)'}\n` : ''}
 ${a.modalidade !== 'online' ? `Endereço: R. Angelo Vicentim 236, Barão Geraldo, Campinas-SP\n` : `Online: o link da chamada chega por email ou WhatsApp uns minutos antes.\n`}
-${cobrar ? `${pixKey?`PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n`:''}${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:''}` : ''}
+${cobrar ? `${pixKey?`PIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n`:''}${cardLink?`\nCartão (crédito ou débito): ${cardLink}\nConfirma na hora, sem comprovante.\n`:`\nPrefere pagar no cartão de crédito? Manda uma mensagem no WhatsApp que a gente te envia o link: https://wa.me/5519992494267\n`}` : ''}
 ${linkGoogleAgenda(a, S) ? `Colocar na sua agenda: ${linkGoogleAgenda(a, S)}\n\n` : ''}Qualquer coisa antes do dia, chama: https://wa.me/5519992494267
 
 Terreiro do Candieiro
