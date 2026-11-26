@@ -254,3 +254,57 @@ export function explicar(erro) {
   if (erro === 'filho não encontrado') return 'Não achei esse cadastro. Fala com a administração.';
   return erro || 'Não consegui agora. Tenta de novo em instantes.';
 }
+
+// ── O CENSO DA CASA ───────────────────────────────────────────────────────
+//
+// Quem é a casa: cor, gênero, de onde veio na fé. Cada resposta fica no
+// cadastro da pessoa (`fin_filhos.censo_*`), e o admin soma no mapa.
+//
+// Cor, gênero e orientação são dado sensível (LGPD art. 5º, II), igual ser
+// filho de terreiro. Por isso três travas:
+//   - "Prefiro não dizer" é resposta, e conta como respondida;
+//   - o valor NUNCA sai pelo /filhos (que é público): sai só `censo_ok`, a
+//     lista do que a pessoa já respondeu, pra não perguntar de novo;
+//   - só o filho escreve, pelo /meu-cadastro. A casa não declara a cor de
+//     ninguém.
+//
+// A lista é uma só: a área do filho pergunta, o Worker valida e o admin soma
+// a partir daqui. Opção nova entra aqui e vale nos três.
+// Como perguntar, pelos guias de quem estuda isso (conferido em 25/11/2026):
+//   - raça: as cinco categorias do IBGE, na ordem dele, e só autodeclaração.
+//     O título NÃO é "cor ou raça" (termo do IBGE): a casa achou que soa mal
+//     e escolheu "como você se declara racialmente", na linha do guia do MEC
+//     (declaração étnico-racial). As opções seguem as do IBGE pra comparar.
+//   - gênero e orientação: folder da Diretoria LGBT da Prefeitura de BH, as
+//     alternativas "que devem constar em formulários de inscrição". Gênero e
+//     orientação em perguntas separadas. Orientação é a última, como na PNS
+//     2019 do IBGE: a mais íntima vem depois que a pessoa já confiou nas outras.
+//     Intersexo saiu em 25/11, decisão da casa.
+//   - toda pergunta tem "Não sei ou não quero responder" (`NAO_DIZER`).
+export const NAO_DIZER = 'nao_dizer';
+export const CENSO = [
+  { campo: 'censo_cor', emoji: '✊🏿', titulo: 'Como você se declara racialmente?',
+    porque: 'Quem diz é você, do jeito que você se vê. As opções são as do IBGE.',
+    opcoes: [['branca', 'Branca'], ['preta', 'Preta'], ['amarela', 'Amarela'], ['parda', 'Parda'], ['indigena', 'Indígena']] },
+  { campo: 'censo_genero', emoji: '🌗', titulo: 'Qual a sua identidade de gênero?',
+    porque: 'Cis é quem se reconhece no gênero do registro de nascimento; trans é quem não. Pra casa saber quem ela acolhe.',
+    opcoes: [['mulher_cis', 'Mulher cis'], ['mulher_trans', 'Mulher trans'], ['travesti', 'Travesti'], ['homem_cis', 'Homem cis'], ['homem_trans', 'Homem trans'], ['transmasculino', 'Transmasculino'], ['nao_binaria', 'Pessoa não binária'], ['outro', 'Outro']] },
+  { campo: 'censo_escolaridade', emoji: '📚', titulo: 'Até onde você estudou?',
+    porque: 'Ajuda a casa a pensar curso, material e jeito de ensinar.',
+    opcoes: [['fundamental', 'Fundamental'], ['medio', 'Médio'], ['tecnico', 'Técnico'], ['superior', 'Superior'], ['pos', 'Pós-graduação']] },
+  { campo: 'censo_origem', emoji: '🕯️', titulo: 'Antes da casa, de onde você vinha na fé?',
+    porque: 'Muita gente chega de outro caminho. A casa quer conhecer esse caminho.',
+    opcoes: [['catolica', 'Católica'], ['evangelica', 'Evangélica'], ['espirita', 'Espírita'], ['matriz_africana', 'Candomblé ou outra de matriz africana'], ['outra_umbanda', 'Outra casa de umbanda'], ['sem_religiao', 'Sem religião'], ['outra', 'Outra']] },
+  { campo: 'censo_tempo', emoji: '⏳', titulo: 'Há quanto tempo você está na umbanda?',
+    porque: 'Contando de antes da casa também. Ajuda a montar curso pra cada momento.',
+    opcoes: [['menos_1', 'Menos de 1 ano'], ['1_3', '1 a 3 anos'], ['3_10', '3 a 10 anos'], ['mais_10', 'Mais de 10 anos']] },
+  { campo: 'censo_orientacao', emoji: '🏳️‍🌈', titulo: 'Qual a sua orientação sexual?',
+    porque: 'Terreiro sempre foi casa de quem a rua não acolhe. A casa quer saber o tamanho disso.',
+    opcoes: [['assexual', 'Assexual'], ['bissexual', 'Bissexual'], ['gay', 'Gay'], ['heterossexual', 'Heterossexual'], ['lesbica', 'Lésbica'], ['pansexual', 'Pansexual'], ['outro', 'Outro']] },
+];
+
+/** O valor vale pra esta pergunta? "Prefiro não dizer" vale pra todas. */
+export const respostaCensoValida = (campo, valor) => {
+  const p = CENSO.find((c) => c.campo === campo);
+  return !!p && (valor === NAO_DIZER || p.opcoes.some(([v]) => v === valor));
+};

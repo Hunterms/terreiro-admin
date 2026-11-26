@@ -1,3 +1,4 @@
+import { CENSO, respostaCensoValida } from '../filhos.js';
 import { _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText } from '../email-textos.js';
 
 /**
@@ -1966,7 +1967,11 @@ async function rotaFilhos(env) {
   // esconder, não mostrar — e esconder está escrito ali em cima, num lugar só.
   const limpos = filhos.map((f) => {
     const out = {};
-    for (const [k, v] of Object.entries(f)) if (!CAMPOS_PRIVADOS.includes(k)) out[k] = v;
+    for (const [k, v] of Object.entries(f)) {
+      // Censo: o valor é sensível e fica aqui dentro. Sai só QUE respondeu.
+      if (k.startsWith('censo_')) { (out.censo_ok ||= []).push(k); continue; }
+      if (!CAMPOS_PRIVADOS.includes(k)) out[k] = v;
+    }
     return out;
   });
 
@@ -2763,6 +2768,12 @@ async function rotaMeuCadastro(body, env) {
   // função. Campo da casa não entra nesta lista, nunca.
   if (mora_perto !== undefined) patch.mora_perto = !!mora_perto;
   if (trabalha_clt !== undefined) patch.trabalha_clt = !!trabalha_clt;
+  // Censo: só valor da lista, e só o próprio filho responde. Ver filhos.js.
+  for (const { campo } of CENSO) {
+    if (body?.[campo] === undefined) continue;
+    if (!respostaCensoValida(campo, body[campo])) return json({ error: 'resposta inválida' }, 400);
+    patch[campo] = body[campo];
+  }
 
   if (!Object.keys(patch).length) return json({ error: 'nada pra salvar' }, 400);
 

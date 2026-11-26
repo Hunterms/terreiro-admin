@@ -1393,6 +1393,13 @@ const PERGUNTAS_CADASTRO = [
     titulo: 'Você mora perto do terreiro?',
     porque: 'Ajuda a casa a pensar carona e a não te escalar em dia impossível.',
   },
+  // O censo da casa. O valor não volta pelo /filhos, só a lista do que já foi
+  // respondido (`censo_ok`). Ver CENSO em filhos.js.
+  ...Filhos.CENSO.map((c) => ({
+    ...c, tipo: 'opcoes', censo: true,
+    falta: (f) => !(f.censo_ok || []).includes(c.campo),
+    porque: c.porque + ' Só a administração vê a sua resposta; o resto da casa vê só a soma.',
+  })),
 ];
 
 const PULOU = 'candieiro_pulou';
@@ -1426,6 +1433,8 @@ function renderCadastro(f) {
     data: `<input class="fi" id="cad-val" type="date" max="${hojeISO()}" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>`,
     email: `<input class="fi" id="cad-val" type="email" placeholder="seu@email.com" autocomplete="email" style="flex:1;min-width:160px;padding:10px 12px;font-size:14px"/>`,
     sim_nao: `<button class="btn" id="cad-sim" style="flex:1;padding:10px">Sim</button><button class="btn" id="cad-nao" style="flex:1;padding:10px">Não</button>`,
+    opcoes: [...(agora.opcoes || []), [Filhos.NAO_DIZER, 'Não sei ou não quero responder']]
+      .map(([v, r]) => `<button class="btn cad-op" data-v="${v}" style="flex:1 1 40%;padding:10px">${r}</button>`).join(''),
   }[agora.tipo];
 
   card.style.display = '';
@@ -1451,8 +1460,8 @@ function renderCadastro(f) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px">${campoHtml}</div>
         <div id="cad-err" class="erro-campo"></div>
         <div style="display:flex;gap:8px;margin-top:9px">
-          ${agora.tipo === 'sim_nao' ? '' : '<button class="btn btn-primary" id="cad-save" style="flex:1;padding:10px">Salvar</button>'}
-          <button class="btn" id="cad-pular" style="padding:10px 14px;${agora.tipo === 'sim_nao' ? 'flex:1' : ''}">Pular</button>
+          ${agora.tipo === 'sim_nao' || agora.tipo === 'opcoes' ? '' : '<button class="btn btn-primary" id="cad-save" style="flex:1;padding:10px">Salvar</button>'}
+          <button class="btn" id="cad-pular" style="padding:10px 14px;${agora.tipo === 'sim_nao' || agora.tipo === 'opcoes' ? 'flex:1' : ''}">Pular</button>
         </div>
       </div>
     </div>`;
@@ -1463,9 +1472,13 @@ function renderCadastro(f) {
     $('#cad-err').style.display = 'none';
     try {
       await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, { [agora.campo]: valor });
-      f[agora.campo] = valor;
+      // Censo não guarda o valor aqui: marca só que respondeu, igual o /filhos.
+      const marca = (x) => agora.censo
+        ? (x.censo_ok = [...new Set([...(x.censo_ok || []), agora.campo])])
+        : (x[agora.campo] = valor);
+      marca(f);
       const i = APP.filhos.findIndex((x) => x.id === f.id);
-      if (i >= 0) APP.filhos[i][agora.campo] = valor;
+      if (i >= 0 && APP.filhos[i] !== f) marca(APP.filhos[i]);
       toast('Guardado, obrigado ✓','ok');
       renderCadastro(f);                     // já mostra a próxima, se houver
       if (agora.campo === 'data_nascimento') renderAniversariantes();
@@ -1477,6 +1490,7 @@ function renderCadastro(f) {
   $('#cad-pular').onclick = () => { pular(agora.campo); renderCadastro(f); };
   $('#cad-sim')?.addEventListener('click', () => salvar(true));
   $('#cad-nao')?.addEventListener('click', () => salvar(false));
+  card.querySelectorAll('.cad-op').forEach((b) => { b.onclick = () => salvar(b.dataset.v); });
   $('#cad-save')?.addEventListener('click', () => {
     const v = $('#cad-val').value.trim();
     if (!v) { erro('Preenche o campo antes de salvar.'); return; }

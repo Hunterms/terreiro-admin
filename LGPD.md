@@ -110,3 +110,14 @@ pessoa de dentro das alocações de escala e dos responsáveis do kanban.
 Até 08/09 o botão "Excluir" apagava só `fin_filhos/{id}` e dizia que não podia
 ser desfeita — sobrava a pessoa inteira nos outros oito lugares, vários com o
 nome copiado junto.
+
+## O censo da casa (25/11/2026)
+
+Raça, identidade de gênero e orientação sexual são dado
+sensível do mesmo jeito (art. 5º, II). Entram com quatro travas, todas em
+`CENSO` do `filhos.js`:
+
+- só o filho responde, pelo `/meu-cadastro`; a casa não declara ninguém;
+- toda pergunta tem "Não sei ou não quero responder", e pular volta em 7 dias;
+- o `/filhos` público não leva o valor, só `censo_ok` (o que já respondeu);
+- o admin vê a soma no "Mapa da casa"; o valor de cada um fica em `fin_filhos`.
