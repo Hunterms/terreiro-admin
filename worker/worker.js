@@ -207,6 +207,8 @@ export default {
       if (rota === '/filhos') return await rotaFilhos(env);
       if (rota === '/entrar') return await rotaEntrar(body, env);
       if (rota === '/agenda') return await rotaAgenda(env);
+      // Só números do dia (leituras/gravações): o admin mostra a barra de cota.
+      if (rota === '/uso') return json(await usoFirestoreHoje(env));
       if (rota === '/reembolso') return await rotaReembolso(body, env);
       if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
       if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
@@ -263,6 +265,7 @@ export default {
       console.log('cron', JSON.stringify(await tick(env)));
     } catch (e) {
       console.error('cron morreu antes de começar', e?.stack || e);
+      await avisarCotaEstourada(env, e).catch(() => {});
     }
   },
 };
@@ -1096,7 +1099,16 @@ export function paraOPublico(ev) {
  * antes o site escondia e o dado continuava aberto; agora o dado que sai já é
  * só o que pode sair.
  */
+// Cada visita ao agendar e à área do filho chama /agenda, e cada chamada lia os
+// eventos inteiros. 10 min de memória por instância corta isso sem atrasar giras.
+let _agendaMemo = null;
 async function rotaAgenda(env) {
+  if (_agendaMemo && Date.now() - _agendaMemo.em < 600000) return json(_agendaMemo.dados);
+  const r = await rotaAgendaFresca(env);
+  try { _agendaMemo = { em: Date.now(), dados: await r.clone().json() }; } catch (e) {}
+  return r;
+}
+async function rotaAgendaFresca(env) {
   // ⚠️ A service account é do projeto `terreiro-pvd` e NÃO alcança o
   // `terreiro-candieiro`, onde os eventos moram. Eu mandei o token daqui pra
   // lá na primeira versão, tomei 403, e escondi atrás de um `.catch(() => [])`
@@ -1535,7 +1547,76 @@ async function tick(env) {
     if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
   });
 
+  // 7) Alarme de cota do Firestore (pvd). Lê o Monitoring do Google, que não
+  // gasta leitura do banco, e avisa quando o dia cruza 60% e 90% das 50 mil.
+  // Sem estado: compara o total de agora com o de 15 min atrás.
+  await passo('cota', async () => {
+    const u = await usoFirestoreHoje(env).catch((e) => {
+      if (String(e.message).includes('billing')) return null; // projeto sem faturamento: fica o aviso de 429
+      throw e;
+    });
+    if (!u) return;
+    for (const pct of [60, 90]) {
+      const limite = COTA_LEITURAS * pct / 100;
+      if (u.leituras >= limite && u.antes < limite) {
+        const msg = `O banco já usou ${u.leituras.toLocaleString('pt-BR')} de ${COTA_LEITURAS.toLocaleString('pt-BR')} leituras grátis hoje (${pct}%). Zera às 5h. Evitem recarregar o admin à toa até lá; o agendar tem backup pelo WhatsApp.`;
+        await enviarEmail(env, { to: EMAIL_CASA, subject: `Banco do terreiro em ${pct}% da cota de hoje`, text: msg }).catch(() => {});
+        await mandarPush(env, { tag: `cota-${pct}`, titulo: `Banco em ${pct}% da cota de hoje`, corpo: msg, url: 'index.html' }).catch(() => {});
+        feito.push(`cota:${pct}`);
+      }
+    }
+  });
+
   return { hoje, hora, feito, ...(falhas.length && { falhas }) };
+}
+
+// Sem faturamento o Google não deixa ler o Monitoring, então o alarme que
+// sobra é o do estouro: o primeiro tick que leva 429 do banco avisa a casa,
+// uma vez por dia de cota. A marca fica no cache do Worker, porque o banco
+// estourado não aceita nem a marca.
+async function avisarCotaEstourada(env, e) {
+  const txt = String(e?.message || e);
+  if (!/\b429\b|RESOURCE_EXHAUSTED|Quota exceeded/i.test(txt)) return;
+  const chave = new Request(`https://cota.local/${inicioDiaPacifico().toISOString().slice(0, 10)}`);
+  if (await caches.default.match(chave)) return;
+  await caches.default.put(chave, new Response('1', { headers: { 'Cache-Control': 'max-age=86400' } }));
+  const msg = 'O banco do terreiro estourou a cota grátis de leituras de hoje. Zera às 5h (horário de Brasília). Até lá o admin e a área do filho podem abrir vazios; o agendar segue pelo backup do WhatsApp. Evitem recarregar o admin.';
+  await enviarEmail(env, { to: EMAIL_CASA, subject: 'Banco do terreiro sem cota até as 5h', text: msg }).catch(() => {});
+  await mandarPush(env, { tag: 'cota-estouro', titulo: 'Banco sem cota até as 5h', corpo: msg, url: 'index.html' }).catch(() => {});
+}
+
+// ── USO DO FIRESTORE NO DIA (cota grátis zera à meia-noite do Pacífico) ────
+const COTA_LEITURAS = 50000;
+const EMAIL_CASA = 'terreiro.candieiro@gmail.com';
+const ESCOPO_MONITORING = 'https://www.googleapis.com/auth/monitoring.read';
+function inicioDiaPacifico(agora = new Date()) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+    hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(agora);
+  const g = (t) => Number(p.find((x) => x.type === t).value) % (t === 'hour' ? 24 : 60);
+  const ms = ((g('hour') * 60 + g('minute')) * 60 + g('second')) * 1000 + agora.getMilliseconds();
+  return new Date(agora.getTime() - ms);
+}
+/** { leituras, gravacoes, antes } do dia de cota atual. `antes` = leituras até 15 min atrás. */
+async function usoFirestoreHoje(env) {
+  const token = await tokenGoogle(env, ESCOPO_MONITORING);
+  const fim = new Date(), ini = inicioDiaPacifico(fim);
+  const serie = async (metrica) => {
+    const q = new URLSearchParams({
+      filter: `metric.type="firestore.googleapis.com/document/${metrica}"`,
+      'interval.startTime': ini.toISOString(), 'interval.endTime': fim.toISOString(),
+      'aggregation.alignmentPeriod': '900s', 'aggregation.perSeriesAligner': 'ALIGN_SUM',
+      'aggregation.crossSeriesReducer': 'REDUCE_SUM',
+    });
+    const r = await fetch(`https://monitoring.googleapis.com/v3/projects/${PROJETO_PVD}/timeSeries?${q}`, {
+      headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(`monitoring ${r.status}: ${(await r.text()).slice(0, 160)}`);
+    const pts = ((await r.json()).timeSeries?.[0]?.points) || [];
+    const v = (pt) => Number(pt.value.int64Value ?? pt.value.doubleValue ?? 0);
+    const total = pts.reduce((a, pt) => a + v(pt), 0);
+    return { total, antes: total - (pts[0] ? v(pts[0]) : 0) }; // pts[0] = os 15 min mais recentes
+  };
+  const [l, g] = await Promise.all([serie('read_count'), serie('write_count')]);
+  return { leituras: l.total, gravacoes: g.total, antes: l.antes, desde: ini.toISOString() };
 }
 
 

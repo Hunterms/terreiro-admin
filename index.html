@@ -10051,7 +10051,9 @@ function renderUso(c) {
   fetch(WORKER_PDV + '/uso', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
     .then(r => r.json()).then(d => {
       const el = document.getElementById('uso-hoje'); if (!el) return;
-      if (d.error) { el.textContent = 'Não consegui ler o uso de hoje (o alarme ainda está sem permissão no Google Cloud).'; return; }
+      if (d.error) { el.textContent = String(d.error).includes('billing')
+        ? 'O Google só mostra o uso do dia em projeto com faturamento ativo. Sem isso, o aviso automático chega por email quando a cota acaba.'
+        : 'Não consegui ler o uso de hoje agora.'; return; }
       const pct = Math.min(100, Math.round(d.leituras / 500));
       const cor = pct >= 90 ? 'var(--red)' : pct >= 60 ? 'var(--gold)' : 'var(--green, #2ecc71)';
       el.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="color:var(--text)">Hoje: ${d.leituras.toLocaleString('pt-BR')} de 50.000 leituras</b><span>${pct}%</span></div>
