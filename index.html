@@ -1150,6 +1150,7 @@ function attachListeners() {
   // Serviços oferecidos pelo Pai (consultas, baralho, búzios, etc.)
   ouvir('adm_servicos', () => onSnapshot(collection(dbPvd,'adm_servicos'), snap => {
     S.servicos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
+    if(snap.metadata.hasPendingWrites) publicarAgendaLogo();
     if(['servicos','config-agendamento','agenda','dashboard'].includes(S.route)) renderRoute();
   }));
 
@@ -1196,6 +1197,7 @@ function attachListeners() {
   // Config do agendamento (pra mensagens do WhatsApp pegarem o PIX, etc.)
   ouvir('cfg_agendamento', () => onSnapshot(doc(dbPvd,'adm_config','agendamento'), snap => {
     if(snap.exists()) S.cfgAgendamento = snap.data();
+    if(snap.metadata.hasPendingWrites) publicarAgendaLogo(); else if(!snap.metadata.fromCache) conferirAgendaPublica();
     if(['solicitacoes','agenda'].includes(S.route)) renderRoute();
     if(S.route === 'config-agendamento' && $('#pausas-painel')) $('#pausas-painel').innerHTML = painelPausas();
   }));
@@ -7130,6 +7132,41 @@ async function movimentarDespensa(id, tipo) {
   };
 }
 
+// ── AGENDA PÚBLICA NUM DOCUMENTO SÓ (projeto terreiro-candieiro) ──────────
+// O agendar.html lia config + serviços + cada horário ocupado do pvd: ~20
+// leituras por visita, na mesma cota do admin. Em 26/11 o admin estourou a
+// cota e levou o agendamento junto. Agora o admin publica tudo que o agendar
+// precisa num doc só, config/agenda_publica, no projeto do SITE (cota própria).
+// O agendar lê 1 doc lá; o pvd só entra pra pegar horário reservado depois
+// da última publicação. Publica quando algo muda e, no máximo a cada 6h, ao abrir.
+let _pubAgendaTimer = null, _pubAgendaConferida = false;
+function publicarAgendaLogo() { clearTimeout(_pubAgendaTimer); _pubAgendaTimer = setTimeout(publicarAgendaPublica, 3000); }
+async function publicarAgendaPublica() {
+  if (S.role !== 'admin' || !S.cfgAgendamento) return;
+  try {
+    const c = S.cfgAgendamento;
+    const campos = ['horarios_semana','horarios_dia','horarios_extras','pausas','antecedencia_min_horas','whatsapp','ativa','texto_intro','pix','pix_titular','dias_atendimento','hora_inicio','hora_fim'];
+    const cfg = Object.fromEntries(campos.filter(k => c[k] !== undefined).map(k => [k, c[k]]));
+    const todos = S.servicos?.length ? S.servicos
+      : (await getDocs(collection(dbPvd,'adm_servicos'))).docs.map(d => ({ id:d.id, ...d.data() }));
+    const servicos = todos.filter(x => x.ativo !== false).map(x => ({ id:x.id, nome:x.nome, valor:x.valor ?? null,
+      duracao_min:x.duracao_min||60, presencial:x.presencial, online:x.online, descricao:x.descricao||null,
+      ordem:x.ordem ?? 999, slug:x.slug||null, publico:x.publico, infinity_link:x.infinity_link||null }));
+    const ocupados = (await getDocs(query(collection(dbPvd,'pub_slots_ocupados'), where('data','>=',_iso(new Date())))))
+      .docs.map(d => { const a = d.data(); return { data:a.data, hora:a.hora, dur:a.dur||60 }; });
+    // JSON ida e volta tira os undefined, que o Firestore recusa.
+    await setDoc(doc(dbCand,'config','agenda_publica'), JSON.parse(JSON.stringify({
+      cfg, servicos, ocupados, atualizadoEm: new Date().toISOString(), atualizadoMs: Date.now() })));
+  } catch (e) { console.warn('agenda pública não publicou:', e); }
+}
+async function conferirAgendaPublica() {
+  if (_pubAgendaConferida || S.role !== 'admin') return; _pubAgendaConferida = true;
+  try {
+    const d = (await getDoc(doc(dbCand,'config','agenda_publica'))).data();
+    if (!d || Date.now() - (d.atualizadoMs||0) > 6*3600*1000) publicarAgendaLogo();
+  } catch (e) { console.warn('conferir agenda pública:', e); }
+}
+
 // ── SLOTS PÚBLICOS (espelho sem PII pro agendar.html) ─────────────────────
 // Mantém pub_slots_ocupados/{atend_<id>|sol_<id>} com só {data,hora,dur,fonte}.
 // O agendar.html lê DAQUI em vez de adm_atendimentos/adm_solicitacoes — assim
@@ -7140,10 +7177,11 @@ async function syncSlotPub(slotId, data, hora, dur, fonte) {
     await setDoc(doc(dbPvd,'pub_slots_ocupados', slotId), {
       data, hora, dur: dur||60, fonte: fonte||'atendimento', atualizadoEm: serverTimestamp()
     });
+    publicarAgendaLogo();
   } catch(e) { console.warn('syncSlotPub falhou:', e); }
 }
 async function delSlotPub(slotId) {
-  try { await deleteDoc(doc(dbPvd,'pub_slots_ocupados', slotId)); }
+  try { await deleteDoc(doc(dbPvd,'pub_slots_ocupados', slotId)); publicarAgendaLogo(); }
   catch(e) { console.warn('delSlotPub falhou:', e); }
 }
 
@@ -9324,6 +9362,7 @@ async function renderConfigAgendamento(c) {
           });
           c++;
         }
+        publicarAgendaLogo();
         toast(`${c} eventos do calendar importados${pulados?` · ${pulados} pulados`:''}`,'ok');
       } catch(e) { toast('Erro: '+e.message,'err'); }
       finally { btn.disabled = false; btn.textContent = txtOrig; }
@@ -9357,6 +9396,7 @@ async function renderConfigAgendamento(c) {
           });
           c++;
         }
+        publicarAgendaLogo();
         toast(`${c} slots sincronizados`,'ok');
       } catch(e) { toast('Erro: '+e.message,'err'); }
     });

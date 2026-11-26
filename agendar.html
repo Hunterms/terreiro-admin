@@ -181,7 +181,7 @@ footer a{color:var(--gold);text-decoration:none}
 <script type="module">
 import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, query, where, orderBy, serverTimestamp
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, query, where, orderBy, serverTimestamp, Timestamp
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 import { criarCheckout, caixaCheckout, caixaCheckoutCarregando, armarCheckout } from "./checkout.js";
 
@@ -194,6 +194,9 @@ const cfg = {
   appId: "1:365180068240:web:7b2fe25ca670781f585315"
 };
 const db = getFirestore(initializeApp(cfg));
+// Projeto do SITE, com cota própria: o admin publica aqui, num doc só, tudo que
+// esta página precisa (config/agenda_publica). Ver publicarAgendaPublica no admin.
+const dbSite = getFirestore(initializeApp({ apiKey: "AIzaSyAViFU3bdl8RKSHBuxMGAc97SPITd1aJWM", projectId: "terreiro-candieiro", appId: "1:100068133826:web:aa6bea82298a266737a45b" }, 'site'));
 
 const cfgDefault = {
   horarios_semana: { '0':[], '1':[], '2':[{inicio:'10:00',fim:'18:00'}], '3':[{inicio:'10:00',fim:'18:00'}], '4':[{inicio:'10:00',fim:'18:00'}], '5':[{inicio:'10:00',fim:'18:00'}], '6':[{inicio:'10:00',fim:'18:00'}] },
@@ -234,9 +237,18 @@ window.closeModal = closeModal;
 // ── BOOT ───────────────────────────────────────────────────────────────────
 (async function boot() {
   try {
+    // 1º: a agenda publicada pelo admin (1 leitura, cota do site).
+    // 2º: o caminho antigo, direto no pvd. 3º: a foto agenda-reserva.json + WhatsApp.
+    const _q = new URLSearchParams(location.search);
+    if(!_q.get('reserva') && !_q.get('direto')) {
+      try {
+        const p = (await getDoc(doc(dbSite,'config','agenda_publica'))).data();
+        if(p?.cfg && p?.servicos?.length) APP.pub = p;
+      } catch(e) { console.warn('agenda publicada indisponível', e); }
+    }
     // Config
     try {
-      const snap = await getDoc(doc(db,'adm_config','agendamento'));
+      const snap = APP.pub ? { exists: () => true, data: () => APP.pub.cfg } : await getDoc(doc(db,'adm_config','agendamento'));
       if(snap.exists()) {
         const dados = snap.data();
         APP.cfg = { ...cfgDefault, ...dados };
@@ -255,8 +267,7 @@ window.closeModal = closeModal;
     // Carrega todos serviços ativos. Se tem ?s=, mantém o privado também.
     try {
       if(urlParams.get('reserva')) throw new Error('modo reserva forçado');
-      const snap = await getDocs(collection(db,'adm_servicos'));
-      const todos = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+      const todos = (APP.pub ? APP.pub.servicos : (await getDocs(collection(db,'adm_servicos'))).docs.map(d => ({ id:d.id, ...d.data() })))
         .filter(s => s.ativo !== false)
         .sort((a,b) => (a.ordem||999) - (b.ordem||999));
       if(slugDireto) {
@@ -342,6 +353,18 @@ async function carregarOcupados() {
   const limite = new Date(); limite.setMonth(hoje.getMonth() + 3);
   const inicio = hoje.toLocaleDateString('en-CA');
   const fim = limite.toLocaleDateString('en-CA');
+  if(APP.pub) {
+    // Ocupados da publicação + o que foi reservado depois dela (pvd, poucas
+    // leituras). Se o pvd estiver fora, fica só com a publicação.
+    APP.pub.ocupados.forEach(o => marcarOcupado(o.data, o.hora, o.dur || 60));
+    try {
+      const desde = Timestamp.fromMillis((APP.pub.atualizadoMs || 0) - 120000);
+      (await getDocs(query(collection(db,'pub_slots_ocupados'), where('atualizadoEm','>',desde)))).forEach(d => {
+        const a = d.data(); marcarOcupado(a.data, a.hora, a.dur || 60);
+      });
+    } catch(e) { console.warn('reservas recentes indisponíveis', e); }
+    return;
+  }
   // Lê do espelho público (sem PII) — admin sincroniza atendimentos/solicitações aqui
   try {
     const q1 = query(collection(db,'pub_slots_ocupados'), where('data','>=',inicio), where('data','<=',fim));
