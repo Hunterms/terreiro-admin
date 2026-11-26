@@ -106,9 +106,34 @@ function moldura({ cabecalho, alt, titulo, aviso = '', corpo }) {
 </body></html>`;
 }
 
+/**
+ * "Como pagar": PIX e cartão. Sem link de cartão, o cartão continua possível:
+ * o Pai manda o link pelo WhatsApp. Usado na reserva da consulta e do pedido.
+ */
+function blocoPagar({ pixKey, pixTit = '', cardLink, cartaoPrimeiro = false, pedidoZap }) {
+  const pix = pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all"><a style="color:${C.osso};text-decoration:none">${pixKey}</a></span>${pixTit?`<br>${pixTit}`:''}<br>Manda o comprovante no WhatsApp pra gente confirmar.`, C.verde) : '';
+  const zapCartao = `${ZAP}?text=${encodeURIComponent(pedidoZap)}`;
+  const cartaoBox = cardLink
+    ? nota('Cartão de crédito ou débito', `Confirma na hora, sem comprovante.${botao(cardLink, 'Pagar com cartão')}`, C.vermelho)
+    : nota('Cartão de crédito', `Prefere pagar no cartão? <a href="${zapCartao}" target="_blank" style="color:${C.osso};font-weight:700;text-decoration:underline">Manda uma mensagem no WhatsApp</a> que a gente te envia o link.`, C.vermelho);
+  return `${rotulo('Como pagar', C.osso)}<div style="height:6px"></div>${cartaoPrimeiro ? cartaoBox + pix : pix + cartaoBox}`;
+}
+
+/**
+ * Reserva = o Pai marcou "ainda não pagou". Aí o email não diz "confirmada":
+ * diz que o horário está guardado e que falta pagar. O "confirmada" sai
+ * depois, quando o pagamento entra (admin marca pago, ou o checkout avisa).
+ */
+export function emailAtendEhReserva(a) {
+  const pago = (a.status_pagamento || '').startsWith('pago');
+  const semCobranca = !(Number(a.valor) > 0) || a.status_pagamento === 'isento';
+  return !pago && !semCobranca && a.cobrar_no_email === true;
+}
+
 export function _emailAtendSubject(a) {
   const servico = a.servico_nome || 'consulta';
   const dataPart = a.data ? new Date(a.data+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long'}) : '';
+  if (emailAtendEhReserva(a)) return `Seu horário está reservado, falta o pagamento${dataPart?` (${dataPart})`:''}`;
   return `${servico} confirmada${dataPart?` (${dataPart})`:''}`;
 }
 
@@ -153,25 +178,22 @@ export function _buildEmailAtendHTML(a, S) {
   // marca é o caso comum de quem já pagou e ninguém conferiu: falar de PIX ali
   // faz a pessoa achar que deve.
   const cobrar = !pago && !semCobranca && a.cobrar_no_email === true;
-  let pagar = '';
-  if (cobrar) {
-    const cardLink = a.checkout_url || (S.servicos||[]).find(x => x.id === a.servico_id)?.infinity_link;
-    const indCartao = ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m));
-    const pix = pixKey ? nota('PIX', `<span style="font:700 15px/1.5 ${MONO};color:${C.osso};word-break:break-all"><a style="color:${C.osso};text-decoration:none">${pixKey}</a></span>${pixTit?`<br>${pixTit}`:''}<br>Manda o comprovante no WhatsApp pra gente confirmar.`, C.verde) : '';
-    // Sem link de cartão, o cartão continua possível: o Pai manda o link pelo WhatsApp.
-    const zapCartao = `${ZAP}?text=${encodeURIComponent('Salve! Quero pagar minha consulta de '+dataBr+' no cartão de crédito.')}`;
-    const cartaoBox = cardLink
-      ? nota('Cartão de crédito ou débito', `Confirma na hora, sem comprovante.${botao(cardLink, 'Pagar com cartão')}`, C.vermelho)
-      : nota('Cartão de crédito', `Prefere pagar no cartão? <a href="${zapCartao}" target="_blank" style="color:${C.osso};font-weight:700;text-decoration:underline">Manda uma mensagem no WhatsApp</a> que a gente te envia o link.`, C.vermelho);
-    pagar = (pix || cartaoBox) ? `${rotulo('Como pagar', C.osso)}<div style="height:6px"></div>${indCartao ? cartaoBox + pix : pix + cartaoBox}` : '';
-  }
+  const pagar = cobrar ? blocoPagar({
+    pixKey, pixTit,
+    cardLink: a.checkout_url || (S.servicos||[]).find(x => x.id === a.servico_id)?.infinity_link,
+    cartaoPrimeiro: ['cartao','cartão','credito','crédito','debito','débito'].some(m => (a.metodo_indicado||'').toLowerCase().includes(m)),
+    pedidoZap: 'Salve! Quero pagar minha consulta de '+dataBr+' no cartão de crédito.',
+  }) : '';
 
   return moldura({
-    cabecalho: 'agendamento', alt: 'Sua consulta confirmada',
-    aviso: `${a.servico_nome || 'Consulta'}, ${dataBr} às ${a.hora||''}.`,
+    cabecalho: 'agendamento', alt: cobrar ? 'Seu horário reservado' : 'Sua consulta confirmada',
+    aviso: cobrar ? `Seu horário de ${dataBr} às ${a.hora||''} fica guardado por 24 horas. Falta o pagamento.` : `${a.servico_nome || 'Consulta'}, ${dataBr} às ${a.hora||''}.`,
     titulo: `Salve, ${primeiroNome(a.consulente_nome)}.`,
     corpo: `
-      ${par('Tá tudo certo com o seu agendamento. Guarda este email: os dados ficam aqui.')}
+      ${par(cobrar
+        ? 'Seu horário fica guardado por 24 horas. Falta só o pagamento pra confirmar. Quando ele entrar, a gente te manda a confirmação.'
+        : 'Tá tudo certo com o seu agendamento. Guarda este email: os dados ficam aqui.')}
+      ${cobrar ? pagar + fio : ''}
       ${cartao(`
         ${campo('Serviço', servico)}
         ${campo('Data e horário', `${dataBr.charAt(0).toUpperCase() + dataBr.slice(1)} · ${esc(a.hora||'')}`)}
@@ -182,7 +204,6 @@ export function _buildEmailAtendHTML(a, S) {
         ? nota('Online', 'O link da chamada chega uns minutos antes, por email ou WhatsApp.', C.verde)
         : nota('Endereço', endereco, C.verde)}
       ${linkGoogleAgenda(a, S) ? botao(linkGoogleAgenda(a, S), 'Colocar na minha agenda', C.verde) + '<div style="height:18px"></div>' : ''}
-      ${pagar}
       ${fio}
       ${par('Qualquer coisa antes do dia, chama a gente:')}
       ${botao(linkZap, 'Falar no WhatsApp', C.zap)}
@@ -206,7 +227,7 @@ export function _buildEmailAtendText(a, S) {
 
   return `Salve ${nomePrim},
 
-Agendamento confirmado por aqui.
+${cobrar ? 'Seu horário fica guardado por 24 horas. Falta só o pagamento pra confirmar. Quando ele entrar, a gente te manda a confirmação.' : 'Agendamento confirmado por aqui.'}
 
 Serviço: ${servico}
 Quando: ${dataBr} às ${a.hora||''}
@@ -419,6 +440,48 @@ Esqueceu o PIN? A tela destrava pelo celular do cadastro.
 
 Dúvidas: ${ZAP}
 
+Terreiro do Candieiro
+terreirodocandieiro.com.br`;
+}
+
+// ── PEDIDO ESPERANDO PAGAMENTO ──────────────────────────────────────────────
+// Mesma ideia da reserva da consulta: o pedido fica guardado 24h, e o
+// "Pedido confirmado" só sai quando o Pai confirma o pagamento.
+export function _emailPedidoReservaSubject(p) {
+  return `Seu pedido está reservado, falta o pagamento${p.produto_nome ? ` (${p.produto_nome})` : ''}`;
+}
+
+export function _buildEmailPedidoReservaHTML(p, produto, S) {
+  const pixKey = esc((produto?.pix && produto.pix.trim()) || (S.cfgAgendamento?.pix || '').trim());
+  const pixTit = esc((S.cfgAgendamento?.pix_titular || '').trim());
+  return moldura({
+    cabecalho: 'pedido', alt: 'Seu pedido reservado',
+    aviso: `${p.produto_nome || 'Seu pedido'} fica guardado por 24 horas. Falta o pagamento.`,
+    titulo: `Salve, ${primeiroNome(p.nome)}.`,
+    corpo: `
+      ${par('Seu pedido fica guardado por 24 horas. Falta só o pagamento pra confirmar. Quando ele entrar, a gente te manda a confirmação.')}
+      ${cartao(`
+        ${campo('O que você pediu', esc(p.produto_nome || 'Produto'))}
+        ${rotulo('Valor')}
+        <div style="font:800 28px/1.2 ${SANS};color:${C.osso}">${reais(p.valor)} <span style="font-size:13px;font-weight:600;color:${C.apagado}">· a pagar</span></div>
+      `)}
+      ${blocoPagar({ pixKey, pixTit, cardLink: p.checkout_url, pedidoZap: `Salve! Quero pagar meu pedido (${p.produto_nome || 'produto'}) no cartão de crédito.` })}
+      ${fio}
+      ${par('Qualquer coisa, é só chamar.')}
+      ${botao(ZAP, 'Falar no WhatsApp', C.zap)}
+    `
+  });
+}
+
+export function _buildEmailPedidoReservaText(p, produto, S) {
+  const pixKey = ((produto?.pix && produto.pix.trim()) || (S.cfgAgendamento?.pix || '').trim());
+  return `Salve ${(p.nome||'').split(' ')[0]},
+
+Seu pedido fica guardado por 24 horas. Falta só o pagamento pra confirmar.
+
+Pedido: ${p.produto_nome || 'Produto'}
+Valor: ${reais(p.valor)} (a pagar)
+${pixKey ? `\nPIX: ${pixKey}\nManda o comprovante no WhatsApp pra gente confirmar.\n` : ''}${p.checkout_url ? `\nCartão (crédito ou débito): ${p.checkout_url}\nConfirma na hora, sem comprovante.\n` : `\nPrefere pagar no cartão de crédito? Manda uma mensagem no WhatsApp que a gente te envia o link: https://wa.me/5519992494267\n`}
 Terreiro do Candieiro
 terreirodocandieiro.com.br`;
 }

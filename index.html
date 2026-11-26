@@ -327,11 +327,12 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 import * as Push from "./push.js";
 import { linhasDeEntrada, somarPor } from "./entradas.js";
 import {
-  _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText,
+  _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText, emailAtendEhReserva,
   _emailConfirmacaoSubject, _proximasParcelas, _buildEmailConfirmacaoHTML, _buildEmailConfirmacaoText,
   _buildLembreteHTML, _buildLembreteText,
-  _emailBoasVindasSubject, _buildEmailBoasVindasHTML, _buildEmailBoasVindasText
-} from "./email-textos.js?v=20261125b"; // troca o ?v= quando mudar o email: o navegador guarda o módulo velho
+  _emailBoasVindasSubject, _buildEmailBoasVindasHTML, _buildEmailBoasVindasText,
+  _emailPedidoReservaSubject, _buildEmailPedidoReservaHTML, _buildEmailPedidoReservaText
+} from "./email-textos.js?v=20261125c"; // troca o ?v= quando mudar o email: o navegador guarda o módulo velho
 
 // Registra o service worker já na carga, antes de qualquer login: é ele que faz
 // o Android oferecer "instalar na tela de início". Falha aqui não importa — a
@@ -3620,6 +3621,41 @@ async function enviarEmailConfirmacao(pedidoId) {
   }
 }
 
+// Pedido ainda não pago: o Pai manda o email de "reservado por 24h, falta o
+// pagamento", com PIX e o link do checkout. O "Pedido confirmado" continua
+// saindo só no Confirmar. Botão manual de propósito: dá pra reenviar.
+async function cobrarPedidoPorEmail(pedidoId) {
+  const p0 = (S.pedidos||[]).find(x => x.id === pedidoId);
+  if (!p0) return;
+  const email = p0.email || (S.filhos||[]).find(f => f.id === p0.filho_id)?.auth_email || (S.filhos||[]).find(f => f.id === p0.filho_id)?.email;
+  if (!email) return toast('Esse pedido não tem email','err');
+  const cfg = await _carregarEmailCfg();
+  if (!cfg?.enabled || !cfg.worker_url || !cfg.worker_secret) return toast('Config de email incompleta','err');
+  let p = { ...p0 };
+  const ck = S.cfgAgendamento || {};
+  if (ck.checkout_ativo && ck.checkout_worker_url) {
+    try {
+      const r = await fetch(ck.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: 'ped', doc_id: pedidoId })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.url) p = { ...p, checkout_url: d.url, valor: d.valor_centavos ? d.valor_centavos / 100 : p.valor };
+      else console.warn('checkout do pedido falhou', r.status, d.error);
+    } catch (e) { console.warn('checkout do pedido falhou', e?.message); }
+  }
+  const produto = S.produtos.find(x => x.id === p.produto_id) || {};
+  try {
+    const resp = await fetch(cfg.worker_url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Secret': cfg.worker_secret },
+      body: JSON.stringify({ to: email, to_name: p.nome || '', from: cfg.from || undefined, reply_to: cfg.reply_to || undefined,
+        subject: _emailPedidoReservaSubject(p), html: _buildEmailPedidoReservaHTML(p, produto, S), text: _buildEmailPedidoReservaText(p, produto, S) })
+    });
+    if (!resp.ok) throw new Error(`Worker ${resp.status}`);
+    await updateDoc(doc(dbPvd, 'vendas_pedidos', pedidoId), { email_reserva_enviado_em: serverTimestamp() });
+    toast('📧 Email de cobrança enviado','ok');
+  } catch (e) { toast('Não consegui enviar: ' + e.message,'err'); }
+}
+
 // Envia email de confirmação de atendimento (consulta/trabalho).
 // Aceita email diretamente pra rodar logo após aprovação (antes do listener atualizar S).
 async function enviarEmailBoasVindas(f) {
@@ -3658,7 +3694,10 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
                     return (c?.email || '').trim();
                   })();
     if (!email) { console.warn('Atendimento sem email — pulando', atendimentoId); return; }
-    if (a.email_confirmacao_enviado_em) return; // idempotente
+    // Dois emails, cada um uma vez só: a reserva (falta pagar) e a confirmação.
+    const reserva = emailAtendEhReserva(a);
+    const marca = reserva ? 'email_reserva_enviado_em' : 'email_confirmacao_enviado_em';
+    if (a[marca]) return; // idempotente
     const cfg = await _carregarEmailCfg();
     if (!cfg?.enabled || !cfg.worker_url || !cfg.worker_secret) {
       console.warn('Config de email incompleta — pulando');
@@ -3667,7 +3706,7 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
     // Quem ainda não pagou recebe o link do checkout (cartão ou PIX, confirma
     // sozinho). Falhou o link? O email sai igual, com o PIX.
     const ck = S.cfgAgendamento || {};
-    if (a.cobrar_no_email === true && !a.checkout_url && ck.checkout_ativo && ck.checkout_worker_url) {
+    if (reserva && !a.checkout_url && ck.checkout_ativo && ck.checkout_worker_url) {
       try {
         const r = await fetch(ck.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: 'atd', doc_id: atendimentoId })
@@ -3692,10 +3731,8 @@ async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
       const t = await resp.text().catch(() => '');
       throw new Error(`Worker ${resp.status}: ${t.slice(0,200)}`);
     }
-    await updateDoc(doc(dbPvd, 'adm_atendimentos', atendimentoId), {
-      email_confirmacao_enviado_em: serverTimestamp()
-    });
-    toast('📧 Email de confirmação enviado','ok');
+    await updateDoc(doc(dbPvd, 'adm_atendimentos', atendimentoId), { [marca]: serverTimestamp() });
+    toast(reserva ? '📧 Email de reserva enviado (falta pagar)' : '📧 Email de confirmação enviado','ok');
   } catch(e) {
     console.warn('Falha email atendimento:', e?.message || e);
   }
@@ -6296,7 +6333,7 @@ function openAtendimentoForm(id=null) {
       </div>
       ${a ? '' : `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:2px 0 14px">
         <input type="checkbox" id="at-cobrar" style="width:18px;height:18px"/>
-        <span style="font-size:13px">Ainda não pagou: o email de confirmação manda PIX e cartão</span>
+        <span style="font-size:13px">Cobrar no email: o horário fica reservado por 24h, com PIX e cartão. Desmarcado (quem é da casa e paga no dia), o email só confirma.</span>
       </label>`}
       <div class="row-2">
         <div class="fi-group"><label>Status do atendimento</label>
@@ -6373,6 +6410,11 @@ function openAtendimentoForm(id=null) {
       let docId = id;
       if(isEdit) {
         await updateDoc(doc(dbPvd,'adm_atendimentos',id), payload);
+        // Virou pago agora: manda a confirmação, se ela ainda não saiu. Quem só
+        // tinha recebido a reserva (falta pagar) recebe o "confirmada" aqui.
+        const virouPago = stPag.startsWith('pago') && !(a.status_pagamento||'').startsWith('pago');
+        if(virouPago && stAt !== 'cancelado' && data >= new Date().toLocaleDateString('en-CA') && !a.email_confirmacao_enviado_em)
+          enviarEmailAtendimento(id, { ...a, ...payload, email: cons.email || a.email || '' });
       } else {
         payload.criadoEm = serverTimestamp();
         payload.cobrar_no_email = !stPag.startsWith('pago') && stPag !== 'isento' && !!$('#at-cobrar')?.checked;
@@ -7347,9 +7389,9 @@ async function aprovarSolicitacao(id) {
         <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Se ainda não recebeu, deixa desmarcado. Dá pra mudar depois editando o atendimento.</div>
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:12px">
           <input type="checkbox" id="ap-cobrar" style="width:18px;height:18px;cursor:pointer"/>
-          <span>A pessoa ainda não pagou: o email manda PIX e cartão</span>
+          <span>Cobrar no email: o horário fica reservado por 24h, com PIX e cartão</span>
         </label>
-        <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Desmarcado, o email confirma o horário e não fala de pagamento.</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:6px;padding-left:28px">Desmarcado (quem é da casa e paga no dia), o email confirma o horário e não fala de pagamento.</div>
       </div>
     </div>
     <div class="modal-f">
@@ -8299,6 +8341,7 @@ function renderPedidos(c) {
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:130px">
               ${waLink?`<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}
               ${status!=='confirmado'?`<button class="btn btn-sm btn-primary" onclick="window._app.setPedidoStatus('${escapaJs(p.id)}','confirmado')">Confirmar</button>`:''}
+              ${(status==='pendente'||status==='aguardando_pagamento') && p.email && !p.pago_automatico?`<button class="btn btn-sm" onclick="window._app.cobrarPedidoPorEmail('${escapaJs(p.id)}')" title="Reservado por 24h, com PIX e link do cartão">📧 ${p.email_reserva_enviado_em?'Cobrar de novo':'Cobrar por email'}</button>`:''}
               ${status!=='cancelado'?`<button class="btn btn-sm" onclick="window._app.setPedidoStatus('${escapaJs(p.id)}','cancelado')">Cancelar</button>`:''}
               <button class="btn btn-sm" onclick="window._app.deletarPedido('${escapaJs(p.id)}','${escapaJs((p.nome||''))}')" title="Apagar permanente">🗑</button>
             </div>
@@ -10077,7 +10120,7 @@ window._app = {
   setPedTab,
   setPedidoStatus,
   deletarPedido,
-  reenviarEmailsPendentes,
+  reenviarEmailsPendentes, cobrarPedidoPorEmail,
   backfillAlunosRecorrentes,
   // Debug helpers
   _checarEmailsPendentes: () => {

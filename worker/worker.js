@@ -1,3 +1,5 @@
+import { _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText } from '../email-textos.js';
+
 /**
  * Cloudflare Worker — Terreiro do Candieiro
  *
@@ -311,7 +313,12 @@ async function rotaEmail(body, request, env) {
     return json({ error: 'Faltam campos (to, subject, html|text)' }, 400);
   }
 
-  const resp = await fetch('https://api.resend.com/emails', {
+  const resp = await enviarEmail(env, { to, to_name, subject, html, text, from, reply_to });
+  return json(await resp.json().catch(() => ({})), resp.status);
+}
+
+function enviarEmail(env, { to, to_name, subject, html, text, from, reply_to }) {
+  return fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -323,8 +330,34 @@ async function rotaEmail(body, request, env) {
       ...(reply_to && { reply_to }),
     }),
   });
+}
 
-  return json(await resp.json().catch(() => ({})), resp.status);
+/**
+ * Consulta paga pelo checkout: manda o "consulta confirmada" que a reserva
+ * prometeu. Mesmo texto do admin (email-textos.js). Falhar aqui não desfaz o
+ * pagamento: só registra.
+ */
+async function emailConsultaPaga(doc_id, pedido, statusPagamento, env, token, registrar) {
+  try {
+    if (pedido.email_confirmacao_enviado_em || pedido.status_atendimento === 'cancelado') return;
+    const [cfgA, cfgE, cons] = await Promise.all([
+      fsGet(PROJETO_PVD, 'adm_config', 'agendamento', { token }),
+      fsGet(PROJETO_PVD, 'adm_config', 'email', { token }),
+      pedido.consulente_id ? fsGet(PROJETO_PVD, 'adm_consulentes', pedido.consulente_id, { token }) : null,
+    ]);
+    const to = String(pedido.email || cons?.email || '').trim();
+    if (!to || cfgE?.enabled === false) return;
+    const a = { ...pedido, status_pagamento: statusPagamento, cobrar_no_email: false };
+    const S = { cfgAgendamento: cfgA || {}, servicos: [] };
+    const resp = await enviarEmail(env, {
+      to, to_name: pedido.consulente_nome || '', from: cfgE?.from, reply_to: cfgE?.reply_to,
+      subject: _emailAtendSubject(a), html: _buildEmailAtendHTML(a, S), text: _buildEmailAtendText(a, S),
+    });
+    if (!resp.ok) throw new Error(`resend ${resp.status}`);
+    await fsPatch(PROJETO_PVD, 'adm_atendimentos', doc_id, token, { email_confirmacao_enviado_em: new Date().toISOString() });
+  } catch (e) {
+    await registrar('aviso', `email de consulta paga falhou: ${e.message}`);
+  }
 }
 
 // ── PREÇO ──────────────────────────────────────────────────────────────────
@@ -3094,6 +3127,8 @@ async function confirmarNaInfinitePay(d, env, token, registrar = () => {}) {
   }
 
   await registrar('pago', `${t.colecao}/${doc_id} marcado pago, ${cobrado} centavos`);
+
+  if (tipo === 'atd') await emailConsultaPaga(doc_id, pedido, metodo === 'pix' ? 'pago_pix' : 'pago_cartao', env, token, registrar);
 
   // Notificação no celular do admin. Dinheiro que entra é a coisa que ele mais
   // quer saber na hora, e aqui é o único ponto por onde toda entrada passa.
