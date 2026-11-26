@@ -731,7 +731,7 @@ function msAplicar(root) {
     const busca = det.querySelector('.ms-busca');
     busca.oninput = () => { const q = busca.value.trim().toLowerCase(); box.querySelectorAll('[data-sel]').forEach(b => { b.hidden = q && !b.textContent.toLowerCase().includes(q); }); };
     // Só uma aberta por vez.
-    det.addEventListener('toggle', () => { if (det.open) { root.querySelectorAll('details.ms[open]').forEach(o => { if (o !== det) o.open = false; }); if (matchMedia('(min-width:641px)').matches) busca.focus(); } });
+    det.addEventListener('toggle', () => { if (det.open) { box.querySelectorAll('[data-sel="true"]').forEach(b => box.prepend(b)); root.querySelectorAll('details.ms[open]').forEach(o => { if (o !== det) o.open = false; }); if (matchMedia('(min-width:641px)').matches) busca.focus(); } });
     resumo();
   });
 }
