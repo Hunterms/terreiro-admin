@@ -1081,7 +1081,7 @@ function attachListeners() {
 
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_consulentes'), snap => {
       S.consulentes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      if(['agenda','consulentes'].includes(S.route)) renderRoute();
+      if(['agenda','consulentes','dashboard'].includes(S.route)) renderRoute();
     }));
 
     S.unsubs.push(onSnapshot(collection(dbPvd,'adm_solicitacoes'), snap => {
@@ -1101,12 +1101,12 @@ function attachListeners() {
     S.unsubs.push(onSnapshot(collection(dbPvd,'fin_gastos'), snap => {
       S.gastos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       badgeContas();
-      if(S.route === 'contas') renderRoute();
+      if(['contas','dashboard'].includes(S.route)) renderRoute();
     }));
     S.unsubs.push(onSnapshot(doc(dbPvd,'fin_gastos_pagos', cicloAtual()), snap => {
       S.gastosPagos = snap.exists() ? snap.data() : {};
       badgeContas();
-      if(S.route === 'contas') renderRoute();
+      if(['contas','dashboard'].includes(S.route)) renderRoute();
     }));
   }
 }
@@ -1919,6 +1919,7 @@ function montarResumoDoDia() {
 function montarFila() {
   const hoje = hojeISO();
   const em14 = new Date(Date.now() + 14*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
   const nomes = (xs, f, n=3) => xs.slice(0,n).map(f).join(' · ') + (xs.length > n ? ` · +${xs.length-n}` : '');
   const plural = (n, um, varios) => `${n} ${n===1?um:varios}`;
   const brl = v => 'R$ ' + (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1926,7 +1927,7 @@ function montarFila() {
 
   const sols = (S.solicitacoes||[]).filter(x => x.status === 'pendente');
   if (sols.length) fila.push({ cor:'gold', titulo: plural(sols.length,'pedido de consulta','pedidos de consulta') + ' pra aprovar',
-    sub: nomes(sols, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${x.data ? fmt.data(x.data).slice(0,5) : ''}`), rota:'solicitacoes', acao:'Ver pedidos' });
+    sub: nomes(sols, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${dm(x.data)}`), rota:'solicitacoes', acao:'Ver pedidos' });
 
   const { consultas, atrasadas } = montarResumoDoDia();
   if (consultas.length) fila.push({ cor:'blue', titulo: plural(consultas.length,'consulta hoje','consultas hoje'),
@@ -1948,7 +1949,7 @@ function montarFila() {
 
   const semEscala = (S.eventos||[]).filter(e => e.data >= hoje && e.data <= em14 && !e.arquivado && !ehFesta(e) && !(S.escalas||[]).some(es => es.evento_id === e.id));
   if (semEscala.length) fila.push({ cor:'amber', titulo: plural(semEscala.length,'gira sem escala','giras sem escala') + ' nos próximos 14 dias',
-    sub: nomes(semEscala, e => `${escapaHtml(e.nome||e.titulo||'')} ${fmt.data(e.data).slice(0,5)}`), rota:'escalas', acao:'Montar escalas' });
+    sub: nomes(semEscala, e => `${escapaHtml(e.nome||e.titulo||'')} ${dm(e.data)}`), rota:'escalas', acao:'Montar escalas' });
 
   const rega = (S.regas||[]).find(r => r.data === hoje);
   if (!rega) fila.push({ cor:'amber', titulo: 'Ninguém na rega hoje', sub: 'Manda a mensagem pro grupo pedindo alguém.', rota:'rega', acao:'Ver rega' });
@@ -1971,7 +1972,7 @@ function renderDashboard(c) {
   const amanha = new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const consAmanha = (S.atendimentos||[]).filter(a => a.data === amanha && !['cancelado','nao_compareceu'].includes(a.status_atendimento));
   const ativos = (S.filhos||[]).filter(f => !f.status || f.status === 'ativo').length;
-  const dataLonga = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Sao_Paulo'});
+  const dataLonga = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Sao_Paulo'}).replace(/^./, c => c.toUpperCase());
 
   const item = (x) => `
     <a href="#${x.rota}" class="fila-item" style="--fio:${COR[x.cor]}">
@@ -1996,7 +1997,7 @@ function renderDashboard(c) {
     <div class="page-head">
       <div>
         <div class="page-title">Hoje</div>
-        <div class="page-sub" style="text-transform:capitalize">${dataLonga}</div>
+        <div class="page-sub">${dataLonga}</div>
       </div>
     </div>
 
