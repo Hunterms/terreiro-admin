@@ -53,7 +53,7 @@
     <nav class="sidebar-nav" id="nav-admin">
       <button data-route="dashboard" class="active">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard
+        Hoje
       </button>
 
       <div class="section-label">Pessoas</div>
@@ -1911,107 +1911,123 @@ function montarResumoDoDia() {
   return { hoje, consultas, atrasadas, contas };
 }
 
-function renderResumoDoDia() {
-  const alvo = document.getElementById('resumo-do-dia');
-  if (!alvo) return;
-  const { consultas, atrasadas, contas } = montarResumoDoDia();
-  const nada = !consultas.length && !atrasadas.length && !contas.length;
+// ── HOJE ────────────────────────────────────────────────────────────────────
+// A tela que abre responde "o que precisa de mim agora". Cada item da fila é
+// derivado do dado (ninguém cadastra pendência), tem contagem, e leva direto
+// pra onde se resolve. Zerou, some. Número da casa fica no fim, não no topo.
+// Ordem = urgência: o que tem gente esperando, depois dinheiro, depois a casa.
+function montarFila() {
+  const hoje = hojeISO();
+  const em14 = new Date(Date.now() + 14*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const nomes = (xs, f, n=3) => xs.slice(0,n).map(f).join(' · ') + (xs.length > n ? ` · +${xs.length-n}` : '');
+  const plural = (n, um, varios) => `${n} ${n===1?um:varios}`;
+  const brl = v => 'R$ ' + (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fila = [];
 
-  const linha = (emoji, txt, sub, rota) => `
-    <div style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border-radius:10px;background:var(--glass2);border:1px solid var(--border);cursor:pointer" onclick="location.hash='${rota}'">
-      <span style="font-size:17px;line-height:1.2">${emoji}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13.5px;font-weight:650;line-height:1.35">${txt}</div>
-        ${sub?`<div style="font-size:12px;color:var(--text2);margin-top:2px;line-height:1.45">${sub}</div>`:''}
-      </div>
-      <span style="color:var(--text3)">›</span>
-    </div>`;
+  const sols = (S.solicitacoes||[]).filter(x => x.status === 'pendente');
+  if (sols.length) fila.push({ cor:'gold', titulo: plural(sols.length,'pedido de consulta','pedidos de consulta') + ' pra aprovar',
+    sub: nomes(sols, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${x.data ? fmt.data(x.data).slice(0,5) : ''}`), rota:'solicitacoes', acao:'Ver pedidos' });
 
-  alvo.innerHTML = `
-    <div class="card" style="margin-bottom:20px">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:${nada?0:12}px">
-        <h3 style="font-size:15px;font-weight:700;margin:0">O seu dia</h3>
-        <span style="font-size:11.5px;color:var(--text3)">é isto que chega às 8h</span>
-      </div>
-      ${nada ? '<div style="font-size:13.5px;color:var(--text2);line-height:1.5">Nada exigindo você hoje. Sem consulta marcada, sem tarefa atrasada, sem conta vencendo amanhã.</div>' : `
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${consultas.length ? linha('🔮',
-            `${consultas.length} consulta${consultas.length===1?'':'s'} hoje`,
-            consultas.map(a=>`${a.hora||'??:??'} ${a.consulente_nome||'sem nome'}`).slice(0,4).join(' · '),
-            '#agenda') : ''}
-          ${atrasadas.length ? linha('⏰',
-            `${atrasadas.length} tarefa${atrasadas.length===1?'':'s'} atrasada${atrasadas.length===1?'':'s'}`,
-            atrasadas.map(k=>k.titulo||'sem título').slice(0,3).join(' · '),
-            '#kanban') : ''}
-          ${contas.length ? linha('💡',
-            `${contas.length} conta${contas.length===1?'':'s'} vence${contas.length===1?'':'m'} amanhã`,
-            contas.map(g=>g.nome).slice(0,3).join(' · '),
-            '#contas') : ''}
-        </div>`}
-    </div>`;
+  const { consultas, atrasadas } = montarResumoDoDia();
+  if (consultas.length) fila.push({ cor:'blue', titulo: plural(consultas.length,'consulta hoje','consultas hoje'),
+    sub: nomes(consultas, a => `${a.hora||'??:??'} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`, 4), rota:'agenda', acao:'Abrir agenda' });
+
+  // Só os últimos 30 dias: o que é mais velho que isso ninguém vai fechar, e vira ruído.
+  const ha30 = new Date(Date.now() - 30*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const passadas = (S.atendimentos||[]).filter(a => a.data && a.data < hoje && a.data >= ha30 && a.status_atendimento === 'agendado');
+  if (passadas.length) fila.push({ cor:'amber', titulo: plural(passadas.length,'consulta passada sem fechar','consultas passadas sem fechar'),
+    sub: 'Marque como realizada ou falta, pra entrar nas contas.', rota:'agenda', acao:'Fechar' });
+
+  const peds = (S.pedidos||[]).filter(p => p.status === 'pendente');
+  if (peds.length) fila.push({ cor:'gold', titulo: plural(peds.length,'pedido da loja pra confirmar','pedidos da loja pra confirmar'),
+    sub: nomes(peds, p => `${escapaHtml((p.nome||'').split(' ')[0])} · ${escapaHtml(p.produto_nome||'')}`), rota:'pedidos', acao:'Confirmar' });
+
+  const venc = contasVencidas();
+  if (venc.length) fila.push({ cor:'red', titulo: `${plural(venc.length,'conta vencida','contas vencidas')} · ${brl(venc.reduce((t,g)=>t+(Number(g.valor)||0),0))}`,
+    sub: nomes(venc, g => escapaHtml(g.nome||'')), rota:'contas', acao:'Ver contas' });
+
+  const semEscala = (S.eventos||[]).filter(e => e.data >= hoje && e.data <= em14 && !e.arquivado && !ehFesta(e) && !(S.escalas||[]).some(es => es.evento_id === e.id));
+  if (semEscala.length) fila.push({ cor:'amber', titulo: plural(semEscala.length,'gira sem escala','giras sem escala') + ' nos próximos 14 dias',
+    sub: nomes(semEscala, e => `${escapaHtml(e.nome||e.titulo||'')} ${fmt.data(e.data).slice(0,5)}`), rota:'escalas', acao:'Montar escalas' });
+
+  const rega = (S.regas||[]).find(r => r.data === hoje);
+  if (!rega) fila.push({ cor:'amber', titulo: 'Ninguém na rega hoje', sub: 'Manda a mensagem pro grupo pedindo alguém.', rota:'rega', acao:'Ver rega' });
+
+  if (atrasadas.length) fila.push({ cor:'muted', titulo: plural(atrasadas.length,'tarefa atrasada','tarefas atrasadas'),
+    sub: nomes(atrasadas, k => escapaHtml(k.titulo||'sem título')), rota:'kanban', acao:'Revisar' });
+
+  const esperando = (S.pedidos||[]).filter(p => p.status === 'aguardando_pagamento');
+  if (esperando.length) fila.push({ cor:'muted', titulo: plural(esperando.length,'pedido esperando pagamento','pedidos esperando pagamento'),
+    sub: 'Foram pro pagamento e não voltaram. Dá pra cobrar por e-mail.', rota:'pedidos', acao:'Ver' });
+
+  return fila;
 }
 
 function renderDashboard(c) {
-  // NÃO auto-gera mais. User clica no botão "Gerar tarefas recorrentes" em /kanban
-  // quando quiser. Auto-rodar a cada refresh estava criando duplicatas porque
-  // a função rodava antes do listener do Firestore entregar S.kanban.
+  const hoje = hojeISO();
+  const fila = montarFila();
+  const COR = { red:'var(--red)', gold:'var(--gold)', amber:'var(--amber)', blue:'var(--blue)', muted:'var(--border2)' };
+  const proxGiras = (S.eventos||[]).filter(e => e.data >= hoje && !e.arquivado).slice(0,5);
+  const amanha = new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const consAmanha = (S.atendimentos||[]).filter(a => a.data === amanha && !['cancelado','nao_compareceu'].includes(a.status_atendimento));
+  const ativos = (S.filhos||[]).filter(f => !f.status || f.status === 'ativo').length;
+  const dataLonga = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Sao_Paulo'});
 
-  const proxGiras = S.eventos
-    .filter(e => e.data >= new Date().toISOString().slice(0,10) && !e.arquivado)
-    .slice(0,5);
-  const cardsTodo = S.kanban.filter(k => k.status === 'todo' && !k.arquivado);
-  const cardsDoing = S.kanban.filter(k => k.status === 'doing' && !k.arquivado);
-  const cardsBlocked = S.kanban.filter(k => k.status === 'blocked' && !k.arquivado);
-  const avisosAtivos = S.avisos.filter(a => !a.arquivado).length;
+  const item = (x) => `
+    <a href="#${x.rota}" class="fila-item" style="--fio:${COR[x.cor]}">
+      <div class="fila-txt"><div class="fila-t">${x.titulo}</div>${x.sub?`<div class="fila-s">${x.sub}</div>`:''}</div>
+      <span class="fila-acao">${x.acao} ›</span>
+    </a>`;
 
   c.innerHTML = `
+    <style>
+      .fila{display:flex;flex-direction:column;gap:8px}
+      .fila-item{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:var(--glass2);border:1px solid var(--border);border-left:3px solid var(--fio);text-decoration:none;color:inherit}
+      .fila-item:hover{border-color:var(--border2);border-left-color:var(--fio)}
+      .fila-txt{flex:1;min-width:0}
+      .fila-t{font-size:15px;font-weight:650;line-height:1.35}
+      .fila-s{font-size:12.5px;color:var(--text2);margin-top:3px;line-height:1.45;overflow:hidden;text-overflow:ellipsis}
+      .fila-acao{font-size:12.5px;font-weight:600;color:var(--text2);white-space:nowrap}
+      .hoje-sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin:28px 0 10px}
+      .casa-num{display:flex;gap:28px;flex-wrap:wrap;font-size:13px;color:var(--text2)}
+      .casa-num b{display:block;font-size:22px;color:var(--text);font-variant-numeric:tabular-nums}
+      @media(max-width:600px){.fila-item{align-items:flex-start;flex-direction:column;gap:6px}.fila-acao{color:var(--gold)}}
+    </style>
     <div class="page-head">
       <div>
-        <div class="page-title">Dashboard</div>
-        <div class="page-sub">Olá, ${S.user.email}. ${proxGiras.length} próxim${proxGiras.length===1?'a gira':'as giras'} na agenda.</div>
+        <div class="page-title">Hoje</div>
+        <div class="page-sub" style="text-transform:capitalize">${dataLonga}</div>
       </div>
     </div>
 
-    <div id="resumo-do-dia"></div>
+    ${fila.length ? `<div class="fila">${fila.map(item).join('')}</div>` : `
+      <div class="card" style="text-align:center;padding:28px 20px">
+        <div style="font-size:17px;font-weight:700">Tudo em dia</div>
+        <div style="font-size:13.5px;color:var(--text2);margin-top:6px">Nenhum pedido, conta ou gira esperando você. O que chegar aparece aqui.</div>
+      </div>`}
 
-    <div class="grid grid-4" style="margin-bottom:20px">
-      <div class="metric" style="--clr:var(--gold)"><div class="ml">Filhos ativos</div><div class="mv">${S.filhos.filter(f=>!f.status || f.status==='ativo').length}</div><div class="mh">de ${S.filhos.length} cadastrados</div></div>
-      <div class="metric" style="--clr:var(--blue)"><div class="ml">Próximos eventos</div><div class="mv">${proxGiras.length}</div><div class="mh">na próxima semana</div></div>
-      <div class="metric" style="--clr:var(--amber)"><div class="ml">Cards ativos</div><div class="mv">${cardsTodo.length + cardsDoing.length + cardsBlocked.length}</div><div class="mh">${cardsBlocked.length} bloqueado${cardsBlocked.length===1?'':'s'}</div></div>
-      <div class="metric" style="--clr:var(--green)"><div class="ml">Avisos ativos</div><div class="mv">${avisosAtivos}</div></div>
+    <div class="hoje-sec">Próximos dias</div>
+    <div class="card">
+      ${consAmanha.length ? `<div class="list-item" onclick="location.hash='agenda'" style="cursor:pointer"><div class="li-avatar" style="background:var(--blue-bg);color:var(--blue)">🔮</div><div class="li-main"><div class="li-name">${consAmanha.length} consulta${consAmanha.length===1?'':'s'} amanhã</div><div class="li-meta">${consAmanha.map(a=>`${a.hora||''} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`).join(' · ')}</div></div></div>` : ''}
+      ${proxGiras.length ? proxGiras.map(e => {
+        const aberta = e.publico !== false && e.tipo !== 'gira_fechada' && !['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','festa','ensaio_curimba'].includes(e.tipo);
+        const temEscala = (S.escalas||[]).some(es => es.evento_id === e.id);
+        return `<div class="list-item" onclick="window._app.openEvento('${e.id}')" style="cursor:pointer">
+          <div class="li-avatar" style="background:${aberta?'var(--green-bg)':'var(--blue-bg)'};color:${aberta?'var(--green)':'var(--blue)'}">${(e.data||'').slice(8,10)}</div>
+          <div class="li-main"><div class="li-name">${escapaHtml(e.nome || e.titulo || 'Sem título')}</div>
+          <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}${!temEscala && !ehFesta(e)?'<span class="chip chip-amber">sem escala</span>':''}</div></div>
+        </div>`; }).join('') : '<div class="empty"><div class="empty-s">Nenhuma gira marcada. <a href="#calendario" style="color:var(--gold)">Abrir o calendário</a></div></div>'}
     </div>
 
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="card-h"><div class="card-title">Próximos eventos</div><button class="btn btn-sm" onclick="window._app.navigate('calendario')">Ver calendário</button></div>
-        ${proxGiras.length === 0 ? '<div class="empty"><div class="empty-s">Nenhum evento agendado</div></div>' : proxGiras.map(e => `
-          ${(() => {
-            const aberta = e.publico !== false && e.tipo !== 'gira_fechada' && !['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','festa','ensaio_curimba'].includes(e.tipo);
-            return `
-          <div class="list-item" onclick="window._app.openEvento('${e.id}')" style="cursor:pointer">
-            <div class="li-avatar" style="background:${aberta?'var(--green-bg)':'var(--blue-bg)'};color:${aberta?'var(--green)':'var(--blue)'}">${(e.data||'').slice(8,10)}</div>
-            <div class="li-main">
-              <div class="li-name">${e.nome || e.titulo || 'Sem título'}</div>
-              <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}</div>
-            </div>
-          </div>`;
-          })()}
-        `).join('')}
-      </div>
-
-      <div class="card">
-        <div class="card-h"><div class="card-title">Kanban — atenção</div><button class="btn btn-sm" onclick="window._app.navigate('kanban')">Ver tudo</button></div>
-        ${cardsBlocked.length === 0 && cardsDoing.length === 0 ? '<div class="empty"><div class="empty-s">Nada bloqueado ou em andamento</div></div>' : ''}
-        ${cardsBlocked.slice(0,3).map(k=>`<div class="list-item"><div class="chip chip-amber">BLOQUEADO</div><div class="li-main"><div class="li-name">${k.titulo}</div><div class="li-meta">${k.motivo_bloqueio||''}</div></div></div>`).join('')}
-        ${cardsDoing.slice(0,3).map(k=>`<div class="list-item"><div class="chip chip-blue">EM ANDAMENTO</div><div class="li-main"><div class="li-name">${k.titulo}</div></div></div>`).join('')}
-      </div>
+    <div class="hoje-sec">A casa</div>
+    <div class="casa-num">
+      <span><b>${ativos}</b>filhos ativos</span>
+      <span><b>${(S.consulentes||[]).filter(x=>!x.arquivado).length}</b>consulentes</span>
+      <span><b>${(S.atendimentos||[]).filter(a => (a.data||'').startsWith(hoje.slice(0,7)) && a.status_atendimento !== 'cancelado').length}</b>consultas no mês</span>
     </div>
 
-    <div id="visitas-site" style="margin-top:20px"></div>
+    <div id="visitas-site" style="margin-top:28px"></div>
   `;
-
-  // Depois do innerHTML, senão o alvo #resumo-do-dia ainda não existe.
-  renderResumoDoDia();
   renderVisitasSite();
 }
 
