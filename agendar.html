@@ -281,7 +281,7 @@ window.closeModal = closeModal;
         // Modo lista: só públicos
         APP.servicos = todos.filter(s => s.publico !== false);
       }
-    } catch(e) { console.warn('Erro servicos', e); }
+    } catch(e) { console.warn('Erro servicos', e); APP.semBanco = true; }
 
     // Segunda de desenvolvimento não tem consulta. A lista vem da agenda do site;
     // se o Worker falhar, fecha toda segunda em vez de abrir horário em cima do trabalho.
@@ -301,6 +301,12 @@ window.closeModal = closeModal;
 
     if(!APP.cfg.ativa) {
       $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto">Agendamentos temporariamente fechados. <a style="color:var(--gold)" href="${$('#footer-whats').href}">Fale com a gente no WhatsApp</a>.</div>`;
+      return;
+    }
+    if(APP.semBanco) {
+      // Banco fora (ex.: cota do dia estourada): manda pro WhatsApp com o pedido pronto.
+      const wa = `https://wa.me/${APP.cfg.whatsapp}?text=${encodeURIComponent('Olá! Quero agendar uma consulta. O agendamento do site estava fora do ar.')}`;
+      $('#loading').innerHTML = `<div style="font-size:15px;color:var(--text2);max-width:420px;margin:0 auto;line-height:1.6">O agendamento pelo site está fora do ar agora.<br>Agende pelo WhatsApp, que a gente marca o seu horário.<br><a class="success-whats" style="margin-top:16px" href="${wa}" target="_blank">Agendar pelo WhatsApp</a></div>`;
       return;
     }
     if(APP.servicos.length === 0) {
