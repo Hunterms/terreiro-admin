@@ -158,6 +158,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Importar calendário
       </button>
+      <button data-route="uso">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Uso do banco
+      </button>
       <button data-route="dados">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Backup
@@ -317,10 +321,35 @@ function _falhaDeLeitura(ref, e) {
     : `Não consegui carregar ${fonte}. Confere a internet e recarrega.`;
 }
 
+// ── QUANTO CADA TELA E CADA COLEÇÃO GASTA (só neste aparelho) ─────────────
+// Conta no localStorage, nunca no banco: medir leitura gastando leitura seria
+// piada. Tela visitada + documentos que chegaram do servidor (cache não conta,
+// não é cobrado). Aproximado: getDocs avulso fica de fora. Tela "Uso do banco".
+const _USO_DIAS = 30;
+function _usoMexer(fn) {
+  try {
+    const k = 'uso:' + new Date().toLocaleDateString('en-CA');
+    const u = JSON.parse(localStorage.getItem(k) || '{"r":{},"c":{}}'); fn(u);
+    localStorage.setItem(k, JSON.stringify(u));
+  } catch (e) {}
+}
+function _usoContarLeitura(nome, snap) {
+  if (!nome || snap.metadata?.fromCache) return;
+  const n = typeof snap.docChanges === 'function' ? snap.docChanges().length : 1;
+  if (n) _usoMexer(u => { u.c[nome] = (u.c[nome] || 0) + n; });
+}
+function _usoContarTela(rota) {
+  _usoMexer(u => { u.r[rota] = (u.r[rota] || 0) + 1; });
+  try { // limpa o que passou de 30 dias
+    const corte = new Date(Date.now() - _USO_DIAS*86400000).toLocaleDateString('en-CA');
+    Object.keys(localStorage).filter(k => k.startsWith('uso:') && k.slice(4) < corte).forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+}
+
 let _ouvindoAgora = null;
 function onSnapshot(ref, aoReceber, aoFalhar) {
   const nome = _ouvindoAgora;
-  const receber = nome ? (snap) => { aoReceber(snap); _chegou(nome); } : aoReceber;
+  const receber = nome ? (snap) => { _usoContarLeitura(nome, snap); aoReceber(snap); _chegou(nome); } : aoReceber;
   return _onSnapshotOriginal(ref, receber, aoFalhar || ((e) => { _falhaDeLeitura(ref, e); if (nome) _chegou(nome); }));
 }
 
@@ -358,7 +387,7 @@ const POR_ROTA = {
   lembretes: ['adm_escalas','eventos','adm_kanban'],
   perguntas: ['adm_perguntas','adm_respostas'],
   importar: ['eventos'],
-  acessos: [], links: [],
+  acessos: [], links: [], uso: [],
   dados: '*',
 };
 function _chegou(nome) {
@@ -972,7 +1001,7 @@ const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','
   // Estas três tinham botão no menu e não estavam aqui: dava pra clicar, mas
   // não dava pra voltar. Recarregar a página caía no dashboard, e link
   // compartilhado não abria a tela. Achado em 08/09.
-  'grupos','links','importar','dados'];
+  'grupos','links','importar','dados','uso'];
 function rotaDoHash() {
   const r = (location.hash || '').replace(/^#/, '');
   return ROTAS_VALIDAS.includes(r) ? r : null;
@@ -1270,6 +1299,7 @@ function badgeContas() {
 function navigate(route) {
   S.route = route;
   garantirRota(route);
+  _usoContarTela(route);
   // O hash acompanha a rota pra o link da notificação ter onde chegar. O
   // listener de hashchange compara com S.route, então isto não vira laço.
   if (location.hash.replace(/^#/, '') !== route) location.hash = route;
@@ -1295,6 +1325,7 @@ function renderRoute() {
     case 'links':         return renderLinks(c);
     case 'acessos':       return renderAcessos(c);
     case 'dados':         return renderDados(c);
+    case 'uso':           return renderUso(c);
     case 'importar':      return renderImportar(c);
     case 'filhos':        return renderFilhos(c);
     case 'funcoes':       return renderFuncoes(c);
@@ -9997,6 +10028,36 @@ function exportarPessoa(filhoId) {
   }
   _baixarArquivo(`candieiro-pessoa-${alvo}-${_hojeISO()}.json`, JSON.stringify(dossie, null, 1), 'application/json');
   toast(`${f.nome}: ${total} registros`);
+}
+
+function renderUso(c) {
+  const ROT = { dashboard:'Hoje', agenda:'Agenda', solicitacoes:'Pedidos de consulta', consulentes:'Consulentes', servicos:'Serviços',
+    'config-agendamento':'Config. agendamento', produtos:'Produtos', pedidos:'Pedidos da loja', filhos:'Filhos', escalas:'Escalas',
+    calendario:'Calendário', kanban:'Tarefas', avisos:'Avisos', entradas:'Entradas', contas:'Contas', dados:'Backup', uso:'Uso do banco' };
+  const dias = Object.keys(localStorage).filter(k => k.startsWith('uso:')).sort().reverse();
+  const soma = (campo, n) => { const t = {}; dias.slice(0, n).forEach(k => { try { const u = JSON.parse(localStorage.getItem(k)); Object.entries(u[campo]||{}).forEach(([x,v]) => t[x] = (t[x]||0) + v); } catch(e){} }); return Object.entries(t).sort((a,b) => b[1]-a[1]); };
+  const tabela = (linhas, rotulo, nome = x => x) => linhas.length ? linhas.map(([x,v]) => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--border);font-size:13.5px"><span>${escapaHtml(nome(x))}</span><b>${v.toLocaleString('pt-BR')}</b></div>`).join('') : `<div style="font-size:13px;color:var(--text3)">Ainda sem ${rotulo}.</div>`;
+  c.innerHTML = `
+    <div class="page-head"><div>
+      <div class="page-title">Uso do banco</div>
+      <div class="page-sub">A cota grátis é de 50 mil leituras por dia e zera às 5h. Abaixo: o dia da casa inteira, e o que ESTE aparelho usou.</div>
+    </div></div>
+    <div id="uso-hoje" style="padding:15px;background:var(--glass);border:1px solid var(--border);border-radius:10px;margin-bottom:18px;font-size:13.5px;color:var(--text2)">Lendo o uso de hoje…</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:260px"><div style="font-weight:650;margin-bottom:6px">Telas abertas · 30 dias</div>${tabela(soma('r', 30), 'telas', x => ROT[x] || x)}</div>
+      <div style="flex:1;min-width:260px"><div style="font-weight:650;margin-bottom:6px">Leituras por coleção · 7 dias</div>${tabela(soma('c', 7), 'leituras')}</div>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-top:14px">Contado só neste aparelho (${dias.length} dia${dias.length===1?'':'s'} de registro). O que vem do cache não conta, porque não é cobrado.</div>`;
+  fetch(WORKER_PDV + '/uso', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
+    .then(r => r.json()).then(d => {
+      const el = document.getElementById('uso-hoje'); if (!el) return;
+      if (d.error) { el.textContent = 'Não consegui ler o uso de hoje (o alarme ainda está sem permissão no Google Cloud).'; return; }
+      const pct = Math.min(100, Math.round(d.leituras / 500));
+      const cor = pct >= 90 ? 'var(--red)' : pct >= 60 ? 'var(--gold)' : 'var(--green, #2ecc71)';
+      el.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="color:var(--text)">Hoje: ${d.leituras.toLocaleString('pt-BR')} de 50.000 leituras</b><span>${pct}%</span></div>
+        <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${cor}"></div></div>
+        <div style="margin-top:8px;font-size:12.5px">${d.gravacoes.toLocaleString('pt-BR')} gravações de 20.000. Aviso automático em 60% e 90%.</div>`;
+    }).catch(() => {});
 }
 
 function renderDados(c) {
