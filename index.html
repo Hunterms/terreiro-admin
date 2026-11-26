@@ -85,10 +85,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><polyline points="9 14 11 16 15 12"/></svg>
         Disponibilidade
       </button>
-      <button data-route="rega">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
-        Rega
-      </button>
       <button data-route="kanban">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="18"/><rect x="11" y="3" width="6" height="12"/><rect x="19" y="3" width="2" height="6"/></svg>
         Tarefas
@@ -238,7 +234,7 @@
    sidebar, na mesma ordem.
 
    ── PESSOAS ────────────────────────────────────────────────────────────────
-   renderFilhos · renderFuncoes · renderControleDisp · renderRega
+   renderFilhos · renderFuncoes · renderControleDisp
 
    ── OPERAÇÃO ───────────────────────────────────────────────────────────────
    renderKanban · renderCalendario · renderEscalas · renderDespensa ·
@@ -337,30 +333,29 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 // nova: põe aqui o que ela lê; esqueceu, a tela abre vazia e o erro é visível.
 const _ouvintes = {}, _ligados = new Set(), _chegaram = new Set(), _esperas = [];
 const SEMPRE = ['fin_filhos','adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
-  'adm_solicitacoes','vendas_pedidos','fin_gastos','fin_gastos_pagos'];
-const _HOJE = ['adm_atendimentos','adm_consulentes','adm_escalas','eventos','adm_kanban','adm_rega_diaria'];
+  'adm_solicitacoes_rec','vendas_pedidos_rec','fin_gastos','fin_gastos_pagos'];
+const _HOJE = ['adm_atendimentos_rec','adm_escalas_rec','eventos','adm_kanban'];
 const POR_ROTA = {
   dashboard: _HOJE,
   filhos: ['adm_grupos','adm_despensa','adm_push_tokens'],
   funcoes: [], grupos: ['adm_grupos'],
   kanban: ['eventos','adm_kanban'],
   'controle-disp': ['adm_disponibilidade'],
-  rega: ['adm_rega_diaria'],
   calendario: ['eventos','vendas_produtos'],
   escalas: ['adm_disponibilidade','adm_escalas','eventos'],
   despensa: ['adm_despensa'],
   contas: [],
-  agenda: ['adm_atendimentos','adm_consulentes','eventos','adm_servicos'],
-  solicitacoes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
+  agenda: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','eventos','adm_servicos'],
+  solicitacoes: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','adm_servicos'],
   consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
   servicos: ['adm_servicos'],
   'config-agendamento': ['adm_atendimentos','eventos','adm_servicos'],
-  produtos: ['adm_consulentes','vendas_produtos'],
-  pedidos: ['adm_consulentes','vendas_produtos'],
-  inteligencia: ['adm_atendimentos','adm_consulentes','vendas_produtos','adm_servicos'],
-  entradas: ['adm_atendimentos','evento_inscricoes','eventos','fin_mensalidade_pedidos'],
+  produtos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
+  pedidos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
+  inteligencia: ['vendas_pedidos','adm_atendimentos','adm_consulentes','vendas_produtos','adm_servicos'],
+  entradas: ['vendas_pedidos','adm_solicitacoes','adm_atendimentos','evento_inscricoes','eventos','fin_mensalidade_pedidos'],
   avisos: ['adm_avisos','adm_avisos_lidos','adm_grupos'],
-  lembretes: ['adm_escalas','eventos','adm_kanban','adm_rega_diaria'],
+  lembretes: ['adm_escalas','eventos','adm_kanban'],
   perguntas: ['adm_perguntas','adm_respostas'],
   importar: ['eventos'],
   acessos: [], links: [],
@@ -970,7 +965,7 @@ async function togglePush() {
 
 // Rota vinda do #hash, se for uma que existe. Nome desconhecido devolve null
 // pra cair no default em vez de mostrar "página não encontrada".
-const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','rega','calendario',
+const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','calendario',
   'escalas','despensa','contas','agenda','solicitacoes','consulentes','servicos','config-agendamento',
   'produtos','pedidos','inteligencia','avisos','lembretes','perguntas',
   'meu-dashboard','minhas-escalas','disponibilidade','avisos-filho',
@@ -1014,6 +1009,37 @@ function attachListeners() {
   S.unsubs.forEach(u=>u && u());
   S.unsubs = [];
   _ligados.clear(); _chegaram.clear();
+
+  // ── Recortes pro menu e pro Hoje ────────────────────────────────────────
+  // A coleção inteira só liga na tela dela. Fora dela, o contador do menu e a
+  // fila do Hoje leem só o recente. Se a inteira já estiver ligada, ela manda.
+  const _diasAtras = n => new Date(Date.now() - n*86400000);
+  const _isoAtras = n => _diasAtras(n).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  ouvir('vendas_pedidos_rec', () => onSnapshot(query(collection(dbPvd,'vendas_pedidos'), where('criadoEm','>=',_diasAtras(60))), snap => {
+    if (_ligados.has('vendas_pedidos')) return;
+    S.pedidos = snap.docs.map(d => { const p = { id:d.id, ...d.data() };
+      if (p.status === 'confirmado' && p.pago_automatico && !p.confirmadoEm && (p.pagoEm||'') >= '2026-11-02') p.status = 'pendente';
+      return p; });
+    atualizarBadgePedidos();
+    if (S.route === 'dashboard') renderRoute();
+  }));
+  ouvir('adm_solicitacoes_rec', () => onSnapshot(query(collection(dbPvd,'adm_solicitacoes'), where('criadoEm','>=',_diasAtras(60))), snap => {
+    if (_ligados.has('adm_solicitacoes')) return;
+    S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (typeof atualizarBadgeSolicitacoes === 'function') atualizarBadgeSolicitacoes();
+    if (S.route === 'dashboard') renderRoute();
+  }));
+  ouvir('adm_atendimentos_rec', () => onSnapshot(query(collection(dbPvd,'adm_atendimentos'), where('data','>=',_isoAtras(35))), snap => {
+    if (_ligados.has('adm_atendimentos')) return;
+    S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (S.route === 'dashboard') renderRoute();
+  }));
+  ouvir('adm_escalas_rec', () => onSnapshot(query(collection(dbPvd,'adm_escalas'), where('data','>=',_isoAtras(1))), snap => {
+    if (_ligados.has('adm_escalas')) return;
+    S.escalas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (S.route === 'dashboard') renderRoute();
+  }));
+
 
   // Filhos
   ouvir('fin_filhos', () => onSnapshot(query(collection(dbPvd,'fin_filhos'), orderBy('nome')), snap => {
@@ -1083,10 +1109,11 @@ function attachListeners() {
     if(S.route === 'entradas') renderRoute();
   }));
 
-  // Rega diária (1 doc por dia coberto)
+  // Rega diária. A tela saiu; o ouvinte fica pro backup e pro apagar pessoa
+  // acharem os registros antigos.
   ouvir('adm_rega_diaria', () => onSnapshot(collection(dbPvd,'adm_rega_diaria'), snap => {
     S.regas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['rega','dashboard'].includes(S.route)) renderRoute();
+    if(S.route === 'dados') renderRoute();
   }));
 
   // Despensa (itens rituais do ilê — velas, ervas, defumadores)
@@ -1249,7 +1276,7 @@ function navigate(route) {
     b.classList.toggle('active', b.dataset.route === route);
   });
   // Barra de baixo: a aba acende pelo grupo, não só pela rota exata.
-  const GRUPO = { solicitacoes:'agenda', consulentes:'agenda', servicos:'agenda', escalas:'calendario', 'controle-disp':'calendario', rega:'calendario', kanban:'calendario', despensa:'calendario', entradas:'contas' };
+  const GRUPO = { solicitacoes:'agenda', consulentes:'agenda', servicos:'agenda', escalas:'calendario', 'controle-disp':'calendario', kanban:'calendario', despensa:'calendario', entradas:'contas' };
   const aba = GRUPO[route] || route;
   document.querySelectorAll('#tabbar [data-route]').forEach(b => b.classList.toggle('active', b.dataset.route === aba));
   const mais = document.querySelector('#tabbar [data-mais]');
@@ -1271,7 +1298,6 @@ function renderRoute() {
     case 'funcoes':       return renderFuncoes(c);
     case 'kanban':        return renderKanban(c);
     case 'controle-disp': return renderControleDisp(c);
-    case 'rega':          return renderRega(c);
     case 'calendario':    return renderCalendario(c);
     case 'escalas':       return renderEscalas(c);
     case 'despensa':      return renderDespensa(c);
@@ -1878,8 +1904,6 @@ const LINKS = [
       nota: 'Escala, tarefas, contribuição. É o link do grupo do WhatsApp.' },
     { nome: 'Despensa', url: 'https://hunterms.github.io/terreiro-admin/despensa.html',
       nota: 'Só quem tem gerência de despensa entra.' },
-    { nome: 'Confirmar rega', url: 'https://hunterms.github.io/terreiro-admin/confirma-rega.html',
-      nota: 'É o QR impresso no terreiro.' },
   ]},
   { grupo: 'Pra mandar pra fora', itens: [
     { nome: 'Site', url: 'https://terreirodocandieiro.com.br/', nota: null },
@@ -2059,9 +2083,6 @@ function montarFila() {
   if (semEscala.length) fila.push({ cor:'amber', titulo: plural(semEscala.length,'gira sem escala','giras sem escala') + ' nos próximos 14 dias',
     sub: nomes(semEscala, e => `${escapaHtml(e.nome||e.titulo||'')} ${dm(e.data)}`), rota:'escalas', acao:'Montar escalas' });
 
-  const rega = (S.regas||[]).find(r => r.data === hoje);
-  if (!rega) fila.push({ cor:'amber', titulo: 'Ninguém na rega hoje', sub: 'Manda a mensagem pro grupo pedindo alguém.', rota:'rega', acao:'Ver rega' });
-
   if (atrasadas.length) fila.push({ cor:'muted', titulo: plural(atrasadas.length,'tarefa atrasada','tarefas atrasadas'),
     sub: nomes(atrasadas, k => escapaHtml(k.titulo||'sem título')), rota:'kanban', acao:'Revisar' });
 
@@ -2131,7 +2152,6 @@ function renderDashboard(c) {
     <div class="hoje-sec">A casa</div>
     <div class="casa-num">
       <span><b>${ativos}</b>filhos ativos</span>
-      <span><b>${(S.consulentes||[]).filter(x=>!x.arquivado).length}</b>consulentes</span>
       <span><b>${(S.atendimentos||[]).filter(a => (a.data||'').startsWith(hoje.slice(0,7)) && a.status_atendimento !== 'cancelado').length}</b>consultas no mês</span>
     </div>
 
@@ -2144,9 +2164,14 @@ function renderDashboard(c) {
 // O visita.js do site grava cada página aberta; o Worker (/visitas) resume hoje
 // e os últimos 7 dias. Pedido de agendamento conta pelo adm_solicitacoes.
 const NOME_PAGINA = { home:'Início', agendar:'Agendar', buzios:'Búzios', baralho:'Baralho cigano', visitar:'Visitar', evento:'Evento', vendas:'Vendas', outra:'Outra' };
+// O Hoje redesenha a cada dado que chega (pedido novo, consulta), e cada
+// redesenho pedia as visitas de novo: o Worker lê até 5 mil registros por vez.
+// Agora o resultado vale 10 minutos nesta aba.
+let _visitasMemo = null;
 async function renderVisitasSite() {
   const alvo = document.getElementById('visitas-site');
   if (!alvo) return;
+  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) { alvo.innerHTML = cartaoVisitas(_visitasMemo.r); return; }
   const cfg = await _carregarEmailCfg();
   if (!cfg?.worker_url || !cfg?.worker_secret) return;
   let r;
@@ -2157,6 +2182,7 @@ async function renderVisitasSite() {
     r = await resp.json();
     if (!resp.ok) throw new Error(r?.error || resp.status);
   } catch (e) { alvo.innerHTML = `<div class="card"><div class="card-title">Visitas no site</div><div class="li-meta">Não deu pra ler agora: ${e.message}</div></div>`; return; }
+  _visitasMemo = { em: Date.now(), r };
   alvo.innerHTML = cartaoVisitas(r);
 }
 
@@ -5376,7 +5402,7 @@ async function arquivarAviso(id) {
 }
 
 // ── LEMBRETES (envio manual de email no dia anterior) ────────────────────
-// Agrega rega + escalas de gira + tarefas kanban pra um dia escolhido,
+// Agrega escalas de gira + tarefas kanban pra um dia escolhido,
 // agrupa por tipo, deixa o admin marcar/desmarcar quem recebe e dispara
 // 1 email consolidado por filho via o Worker (mesma stack do confirmação).
 
@@ -5460,7 +5486,7 @@ function renderContas(c) {
 }
 
 // Duas coisas diferentes chamadas "lembrete", e por isso duas abas:
-//   Do dia        — o que cada filho tem pra fazer amanhã (rega, escala, tarefa)
+//   Do dia        — o que cada filho tem pra fazer amanhã (escala, tarefa)
 //   Mensalidade   — a contribuição do mês, com valor e link de pagamento
 // A segunda mexe com dinheiro e por isso o envio nunca é automático: o Worker
 // devolve a lista, você tira quem não deve receber, e só então sai.
@@ -5476,18 +5502,7 @@ function renderLembretes(c) {
   // Agrega itens do dia
   const itens = [];
 
-  // 1) Rega (filhos reservados pra esse dia que ainda não confirmaram)
-  (S.regas||[]).filter(r => r.data === data && !r.realizado).forEach(r => {
-    const filho = S.filhos.find(f => f.id === r.filho_id);
-    if (!filho) return;
-    itens.push({
-      tipo: 'rega', label: '🌱 Rega',
-      filho_id: r.filho_id, filho_nome: filho.nome,
-      descricao: 'Regar a casa', key: `rega_${r.filho_id}`
-    });
-  });
-
-  // 2) Escalas de gira (qualquer função) — limpeza e lojinha aparecem como funções aqui
+  // 1) Escalas de gira (qualquer função) — limpeza e lojinha aparecem como funções aqui
   (S.eventos||[]).filter(e => e.data === data && !e.arquivado).forEach(ev => {
     const esc = (S.escalas||[]).find(es => es.tipo === 'gira' && es.evento_id === ev.id);
     if (!esc) return;
@@ -5508,7 +5523,7 @@ function renderLembretes(c) {
     });
   });
 
-  // 3) Kanban com prazo === data (todas funções juntas)
+  // 2) Kanban com prazo === data (todas funções juntas)
   (S.kanban||[]).filter(k => k.prazo === data && !k.arquivado && k.status !== 'done').forEach(k => {
     (k.responsaveis||[]).forEach(fid => {
       const filho = S.filhos.find(f => f.id === fid);
@@ -5560,7 +5575,7 @@ function renderLembretes(c) {
     <div style="text-transform:capitalize;font-size:13.5px;color:var(--text2);margin-bottom:12px;font-weight:600">📅 ${dataBr}</div>
 
     ${itens.length === 0 ? `
-      <div class="card"><div class="empty"><div class="empty-t">Nada pra avisar nesse dia</div><div class="empty-s">Sem rega, escala de gira ou tarefa kanban pra essa data.</div></div></div>
+      <div class="card"><div class="empty"><div class="empty-t">Nada pra avisar nesse dia</div><div class="empty-s">Sem escala de gira ou tarefa kanban pra essa data.</div></div></div>
     ` : Object.values(grupos).map(g => `
       <div class="card" style="margin-bottom:14px">
         <div class="card-h"><div class="card-title">${g.label} <span style="color:var(--text3);font-weight:400">· ${g.itens.length}</span></div></div>
@@ -6885,184 +6900,6 @@ function renderControleDisp(c) {
       toast('Mensagem copiada — cola no grupo do WhatsApp','ok');
     });
   };
-}
-
-// ── REGA (rodízio voluntário diário) ──────────────────────────────────────
-function renderRega(c) {
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const hojeStr = hoje.toISOString().slice(0,10);
-  const linkPublico = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/area-filho.html';
-
-  // Map: data → reserva
-  const porDia = {};
-  S.regas.forEach(r => { porDia[r.data] = r; });
-
-  // Mês atual e próximo
-  const mes1 = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const mes2 = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1);
-
-  // Cobertura por mês: quantos dias do mês a partir de hoje estão cobertos
-  function coberturaMes(mesDate) {
-    const ano = mesDate.getFullYear(), mes = mesDate.getMonth();
-    const last = new Date(ano, mes+1, 0);
-    const inicio = mesDate.toISOString().slice(0,10) < hojeStr ? hojeStr : mesDate.toISOString().slice(0,10);
-    let total = 0, cobertos = 0;
-    for(let d = 1; d <= last.getDate(); d++) {
-      const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
-      if(dStr < inicio) continue;
-      total++;
-      if(porDia[dStr]) cobertos++;
-    }
-    return { total, cobertos };
-  }
-
-  function pad(n) { return String(n).padStart(2,'0'); }
-
-  function renderMesCal(mesDate) {
-    const ano = mesDate.getFullYear(), mes = mesDate.getMonth();
-    const first = new Date(ano, mes, 1);
-    const last = new Date(ano, mes+1, 0);
-    const firstDow = first.getDay();
-    const daysInMonth = last.getDate();
-    const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-    const { total, cobertos } = coberturaMes(mesDate);
-    const pct = total ? Math.round((cobertos/total)*100) : 0;
-
-    let cells = '';
-    for(let i=0; i<firstDow; i++) cells += `<div></div>`;
-    for(let d=1; d<=daysInMonth; d++) {
-      const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
-      const passado = dStr < hojeStr;
-      const reserva = porDia[dStr];
-      const confirmado = reserva?.realizado;
-      const ehHoje = dStr === hojeStr;
-      // Verde forte = confirmado, verde claro = reservado, âmbar = sem cobertura
-      let bg, bd, col;
-      if(confirmado) { bg='rgba(46,204,113,0.22)'; bd='var(--green)'; col='var(--green)'; }
-      else if(reserva) { bg='var(--green-bg)'; bd='var(--green-bd)'; col='var(--green)'; }
-      else { bg = passado ? 'transparent' : 'rgba(243,156,18,0.08)'; bd = 'var(--border)'; col = passado ? 'var(--text3)' : 'var(--amber)'; }
-      if(ehHoje) bd = 'var(--red)';
-      const nome = reserva ? escapaHtml((reserva.realizado_por_nome||reserva.filho_nome||'').split(' ')[0]) : '';
-      const tip = confirmado ? `✓ ${escapaHtml(reserva.realizado_por_nome||reserva.filho_nome)} confirmou` : (reserva ? `Reservado por ${escapaHtml(reserva.filho_nome)}` : (passado?'':'Sem cobertura'));
-      const pendente = reserva && !confirmado && !passado;
-      const ehAtrasada = reserva && !confirmado && passado; // reservou no passado e não confirmou
-      const icone = confirmado ? '🌱' : (pendente ? '⏳' : (ehAtrasada ? '⚠️' : ''));
-      cells += `
-        <div style="aspect-ratio:1;background:${bg};border:1px solid ${bd};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:${col};opacity:${passado&&!confirmado?'.45':'1'};padding:4px;position:relative" title="${tip}">
-          ${icone ? `<div style="font-size:14px;line-height:1;margin-bottom:1px">${icone}</div>` : ''}
-          <div style="font-weight:700;font-size:${icone?'12px':'14px'}">${d}</div>
-          ${nome ? `<div style="font-size:9px;font-weight:600;line-height:1;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48px">${nome}</div>` : ''}
-        </div>
-      `;
-    }
-
-    return `
-      <div class="card" style="margin-bottom:14px">
-        <div class="card-h">
-          <div class="card-title" style="text-transform:capitalize">${nomeMes}</div>
-          <div style="font-size:13px;color:var(--text3)"><strong style="color:${pct>=70?'var(--green)':(pct>=40?'var(--amber)':'var(--red)')}">${cobertos}/${total}</strong> dias cobertos · ${pct}%</div>
-        </div>
-        <div style="background:var(--glass2);border-radius:6px;height:6px;overflow:hidden;margin-bottom:12px">
-          <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--green),var(--gold))"></div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">
-          ${['D','S','T','Q','Q','S','S'].map(d=>`<div style="text-align:center;font-size:10px;color:var(--text3);font-weight:600;padding:4px">${d}</div>`).join('')}
-          ${cells}
-        </div>
-      </div>
-    `;
-  }
-
-  const reservaHoje = porDia[hojeStr];
-  const semCobertura = [];
-  for(let i = 0; i < 14; i++) {
-    const d = new Date(hoje); d.setDate(hoje.getDate()+i);
-    const dStr = d.toISOString().slice(0,10);
-    if(!porDia[dStr]) semCobertura.push(dStr);
-  }
-
-  c.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-title">Rega</div>
-        <div class="page-sub">1 pessoa por dia · filhos reservam pela página pública</div>
-      </div>
-      <div class="page-actions">
-        <a class="btn" href="area-filho.html" target="_blank">↗ Página pública</a>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:14px;border-color:${reservaHoje?(reservaHoje.realizado?'var(--green)':'var(--green-bd)'):'var(--amber-bg)'}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span class="chip ${reservaHoje?(reservaHoje.realizado?'chip-green':'chip-green'):'chip-amber'}">HOJE · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
-        ${reservaHoje?.realizado ? '<span class="chip chip-green">✓ CONFIRMADO</span>' : (reservaHoje?'<span class="chip chip-amber">PENDENTE DE CONFIRMAÇÃO</span>':'')}
-      </div>
-      ${reservaHoje && reservaHoje.realizado ? `
-        <div style="font-size:18px;font-weight:700;color:var(--green)">🌱 ${escapaHtml(reservaHoje.realizado_por_nome || reservaHoje.filho_nome)} regou hoje</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Confirmado pelo QR code ${reservaHoje.realizadoEm ? '· ' + fmt.rel(reservaHoje.realizadoEm) : ''}</div>
-      ` : reservaHoje ? `
-        <div style="font-size:18px;font-weight:700;color:var(--amber)">⏳ ${escapaHtml(reservaHoje.filho_nome)}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:4px">Reservou — ainda não confirmou que regou (esperando QR no terreiro)</div>
-      ` : `
-        <div style="font-size:15px;color:var(--amber);font-weight:600">Sem cobertura pra hoje 😬</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:6px">Nenhum filho assumiu este dia. Manda a página pra galera ou peça no grupo.</div>
-        <button class="btn btn-primary" style="margin-top:10px" onclick="navigator.clipboard.writeText('Salve! Faltam dias na escala de rega da casa: ${linkPublico}').then(()=>window._app.toast('Mensagem copiada','ok'))">Copiar mensagem pro grupo</button>
-      `}
-    </div>
-
-    <details class="card" style="margin-bottom:14px;padding:0">
-      <summary style="padding:16px 22px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;user-select:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--gold);flex-shrink:0"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h7v7"/></svg>
-        <div style="flex:1">
-          <div style="font-size:15px;font-weight:700">QR code pra confirmação no terreiro</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">Imprime e cola no espaço · filho escaneia depois de regar</div>
-        </div>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--text3)"><polyline points="6 9 12 15 18 9"/></svg>
-      </summary>
-      <div style="padding:0 22px 22px;text-align:center">
-        ${(() => {
-          const urlConf = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/\/$/,'') + '/confirma-rega.html';
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(urlConf)}&bgcolor=ffffff&color=000000&margin=10`;
-          return `
-            <div style="background:#fff;display:inline-block;padding:14px;border-radius:10px;margin-bottom:14px">
-              <img src="${qrUrl}" alt="QR confirma rega" style="display:block;width:240px;height:240px"/>
-            </div>
-            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">URL que o QR aponta:</div>
-            <div style="font-family:monospace;font-size:12px;color:var(--text);background:var(--glass2);padding:8px 12px;border-radius:6px;word-break:break-all;margin-bottom:14px">${urlConf}</div>
-            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-              <a class="btn btn-sm" href="${qrUrl}" target="_blank" download="qr-rega-candieiro.png">Baixar PNG</a>
-              <button class="btn btn-sm" onclick="window.print()">Imprimir esta página</button>
-              <a class="btn btn-sm" href="confirma-rega.html" target="_blank">Testar página</a>
-            </div>
-            <div style="font-size:12px;color:var(--text3);margin-top:14px;line-height:1.5">
-              Sugestão: imprime, plastifica e cola perto das plantas. Filho escaneia com o celular, escolhe o nome, confirma. Sistema marca como ✓.
-            </div>
-          `;
-        })()}
-      </div>
-    </details>
-
-    ${semCobertura.length > 0 ? `
-      <div class="card" style="margin-bottom:14px;border-color:var(--amber-bg)">
-        <div class="card-h">
-          <div class="card-title" style="color:var(--amber)">⚠️ Próximos 14 dias sem cobertura (${semCobertura.length})</div>
-        </div>
-        <div class="chips">
-          ${semCobertura.slice(0,14).map(d => `<span class="chip chip-amber">${fmt.data(d)}</span>`).join('')}
-        </div>
-      </div>
-    `:''}
-
-    <div class="card" style="margin-bottom:14px;padding:10px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;font-size:12px;color:var(--text2)">
-      <span><span style="font-size:14px">🌱</span> <strong style="color:var(--green)">Confirmou</strong> (regou + scaneou QR)</span>
-      <span><span style="font-size:14px">⏳</span> <strong style="color:var(--green)">Reservou</strong>, ainda não confirmou</span>
-      <span><span style="font-size:14px">⚠️</span> <strong style="color:var(--red)">Reservou mas faltou</strong> (passado sem confirmação)</span>
-      <span style="opacity:.7">Sem ícone = <strong style="color:var(--amber)">sem cobertura</strong></span>
-    </div>
-
-    ${renderMesCal(mes1)}
-    ${renderMesCal(mes2)}
-  `;
 }
 
 // ── DESPENSA DO ILÊ ───────────────────────────────────────────────────────

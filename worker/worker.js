@@ -209,7 +209,6 @@ export default {
       if (rota === '/agenda') return await rotaAgenda(env);
       if (rota === '/reembolso') return await rotaReembolso(body, env);
       if (rota === '/meus-reembolsos') return await rotaMeusReembolsos(body, env);
-      if (rota === '/liberar-rega') return await rotaLiberarRega(body, env);
       if (rota === '/inscricoes-do-evento') return await rotaInscricoesDoEvento(body, env);
       if (rota === '/vagas') return await rotaVagas(body, env);
       if (rota === '/cadastro-filho') return await rotaCadastroFilho(body, env);
@@ -2716,34 +2715,6 @@ export async function rotaPdvAprovar(body, env) {
   return json({ ok: true });
 }
 
-// ── LIBERAR UM DIA DE REGA ────────────────────────────────────────────────
-//
-// A tela já pedia o PIN e conferia aqui — e depois apagava o doc direto no
-// Firestore, onde a regra era `allow delete: if true`. Prova conferida com
-// autorização aberta é o mesmo teatro que o /entrar desfez: quem abrisse o
-// devtools apagava a reserva de qualquer um da casa, sem PIN nenhum.
-//
-// Agora quem apaga é o Worker, e só depois de ver que o dia é de quem pediu.
-// Dia que já estava livre responde `ok` — apertar duas vezes não é erro, e
-// erro que não é erro treina a pessoa a ignorar o aviso de verdade.
-async function rotaLiberarRega(body, env) {
-  const data = String(body?.data || '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return json({ error: 'data inválida' }, 400);
-
-  const token = await tokenGoogle(env);
-  const quem = await quemFala(body, env, token);
-  if (quem.erro) return json({ error: quem.erro }, quem.status);
-
-  const dia = await fsGet(PROJETO_PVD, 'adm_rega_diaria', data, { token });
-  if (!dia) return json({ ok: true, jaEstavaLivre: true });
-  if (String(dia.filho_id || '') !== quem.id) {
-    return json({ error: 'esse dia é de outra pessoa' }, 403);
-  }
-
-  await fsDelete(PROJETO_PVD, 'adm_rega_diaria', data, token);
-  return json({ ok: true });
-}
-
 // ── O FILHO EDITANDO O PRÓPRIO CADASTRO ────────────────────────────────────
 //
 // Dois campos, e os dois a página pedia direto ao Firestore: data de nascimento
@@ -3511,7 +3482,10 @@ export function visitaDescartada(body, origem, ua, rede) {
   return !VISITA_ORIGENS.test(origem || '') || !VISITA_TIPOS.includes(body?.tipo) || VISITA_ROBO.test(ua || '') || VISITA_DATACENTER.test(rede || '');
 }
 
+// Cada chamada lê todas as visitas da semana (milhares). Guarda 10 min.
+let _visitasMemo = null;
 async function rotaVisitas(env) {
+  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) return json(_visitasMemo.corpo);
   const token = await tokenGoogle(env);
   const hoje = hojeSP(), semana = maisDias(hoje, -6);
   const [linhas, sols] = await Promise.all([
@@ -3519,7 +3493,9 @@ async function rotaVisitas(env) {
     fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000),
     fsQuery(PROJETO_PVD, 'adm_solicitacoes', token, { campo: 'criadoEm', op: 'GREATER_THAN_OR_EQUAL', valor: new Date(semana + 'T03:00:00Z') }, 1000),
   ]);
-  return json({ hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) });
+  const corpo = { hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) };
+  _visitasMemo = { em: Date.now(), corpo };
+  return json(corpo);
 }
 
 // Pessoas e funil a partir das linhas. Pedido que chegou conta pelo banco, não pelo site.

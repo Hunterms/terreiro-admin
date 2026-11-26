@@ -151,15 +151,6 @@ export async function meusReembolsos(cfg, quem) {
 }
 
 /**
- * Libera um dia de rega. O Worker confere que o dia é de quem está pedindo,
- * e só ele apaga — o `deleteDoc` daqui ia direto pro Firestore, onde a regra
- * era aberta pra qualquer um. O PIN existia e não autorizava nada.
- */
-export async function liberarRega(cfg, quem, data) {
-  return chamar(cfg, '/liberar-rega', { ...quem, data });
-}
-
-/**
  * Quem já está inscrito num evento — só `filho_id` e `status`.
  *
  * A collection era pública de LIST e cada doc levava nome, telefone e valor de

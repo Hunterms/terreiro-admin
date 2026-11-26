@@ -379,7 +379,7 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
       <div class="painel-col col-comunidade">
         <div class="col-titulo">
           <h2>Área da comunidade</h2>
-          <p>Avisos, próximas atividades e escala de rega.</p>
+          <p>Avisos e próximas atividades.</p>
         </div>
 
         <!-- Card pedindo data de nascimento — só pra quem não tem -->
@@ -394,19 +394,6 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
         <div id="avisos-container"></div>
         <div id="eventos-filho-container"></div>
         <div id="giras-container"></div>
-
-        <details class="dash-secao" id="dash-sec-rega" data-aba="agenda" style="display:none">
-          <summary>
-            <div class="dash-head-text">
-              <h2>💧 Escala de rega <span class="dash-badge muted" id="dash-cnt-rega"></span></h2>
-              <p class="dash-sub">Reserve os dias que você pode regar.</p>
-            </div>
-            <span class="dash-chevron">▾</span>
-          </summary>
-          <div class="dash-body">
-            <div id="rega-container"></div>
-          </div>
-        </details>
       </div>
 
       <!-- COLUNA DIREITA (desktop): Meu painel — vira primeira em mobile -->
@@ -703,9 +690,7 @@ let APP = {
   cfgAgendamento: null, // adm_config/agendamento — de onde sai a URL do Worker do checkout
   eventos: [],
   avisos: [],
-  eventoInscricoes: [], // inscrições em eventos_filho (pra mostrar status no card)
-  regasDiarias: {},  // {YYYY-MM-DD: { filho_id, filho_nome, ... }} — dias já reservados
-  regaCarrinho: new Set()  // dias que o filho selecionou nessa sessão (pré-checkout)
+  eventoInscricoes: [] // inscrições em eventos_filho (pra mostrar status no card)
 };
 
 // Data efetiva de uma alocação (limpeza depois = dia seguinte)
@@ -744,12 +729,6 @@ function dataEfetivaAloc(es, aloc, funcoes) {
       return;
     }
 
-    // Carrega dados PÚBLICOS (sem precisar selecionar nome)
-    // O mural NÃO entra aqui: ele é interno e depende de sessão. A rega
-    // também some da tela pública desde 01/08, mas o carregamento fica porque
-    // o calendário dela é montado no render, com ou sem sessão.
-    await carregarRegasDiarias();
-
     initSearchSelect();
 
     $('#loading').style.display = 'none';
@@ -759,7 +738,6 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     renderAvisos();
     renderEventosFilho();
     renderGiras();
-    renderRega();
 
     // Quem tem sessão válida entra direto, sem passar pelo seletor de nomes.
     // É o que faz a área parecer um app instalado e não um formulário: abre já
@@ -782,25 +760,6 @@ function dataEfetivaAloc(es, aloc, funcoes) {
     $('#loading').innerHTML = `<div style="color:var(--red)">Erro ao carregar. Recarregue a página.</div>`;
   }
 })();
-
-// A rega é a única das quatro leituras antigas que continua vindo direto do
-// Firestore: `adm_rega_diaria` é trust-based e pública, o mesmo modelo do QR
-// impresso no terreiro.
-//
-// Ela morava NO MEIO das outras três no arquivo, e eu a apaguei junto quando
-// removi o trio — o boot chamava e estourava antes de a tela aparecer. A
-// checagem que fiz na hora procurava só os três nomes que eu tinha decidido
-// remover, então não achou o quarto.
-async function carregarRegasDiarias() {
-  try {
-    // Só do mês atual em diante: é o que a tela mostra. Ler o ano inteiro a cada
-    // visita de cada filho foi parte do que estourou a cota grátis em 26/11.
-    const iniMes = new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,8) + '01';
-    const rSnap = await getDocs(query(collection(dbPvd,'adm_rega_diaria'), where('data','>=',iniMes)));
-    APP.regasDiarias = {};
-    rSnap.docs.forEach(d => { APP.regasDiarias[d.id] = { id:d.id, ...d.data() }; });
-  } catch(e) { Filhos.avisarFalha('a escala de rega', e); APP.regasDiarias = {}; }
-}
 
 // ── O MURAL, QUE AGORA É INTERNO ──────────────────────────────────────────
 //
@@ -959,7 +918,6 @@ async function selecionarFilho(id) {
   // redesenham aqui, quando os eventos chegam, senão saem como "Evento".
   carregarMural().then(() => { renderAvisos(); renderEventosFilho(); renderGiras();
     renderEsc(); renderDisp(); renderLojinha(); renderActionItems(); });
-  renderRega();   // agora com sessão: a escala aparece
   renderMensalidade(); // não bloqueia: consulta o Worker e se mostra sozinha
   renderAvisosInbox(); // idem — e é a única coisa que alcança quem não tem email
   renderDisp();
@@ -1139,8 +1097,8 @@ const iniciaisDe = (nome) => (nome || '?').trim().split(/\s+/).slice(0, 2).map((
 // administração" e não dizia como falar. Quem esqueceu o PIN está fora do app,
 // então o lugar de pedir o reset é esta tela, e não uma página de dentro.
 // Quem passa esta dica com motivo 'pin' PRECISA tratar o retorno 'esqueci' do
-// `pedirPin` — o link do destrave sai daqui. São três chamadas: entrar, trocar
-// o PIN e liberar a rega.
+// `pedirPin` — o link do destrave sai daqui. São duas chamadas: entrar e trocar
+// o PIN.
 function dicaDestrava(filho, motivo = 'pin') {
   const tel = motivo === 'tel';
   const wpp = String(APP.cfgAgendamento?.whatsapp || '').replace(/\D/g, '');
@@ -1758,8 +1716,7 @@ const tipoDaAtividade = (t) =>
 //
 // Nada, além do "quem é você".
 //
-// Isso não era verdade: a coluna da comunidade (mural, próximas atividades,
-// rega) vive FORA do `#filho-area`, então nunca foi escondida — ela só ficava
+// Isso não era verdade: a coluna da comunidade (mural, próximas atividades) vive FORA do `#filho-area`, então nunca foi escondida — ela só ficava
 // vazia depois que o mural virou interno. E a barra de abas continuava na tela
 // depois de sair, porque `trocarFilho` não desfazia o que `ligarAbas` tinha
 // feito.
@@ -1844,8 +1801,8 @@ function mostrarAba(nome) {
     sec.classList.toggle('fora-da-aba', !dessaAba);
     // A aba NÃO força aberto. Eu tinha travado assim achando que a aba já era
     // o recolher — o Hunter usou e discordou, e ele tem razão: quem abre a
-    // Agenda quer escolher entre escala, rega e disponibilidade, não receber
-    // as três abertas de uma vez numa tela de celular.
+    // Agenda quer escolher entre escala e disponibilidade, não receber
+    // as duas abertas de uma vez numa tela de celular.
     // Exceção única: a aba Avisos existe SÓ pra essa seção. Tocar na aba já é
     // a escolha de abrir — deixar colapsada faria a aba mostrar nada, e ainda
     // marcaria tudo como lido sem a pessoa ter visto.
@@ -3380,244 +3337,6 @@ function renderAvisos() {
   `;
 }
 
-// ── REGA (calendário diário, 1 pessoa por dia, checkout por nome) ─────────
-function renderRega() {
-  const cont = $('#rega-container');
-  if(!cont) return;
-
-  // A escala de rega é interna. Ela mostra quem reservou cada dia — nome de
-  // gente da casa, dia a dia — e isso não é informação de página aberta.
-  // Ficava visível antes de entrar por herança de quando esta página era só
-  // um calendário público.
-  const sec = $('#dash-sec-rega');
-  if (sec) sec.style.display = APP.sessao ? '' : 'none';
-  if (!APP.sessao) { cont.innerHTML = ''; return; }
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const hojeStr = hoje.toISOString().slice(0,10);
-
-  // Mostra: do dia atual até o fim do próximo mês
-  const mes1 = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const mes2 = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1);
-  const meses = [mes1, mes2];
-  const carrinhoSize = APP.regaCarrinho.size;
-  const diasCobertos = Object.keys(APP.regasDiarias).filter(d => d >= hojeStr).length;
-
-  // Stats pra header do accordion
-  const totalDias = (() => {
-    let n = 0;
-    meses.forEach(m => {
-      const last = new Date(m.getFullYear(), m.getMonth()+1, 0).getDate();
-      for(let d=1; d<=last; d++) {
-        const dStr = `${m.getFullYear()}-${pad(m.getMonth()+1)}-${pad(d)}`;
-        if(dStr >= hojeStr) n++;
-      }
-    });
-    return n;
-  })();
-  const diasLivres = totalDias - diasCobertos;
-  // Com sessão, a reserva é de quem entrou: nada de escolher na lista da casa.
-  const logado = APP.sessao?.filho_id || '';
-
-  // Badge no chevron
-  const badge = $('#dash-cnt-rega');
-  if(badge) {
-    if(diasLivres === 0) { badge.textContent = '✓ cobertos'; badge.classList.remove('muted'); }
-    else { badge.textContent = `${diasLivres} sem cobertura`; badge.classList.add('muted'); }
-  }
-
-  cont.innerHTML = `
-    <div style="font-size:13px;color:var(--text3);margin-bottom:12px">
-      ${diasLivres === 0 ? '<span style="color:var(--green)">✓ Todos os próximos dias cobertos</span>' : `<span style="color:var(--gold)">${diasLivres} dia${diasLivres===1?'':'s'} sem cobertura</span>`}
-      ${carrinhoSize > 0 ? `<span style="color:var(--gold);font-weight:600"> · ${carrinhoSize} selecionado${carrinhoSize===1?'':'s'}</span>` : ''}
-    </div>
-    <div class="help">
-      Cada dia precisa de <strong>1 pessoa</strong> pra regar. Clique nos dias que você pode assumir${logado ? '' : ' — quando terminar, escolha seu nome no final'}. Dias com nome em verde já estão ocupados.
-    </div>
-
-    ${meses.map(m => renderMesRega(m, hoje)).join('')}
-
-    <div id="rega-checkout" style="margin-top:18px;display:${carrinhoSize?'block':'none'}">
-      <div style="padding:14px;background:var(--gold-bg);border:1px solid rgba(212,168,67,0.3);border-radius:10px">
-        <div style="font-weight:700;margin-bottom:10px;color:var(--gold)">
-          ${carrinhoSize} dia${carrinhoSize===1?'':'s'} selecionado${carrinhoSize===1?'':'s'}${logado ? '' : ' — quem é você?'}
-        </div>
-        ${logado ? `<input type="hidden" id="rega-quem" value="${escapaHtml(logado)}">` : `
-        <select class="fi" id="rega-quem" style="margin-bottom:10px">
-          <option value="">— Selecione seu nome —</option>
-          ${APP.filhos.map(f=>`<option value="${f.id}">${f.nome}</option>`).join('')}
-        </select>`}
-        <button class="btn btn-primary btn-block" onclick="window._app.confirmarRega()">Confirmar reserva</button>
-        <button class="btn btn-block" style="margin-top:8px" onclick="window._app.limparCarrinho()">Limpar seleção</button>
-      </div>
-    </div>
-  `;
-
-  // Binding dos dias: livre → carrinho · reservado → fluxo de liberar
-  cont.querySelectorAll('.rega-day').forEach(el => {
-    const d = el.dataset.d;
-    if(!d || el.dataset.disabled) return;
-    if(el.dataset.reservado) el.onclick = () => liberarDiaRega(d);
-    else el.onclick = () => toggleDiaRega(d);
-  });
-}
-
-function renderMesRega(mesDate, hoje) {
-  const ano = mesDate.getFullYear();
-  const mes = mesDate.getMonth();
-  const first = new Date(ano, mes, 1);
-  const last = new Date(ano, mes+1, 0);
-  const firstDow = first.getDay();
-  const daysInMonth = last.getDate();
-  const nomeMes = first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-  const hojeStr = hoje.toISOString().slice(0,10);
-
-  let cells = '';
-  for(let i=0; i<firstDow; i++) cells += `<div class="disp-day out"></div>`;
-  for(let d=1; d<=daysInMonth; d++) {
-    const dStr = `${ano}-${pad(mes+1)}-${pad(d)}`;
-    const passado = dStr < hojeStr;
-    const reserva = APP.regasDiarias[dStr];
-    const noCarrinho = APP.regaCarrinho.has(dStr);
-    let bg = 'var(--glass2)';
-    let bd = 'transparent';
-    let col = 'var(--text2)';
-    let extra = '';
-    let titulo = '';
-    let dataAttr = `data-d="${dStr}"`;
-    if(passado) { bg='transparent'; col='var(--text3)'; dataAttr = `data-d="${dStr}" data-disabled="1"`; }
-    else if(reserva) {
-      bg='var(--green-bg)'; bd='var(--green-bd)'; col='var(--green)';
-      titulo = `Reservado por ${escapaHtml(reserva.filho_nome||'alguém')}. Clique pra liberar (precisa do telefone de ${escapaHtml((reserva.filho_nome||'quem reservou').split(' ')[0])}).`;
-      extra = `<div style="font-size:8.5px;line-height:1;margin-top:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42px">${escapaHtml((reserva.filho_nome||'').split(' ')[0])}</div>`;
-      dataAttr = `data-d="${dStr}" data-reservado="1"`;
-    }
-    else if(noCarrinho) { bg='var(--gold)'; col='#1a1209'; bd='var(--gold)'; }
-    const cursor = passado ? 'default' : 'pointer';
-    cells += `<div class="rega-day disp-day ${passado?'out':''}" style="background:${bg};border-color:${bd};color:${col};opacity:${passado?'.25':'1'};cursor:${cursor};flex-direction:column;font-weight:600" ${dataAttr} title="${titulo}">${d}${extra}</div>`;
-  }
-
-  return `
-    <div style="margin-top:14px">
-      <div class="mes-title">${nomeMes}</div>
-      <div class="disp-cal" style="margin-top:8px">
-        ${['D','S','T','Q','Q','S','S'].map(d=>`<div class="disp-head">${d}</div>`).join('')}
-        ${cells}
-      </div>
-    </div>
-  `;
-}
-
-function toggleDiaRega(d) {
-  if(APP.regaCarrinho.has(d)) APP.regaCarrinho.delete(d);
-  else APP.regaCarrinho.add(d);
-  renderRega();
-}
-
-// Libera um dia já reservado. Só o DONO libera, provando com o PIN dele —
-// antes pedia os 4 dígitos do telefone da outra pessoa, o que ensinava a tela
-// a tratar telefone alheio como senha.
-async function liberarDiaRega(d) {
-  const reserva = APP.regasDiarias[d];
-  if(!reserva) { renderRega(); return; }
-  const filho = APP.filhos.find(f => f.id === reserva.filho_id);
-  const nomePrim = (reserva.filho_nome||'').split(' ')[0] || 'a pessoa que reservou';
-  const dataFmt = new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
-
-  // Quem já provou ser o dono da reserva nesta aba não prova de novo.
-  const cached = !!(filho && APP.sessao && APP.sessao.filho_id === filho.id);
-
-  if(!cached) {
-    // Pedia os 4 dígitos do telefone DO OUTRO, e conferia contra o telefone que
-    // esta página tinha baixado. Duas coisas erradas numa: a tela ensinava a
-    // tratar o telefone alheio como senha, e a conferência era no cliente.
-    //
-    // Agora quem libera é o próprio dono, provando pelo Worker. Trocar o dia
-    // com outra pessoa passou a ser: ela libera, você reserva. É um passo a
-    // mais, e é o passo que faz "meu dia" significar alguma coisa.
-    if(!filho) { toast('Não achei o cadastro de quem reservou.','err'); return; }
-    let digitado = await pedirPin({
-      iniciais: iniciaisDe(filho.nome),
-      titulo: 'Liberar este dia',
-      sub: `O dia ${dataFmt} está com <b>${escapaHtml(reserva.filho_nome||'alguém')}</b>. Se for você, confirme com o seu PIN.`,
-      botao: 'Liberar o dia',
-      dica: dicaDestrava(filho),
-    });
-    if(!digitado) return;
-    // Quem mostra a dica trata o 'esqueci' — sem isto o clique manda a palavra
-    // pro campo do PIN e o Worker responde "são 4 números".
-    if(digitado === 'esqueci') {
-      digitado = await recuperarPin(filho);
-      if(!digitado) return;
-    }
-    const r = await Filhos.entrar(APP.cfgAgendamento, filho.id, digitado);
-    if(!r.ok) {
-      toast(r.erro === 'não confere'
-        ? `Só ${nomePrim} pode liberar este dia. Peça pra ela abrir a área dela e liberar.`
-        : Filhos.explicar(r.erro), 'err');
-      return;
-    }
-    APP.sessao = { filho_id: filho.id, sessao: r.sessao };
-    Filhos.guardarSessao(filho.id, r.sessao);
-  } else {
-    // Já autenticado — confirma textualmente pra evitar liberar sem querer
-    if(!confirm(`Liberar o dia ${dataFmt} (atualmente com ${reserva.filho_nome})?`)) return;
-  }
-
-  try {
-    // Quem apaga é o Worker, com a sessão na mão. O `deleteDoc` que estava aqui
-    // ia direto pro Firestore, e a regra da collection deixava QUALQUER UM
-    // apagar a reserva de QUALQUER UM — o PIN acima conferia e não autorizava.
-    await Filhos.liberarRega(APP.cfgAgendamento, APP.sessao, d);
-    delete APP.regasDiarias[d];
-    renderRega();
-    toast(`Dia ${dataFmt.split(',')[1]?.trim() || dataFmt} liberado. Quem precisar pode reservar agora.`);
-  } catch(e) {
-    console.error(e);
-    toast(Filhos.explicar(e.message), 'err');
-  }
-}
-
-function limparCarrinho() {
-  APP.regaCarrinho.clear();
-  renderRega();
-}
-
-async function confirmarRega() {
-  const filhoId = $('#rega-quem').value;
-  if(!filhoId) { toast('Selecione seu nome','err'); return; }
-  const filho = APP.filhos.find(f => f.id === filhoId);
-  if(!filho) { toast('Filho não encontrado','err'); return; }
-  if(APP.regaCarrinho.size === 0) { toast('Nenhum dia selecionado','err'); return; }
-
-  // Recarrega regasDiarias pra checar conflitos (alguém pode ter pego no meio)
-  await carregarRegasDiarias();
-  const conflitos = [...APP.regaCarrinho].filter(d => APP.regasDiarias[d]);
-  if(conflitos.length > 0) {
-    toast(`${conflitos.length} dia${conflitos.length===1?' já foi reservado':'s já foram reservados'} por outra pessoa enquanto você escolhia. Verifique.`,'err');
-    conflitos.forEach(d => APP.regaCarrinho.delete(d));
-    renderRega();
-    return;
-  }
-
-  let ok = 0, erros = 0;
-  for(const d of APP.regaCarrinho) {
-    try {
-      await setDoc(doc(dbPvd,'adm_rega_diaria', d), {
-        data: d,
-        filho_id: filhoId,
-        filho_nome: filho.nome,
-        reservadoEm: serverTimestamp()
-      });
-      APP.regasDiarias[d] = { id:d, data:d, filho_id:filhoId, filho_nome:filho.nome };
-      ok++;
-    } catch(e) { console.error(e); erros++; }
-  }
-  APP.regaCarrinho.clear();
-  renderRega();
-  if(ok > 0) toast(`${ok} dia${ok===1?'':'s'} reservado${ok===1?'':'s'}. Obrigado, ${filho.nome.split(' ')[0]}!`);
-  if(erros > 0) toast(`${erros} erro(s) ao salvar`,'err');
-}
-
 // setTab/setSubTab eram da UI antiga (abas). Agora é layout 2-colunas com chevrons.
 // Mantemos no-ops pra não quebrar handlers remanescentes.
 function setTab(_t) { /* deprecated */ }
@@ -3895,7 +3614,7 @@ window.renderReembolso = renderReembolso;
 window.abrirModalReembolso = abrirModalReembolso;  // usado no onclick do modal de sucesso
 window.setTab = setTab;
 window.setSubTab = setSubTab;
-window._app = { salvar, toggleDiaRega, confirmarRega, limparCarrinho };
+window._app = { salvar };
 </script>
 <nav class="abas" id="abas" role="tablist" aria-label="Seções da sua área" style="display:none">
   <button class="aba-btn" role="tab" data-ir="inicio"      aria-selected="true"><span class="ic">🏠</span><span class="rot">Início</span></button>

@@ -68,7 +68,6 @@ if [[ "$alvo" == "tudo" || "$alvo" == "admin" ]]; then
   # versão no ar for velha, os cartões simplesmente não existem e ninguém nota.
   checa https://hunterms.github.io/terreiro-admin/index.html "adesão ao app" "cartaoAdesao"
   checa https://hunterms.github.io/terreiro-admin/index.html "leitura dos avisos" "quemViuOAviso"
-  checa https://hunterms.github.io/terreiro-admin/confirma-rega.html "QR da rega" ""
   checa https://hunterms.github.io/terreiro-admin/despensa.html "despensa" ""
   # PWA: sem service worker no ar não há instalação nem notificação, e a página
   # continua abrindo normalmente — falha que não dá sinal nenhum.
@@ -211,10 +210,6 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   # O pedido de reembolso passou a exigir sessão. Sem ela, filho_id inválido.
   r=$(curl -s -X POST "$W/reembolso" -H 'Content-Type: application/json' -d '{"descricao":"x","valor":10}')
   echo "$r" | grep -q 'inválido' && ok "reembolso exige sessão" || erro "reembolso: $(head -c 90 <<< "$r")"
-  # Liberar dia de rega passou a ser ato do Worker. Antes o delete ia direto pro
-  # Firestore, com a regra aberta: o PIN era conferido e não autorizava nada.
-  # Se esta rota sumir, a área do filho volta a não conseguir liberar — e a
-  # regra fechada faz a falha aparecer, que é o que se quer.
   # A tela do evento pergunta "esta pessoa já está inscrita?" por aqui. A rota
   # só pode devolver id, filho_id e status — nome, telefone e valor ficam de
   # dentro. Se um deles voltar, a inscrição vira lista pública de novo.
@@ -228,11 +223,6 @@ if [[ "$alvo" == "tudo" || "$alvo" == "worker" ]]; then
   else
     ok "inscricoes-do-evento sem nome nem telefone"
   fi
-  r=$(curl -s -X POST "$W/liberar-rega" -H 'Content-Type: application/json' -d '{}')
-  echo "$r" | grep -q 'data inválida' && ok "liberar-rega no ar" || erro "liberar-rega: Worker velho? $(head -c 100 <<< "$r")"
-  # E ela não pode apagar sem prova de quem é o dia.
-  r=$(curl -s -X POST "$W/liberar-rega" -H 'Content-Type: application/json' -d '{"data":"2099-12-31"}')
-  echo "$r" | grep -q 'inválido' && ok "liberar-rega exige sessão" || erro "liberar-rega SEM PROVA: $(head -c 120 <<< "$r")"
   r=$(curl -s -X POST "$W/avisar-filho" -H 'Content-Type: application/json' -d '{}')
   echo "$r" | grep -q 'X-Auth-Secret' && ok "avisar-filho (protegida)" || erro "avisar-filho: $r"
   r=$(curl -s -X POST "$W/zerar-pin" -H 'Content-Type: application/json' -d '{}')
@@ -291,10 +281,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
   # sessão de admin. Achado em 07/09; o conserto foi escapar no ponto de
   # desenho, e estas linhas são o que impede alguém desfazer sem perceber.
   for par in "area-filho.html:escapaHtml(disp.obs" \
-             "area-filho.html:escapaHtml(reserva.filho_nome" \
              "index.html:escapaHtml(disp.obs" \
-             "index.html:escapaHtml(reserva.filho_nome" \
-             "index.html:escapaHtml(reservaHoje.filho_nome" \
              "index.html:escapaHtml(s.observacao" \
              "index.html:escapaHtml(p.observacao" \
              "index.html:escapaHtml(insc.nome" \
@@ -307,7 +294,6 @@ if [[ "$alvo" == "tudo" || "$alvo" == "fora" ]]; then
              "despensa.html:escapaHtml(p.nome" \
              "despensa.html:escapaHtml(p.obs" \
              "despensa.html:escapaJs(p.id" \
-             "confirma-rega.html:escapaHtml(APP.regaHoje.filho_nome" \
              "evento.html:inscricoesDoEvento"; do
     arq="${par%%:*}"; marca="${par#*:}"
     if grep -qF -- "$marca" "$(dirname "$0")/$arq" 2>/dev/null; then
@@ -532,7 +518,7 @@ if [[ "$alvo" == "tudo" || "$alvo" == "rules" ]]; then
   [[ "$cod" == "403" ]] && ok "pdv_caixa_mov sem escrita pública" || erro "pdv_caixa_mov aceita escrita de fora (HTTP $cod) — publique firestore.rules.pvd"
 
   for c in vendas_produtos adm_servicos adm_despensa adm_perguntas \
-           adm_kanban adm_escalas adm_funcoes adm_disponibilidade adm_rega_diaria; do
+           adm_kanban adm_escalas adm_funcoes adm_disponibilidade; do
     [[ "$(http "$B/$c?pageSize=1&key=$K")" == "200" ]] && ok "$c público (as páginas precisam)" || erro "$c fechou — página pública quebra"
   done
   # evento_inscricoes fechou em 07/09. Levava nome, telefone, valor e filho_id
