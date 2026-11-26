@@ -359,7 +359,8 @@ function gerarSlots(dataStr, dur) {
     || (APP.semConsulta ? APP.semConsulta.has(dataStr) : dow === 1);
   // horarios_extras: janelas a mais numa data só ({ 'AAAA-MM-DD': [{inicio,fim}] }), além das da semana.
   // O admin abre de propósito, então vale até em dia fechado (pausa, segunda de desenvolvimento).
-  const janelas = [...(fechado ? [] : (APP.cfg.horarios_semana[String(dow)] || [])), ...((APP.cfg.horarios_extras||{})[dataStr] || [])].sort((a,b) => a.inicio.localeCompare(b.inicio));
+  // horarios_dia: o admin editou o dia inteiro; a lista dele troca semana e extras (vazia = sem horário).
+  const janelas = ((APP.cfg.horarios_dia||{})[dataStr] || [...(fechado ? [] : (APP.cfg.horarios_semana[String(dow)] || [])), ...((APP.cfg.horarios_extras||{})[dataStr] || [])]).sort((a,b) => a.inicio.localeCompare(b.inicio));
   if(janelas.length === 0) return [];
   const slots = [];
   const minBookable = Date.now() + (APP.cfg.antecedencia_min_horas||0)*3600*1000;
