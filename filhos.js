@@ -308,3 +308,75 @@ export const respostaCensoValida = (campo, valor) => {
   const p = CENSO.find((c) => c.campo === campo);
   return !!p && (valor === NAO_DIZER || p.opcoes.some(([v]) => v === valor));
 };
+
+// ── SAÚDE E EMERGÊNCIA ─────────────────────────────────────────────────────
+//
+// O que a casa precisa saber se alguém passar mal numa gira: quem chamar,
+// tipo de sangue, alergia (inclusive à fumaça da defumação e a erva), doença
+// que pede cuidado, remédio de uso contínuo e o que a pessoa não come.
+// Lista montada pelo que fichas médicas de comunidade pedem (escoteiros:
+// contato de emergência, tipo sanguíneo, alergias por categoria, remédio de
+// uso contínuo, condição atual, plano) mais o que é de terreiro (defumação,
+// ervas, perfume/álcool, quizila).
+//
+// Saúde é dado sensível (LGPD art. 5º, II e art. 11). Mesmas travas do censo:
+//   - só o filho escreve, pelo /meu-cadastro, e só ele relê, pelo /minha-saude;
+//   - o valor NUNCA sai pelo /filhos (público): sai só `saude_em`, a data da
+//     última atualização, pra área saber se já preencheu;
+//   - o admin lê direto no Firestore (rules: só admin), pra ter na mão na gira.
+// Tudo é opcional. A ficha pode ser mudada quando quiser: alergia e remédio mudam.
+export const SAUDE_GRUPOS = [
+  { titulo: 'Quem a casa chama numa emergência', campos: [
+    { campo: 'saude_contato_nome', tipo: 'texto', rotulo: 'Nome', max: 80 },
+    { campo: 'saude_contato_rel', tipo: 'texto', rotulo: 'É seu ou sua…', dica: 'mãe, companheira, amigo', max: 40 },
+    { campo: 'saude_contato_tel', tipo: 'tel', rotulo: 'Telefone' },
+    { campo: 'saude_contato2_nome', tipo: 'texto', rotulo: 'Segunda pessoa (se a primeira não atender)', max: 80 },
+    { campo: 'saude_contato2_tel', tipo: 'tel', rotulo: 'Telefone da segunda pessoa' },
+  ]},
+  { titulo: 'Saúde', campos: [
+    { campo: 'saude_sangue', tipo: 'uma', rotulo: 'Tipo de sangue',
+      opcoes: [['a+','A+'],['a-','A−'],['b+','B+'],['b-','B−'],['ab+','AB+'],['ab-','AB−'],['o+','O+'],['o-','O−'],['nao_sei','Não sei']] },
+    { campo: 'saude_alergias', tipo: 'varias', rotulo: 'Tem alergia a…',
+      opcoes: [['nenhuma','Nenhuma'],['alimento','Algum alimento'],['remedio','Algum remédio'],['fumaca','Fumaça ou defumação'],['ervas','Erva ou planta'],['perfume','Perfume ou álcool'],['inseto','Picada de inseto'],['latex','Látex'],['outra','Outra']] },
+    { campo: 'saude_alergias_txt', tipo: 'texto', rotulo: 'Quais? E o que acontece?', dica: 'amendoim, dipirona, arruda… fica com falta de ar', max: 300, longo: true },
+    { campo: 'saude_condicoes', tipo: 'varias', rotulo: 'Precisa de cuidado com…',
+      opcoes: [['nenhuma','Nada'],['diabetes','Diabetes'],['pressao_alta','Pressão alta'],['pressao_baixa','Pressão baixa ou desmaio'],['asma','Asma ou problema de respiração'],['epilepsia','Epilepsia ou convulsão'],['coracao','Coração'],['gravidez','Gravidez'],['locomocao','Dificuldade pra andar ou ficar em pé'],['outra','Outra']] },
+    { campo: 'saude_condicoes_txt', tipo: 'texto', rotulo: 'Conta um pouco, se quiser', max: 300, longo: true },
+    { campo: 'saude_remedios', tipo: 'texto', rotulo: 'Remédio que toma todo dia ou de uso contínuo', dica: 'nome e horário', max: 400, longo: true },
+    { campo: 'saude_plano', tipo: 'texto', rotulo: 'Plano de saúde (se tiver)', max: 80 },
+  ]},
+  { titulo: 'Comida', campos: [
+    { campo: 'saude_restricoes', tipo: 'varias', rotulo: 'Não come…',
+      opcoes: [['nenhuma','Come de tudo'],['vegetariana','Carne (vegetariana)'],['vegana','Nada de origem animal'],['sem_gluten','Glúten'],['sem_lactose','Lactose'],['quizila','Quizila ou preceito'],['outra','Outra']] },
+    { campo: 'saude_restricoes_txt', tipo: 'texto', rotulo: 'Detalhe, se precisar', max: 200 },
+  ]},
+  { titulo: 'Mais alguma coisa', campos: [
+    { campo: 'saude_obs', tipo: 'texto', rotulo: 'O que a casa precisa saber pra cuidar de você', max: 500, longo: true },
+  ]},
+];
+export const SAUDE = SAUDE_GRUPOS.flatMap((g) => g.campos);
+
+/**
+ * Normaliza e valida uma resposta. Devolve { ok, valor }. Vazio apaga o campo
+ * (valor null): a pessoa pode tirar o que escreveu.
+ */
+export function validarSaude(campo, valor) {
+  const c = SAUDE.find((x) => x.campo === campo);
+  if (!c) return { ok: false };
+  if (valor === null || valor === '' || (Array.isArray(valor) && !valor.length)) return { ok: true, valor: null };
+  if (c.tipo === 'texto') { const v = String(valor).trim().slice(0, c.max || 200); return { ok: true, valor: v || null }; }
+  if (c.tipo === 'tel') { const v = String(valor).replace(/\D/g, ''); return v.length >= 10 && v.length <= 13 ? { ok: true, valor: v } : { ok: false }; }
+  if (c.tipo === 'uma') return c.opcoes.some(([v]) => v === valor) ? { ok: true, valor } : { ok: false };
+  if (c.tipo === 'varias') {
+    if (!Array.isArray(valor) || !valor.every((x) => c.opcoes.some(([v]) => v === x))) return { ok: false };
+    // "Nenhuma" com outra marcada não faz sentido: vale o que foi marcado.
+    const v = [...new Set(valor)];
+    return { ok: true, valor: v.length > 1 ? v.filter((x) => x !== 'nenhuma') : v };
+  }
+  return { ok: false };
+}
+
+/** A ficha do próprio filho, pra ele ver e mudar. Só com sessão. */
+export async function minhaSaude(cfg, quem) {
+  return chamar(cfg, '/minha-saude', quem);
+}

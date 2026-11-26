@@ -121,3 +121,18 @@ sensível do mesmo jeito (art. 5º, II). Entram com quatro travas, todas em
 - toda pergunta tem "Não sei ou não quero responder", e pular volta em 7 dias;
 - o `/filhos` público não leva o valor, só `censo_ok` (o que já respondeu);
 - o admin vê a soma no "Mapa da casa"; o valor de cada um fica em `fin_filhos`.
+
+## Ficha de saúde e emergência (26/11/2026)
+
+Contato de emergência, tipo de sangue, alergias (inclusive fumaça, erva, perfume), condições que pedem
+cuidado, remédios de uso contínuo, restrição alimentar e plano de saúde. Dado de saúde é sensível
+(art. 5º, II). A base é o consentimento do próprio filho (art. 11, I), dado ao preencher, com a
+finalidade escrita na tela: cuidar dele numa gira ou atividade. Proteção da vida (art. 11, II, e)
+sustenta o uso numa emergência.
+
+As travas são as do censo:
+- só o filho escreve (`/meu-cadastro`) e só ele relê (`/minha-saude`, com sessão);
+- o `/filhos` público nunca devolve `saude_*`, só `saude_em` (a data da última atualização);
+- o admin lê no Firestore (rules: só admin) e mostra na ficha do filho e na "Ficha de emergência";
+- tudo é opcional, e campo vazio apaga o valor.
+A lista de perguntas mora em `filhos.js` › `SAUDE_GRUPOS`.

@@ -215,6 +215,15 @@ a.dash-link:active{transform:scale(.99)}
 .dash-chevron{font-size:14px;color:var(--text3);transition:transform .25s cubic-bezier(.2,.7,.3,1);flex-shrink:0}
 .dash-secao[open] > summary > .dash-chevron{transform:rotate(180deg);color:var(--gold,#d4a843)}
 .dash-body{padding:16px}
+.sd-grupo{font-size:15px;font-weight:700;margin:22px 0 10px}
+.sd-grupo:first-of-type{margin-top:4px}
+.sd-campo{margin-bottom:12px}
+.sd-campo label.sd-rot{display:block;font-size:13px;color:var(--text2);margin-bottom:6px}
+.sd-togs{display:flex;flex-wrap:wrap;gap:8px}
+.sd-tog{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--border2);border-radius:22px;font-size:14px;min-height:44px;cursor:pointer}
+.sd-tog input{accent-color:var(--gold);width:18px;height:18px;margin:0}
+.sd-tog:has(input:checked){border-color:var(--gold);background:rgba(212,168,67,.12)}
+.sd-priv{font-size:12.5px;color:var(--text3);line-height:1.5;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px}
 .dash-body > :first-child{margin-top:0}
 
 .disp-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
@@ -498,6 +507,18 @@ footer{text-align:center;margin-top:30px;color:var(--text3);font-size:12px}
             <div class="dash-body">
               <div id="perguntas-container"></div>
             </div>
+          </details>
+
+          <!-- Ficha de saúde e emergência: o filho preenche e muda quando quiser -->
+          <details class="dash-secao" id="dash-sec-saude" data-aba="casa">
+            <summary>
+              <div class="dash-head-text">
+                <h2>🩺 Saúde e emergência <span class="dash-badge" id="dash-cnt-saude"></span></h2>
+                <p class="dash-sub">Quem a casa chama, alergias, remédios. Pra cuidar de você numa gira.</p>
+              </div>
+              <span class="dash-chevron">▾</span>
+            </summary>
+            <div class="dash-body"><div id="saude-container"></div></div>
           </details>
 
           <!-- Lista de afazeres da casa (tarefas abertas pra qualquer um pegar) -->
@@ -916,6 +937,8 @@ async function selecionarFilho(id) {
   }
 
   ligarAbas();
+  renderSaudeBadge();
+  document.getElementById('dash-sec-saude')?.addEventListener('toggle', (e) => { if (e.target.open) renderSaude(); });
   // Com sessão na mão, o mural interno pode vir.
   // Escala, mês, lojinha e atalhos leem APP.eventos pra nome e horário da gira:
   // redesenham aqui, quando os eventos chegam, senão saem como "Evento".
@@ -2204,6 +2227,10 @@ function renderActionItems() {
       target: 'dash-sec-escalas'
     });
   }
+
+  // Ficha de saúde ainda vazia: pedido calmo, no fim da lista.
+  if (!f.saude_em) itens.push({ icon:'🩺', tone:'info', sort: 9,
+    title: 'Preencha sua ficha de saúde', meta: 'Quem a casa chama e o que precisa saber numa emergência.', target: 'dash-sec-saude' });
 
   // 2. Tarefas: atrasadas / hoje / essa semana (sinal mais urgente que disp)
   const tarefas = APP.tarefas || [];
@@ -3582,6 +3609,65 @@ function setTab(_t) { /* deprecated */ }
 function setSubTab(_t) { /* deprecated */ }
 
 // ── REEMBOLSO ─────────────────────────────────────────────────────────────
+// ── Saúde e emergência ─────────────────────────────────────────────────────
+// A ficha mora no Worker (/minha-saude): o /filhos público nunca traz o valor.
+// Carrega só quando a pessoa abre a seção, pra não gastar leitura à toa.
+let _saudeCarregada = false;
+function renderSaudeBadge() {
+  const b = $('#dash-cnt-saude'); const f = APP.filhoAtual;
+  if (b) b.textContent = f?.saude_em ? '' : 'preencher';
+}
+async function renderSaude(forcar = false) {
+  const box = $('#saude-container'); if (!box || !APP.sessao) return;
+  if (_saudeCarregada && !forcar) return;
+  box.innerHTML = '<div class="empty">Carregando sua ficha…</div>';
+  let ficha = {};
+  try { ficha = (await Filhos.minhaSaude(APP.cfgAgendamento, APP.sessao)).ficha || {}; }
+  catch (e) { box.innerHTML = `<div class="empty">Não consegui abrir sua ficha agora. Tenta de novo daqui a pouco.</div>`; return; }
+  _saudeCarregada = true;
+  const campo = (c) => {
+    const v = ficha[c.campo];
+    if (c.tipo === 'uma') return `<div class="sd-campo"><label class="sd-rot" for="sd-${c.campo}">${c.rotulo}</label>
+      <select class="fi" id="sd-${c.campo}" data-sd="${c.campo}"><option value="">Escolher</option>${c.opcoes.map(([o,t]) => `<option value="${o}" ${v===o?'selected':''}>${t}</option>`).join('')}</select></div>`;
+    if (c.tipo === 'varias') return `<div class="sd-campo"><label class="sd-rot">${c.rotulo}</label>
+      <div class="sd-togs" data-sd="${c.campo}" data-varias>${c.opcoes.map(([o,t]) => `<label class="sd-tog"><input type="checkbox" value="${o}" ${(v||[]).includes(o)?'checked':''}/><span>${t}</span></label>`).join('')}</div></div>`;
+    const tipo = c.tipo === 'tel' ? 'inputmode="tel" autocomplete="tel"' : '';
+    const val = escapaHtml(c.tipo === 'tel' && v ? v : (v || ''));
+    return `<div class="sd-campo"><label class="sd-rot" for="sd-${c.campo}">${c.rotulo}</label>
+      ${c.longo ? `<textarea class="fi" id="sd-${c.campo}" data-sd="${c.campo}" rows="2" maxlength="${c.max||300}" placeholder="${escapaHtml(c.dica||'')}">${val}</textarea>`
+                : `<input class="fi" id="sd-${c.campo}" data-sd="${c.campo}" ${tipo} maxlength="${c.max||40}" placeholder="${escapaHtml(c.dica||'')}" value="${val}"/>`}</div>`;
+  };
+  box.innerHTML = `
+    <div class="sd-priv">Só o Pai e a administração da casa veem esta ficha. Ela serve pra cuidar de você se algo acontecer numa gira ou atividade. Tudo é opcional, e você pode mudar ou apagar quando quiser.</div>
+    ${Filhos.SAUDE_GRUPOS.map(g => `<div class="sd-grupo">${g.titulo}</div>${g.campos.map(campo).join('')}`).join('')}
+    <button class="btn btn-primary btn-block" id="sd-salvar" style="margin-top:8px">Salvar minha ficha</button>`;
+  // "Nenhuma" desmarca as outras, e marcar outra desmarca "Nenhuma".
+  box.querySelectorAll('[data-varias]').forEach(grp => grp.addEventListener('change', (e) => {
+    const alvo = e.target; if (!alvo.checked) return;
+    grp.querySelectorAll('input').forEach(i => { if (i !== alvo && (alvo.value === 'nenhuma' || i.value === 'nenhuma')) i.checked = false; });
+  }));
+  $('#sd-salvar').onclick = async () => {
+    const btn = $('#sd-salvar'); btn.disabled = true; btn.textContent = 'Salvando…';
+    const campos = {};
+    box.querySelectorAll('[data-sd]').forEach(el => {
+      campos[el.dataset.sd] = el.hasAttribute('data-varias')
+        ? [...el.querySelectorAll('input:checked')].map(i => i.value)
+        : (el.value || '').trim();
+    });
+    try {
+      await Filhos.salvarMeuCadastro(APP.cfgAgendamento, APP.sessao, campos);
+      if (APP.filhoAtual) APP.filhoAtual.saude_em = new Date().toISOString();
+      renderSaudeBadge(); renderActionItems();
+      toast('Ficha salva. Obrigado por cuidar disso.', 'ok');
+      btn.textContent = 'Salvo';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Salvar minha ficha'; }, 1500);
+    } catch (e) {
+      toast(String(e.message||'').includes('inválida') ? 'Confere o telefone: precisa ter DDD e número.' : 'Não consegui salvar agora. Tenta de novo.', 'err');
+      btn.disabled = false; btn.textContent = 'Salvar minha ficha';
+    }
+  };
+}
+
 async function renderReembolso() {
   const f = APP.filhoAtual;
   if(!f) return;

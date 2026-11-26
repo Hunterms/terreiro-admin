@@ -1,4 +1,4 @@
-import { CENSO, respostaCensoValida } from '../filhos.js';
+import { CENSO, respostaCensoValida, SAUDE, validarSaude } from '../filhos.js';
 import { _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText } from '../email-textos.js';
 
 /**
@@ -222,6 +222,7 @@ export default {
       if (rota === '/criar-pin') return await rotaCriarPin(body, env);
       if (rota === '/zerar-pin') return await rotaZerarPin(body, request, env);
       if (rota === '/meu-cadastro') return await rotaMeuCadastro(body, env);
+      if (rota === '/minha-saude') return await rotaMinhaSaude(body, env);
       if (rota === '/aceitar-termo') return await rotaAceitarTermo(body, env);
       if (rota === '/responder-escala') return await rotaResponderEscala(body, env);
       if (rota === '/mensalidade') return await rotaMensalidade(body, env);
@@ -1970,6 +1971,8 @@ async function rotaFilhos(env) {
     for (const [k, v] of Object.entries(f)) {
       // Censo: o valor é sensível e fica aqui dentro. Sai só QUE respondeu.
       if (k.startsWith('censo_')) { (out.censo_ok ||= []).push(k); continue; }
+      // Saúde: idem. Sai só a data da última atualização.
+      if (k.startsWith('saude_') && k !== 'saude_em') continue;
       if (!CAMPOS_PRIVADOS.includes(k)) out[k] = v;
     }
     return out;
@@ -2775,11 +2778,36 @@ async function rotaMeuCadastro(body, env) {
     patch[campo] = body[campo];
   }
 
+  // Ficha de saúde e emergência: só o filho escreve. Vazio apaga. Ver filhos.js.
+  let mexeuSaude = false;
+  for (const { campo } of SAUDE) {
+    if (body?.[campo] === undefined) continue;
+    const r = validarSaude(campo, body[campo]);
+    if (!r.ok) return json({ error: 'resposta inválida: ' + campo }, 400);
+    patch[campo] = r.valor;
+    mexeuSaude = true;
+  }
+  if (mexeuSaude) patch.saude_em = new Date().toISOString();
+
   if (!Object.keys(patch).length) return json({ error: 'nada pra salvar' }, 400);
 
   patch.atualizadoEm = new Date().toISOString();
   await fsPatch(PROJETO_PVD, 'fin_filhos', String(filho_id), token, patch);
   return json({ ok: true, ...patch });
+}
+
+/**
+ * A ficha de saúde do próprio filho, pra ele reler e mudar. Só quem prova ser
+ * a pessoa (sessão ou PIN, pelo quemFala) recebe; o /filhos nunca devolve isso.
+ */
+async function rotaMinhaSaude(body, env) {
+  const token = await tokenGoogle(env);
+  const quem = await quemFala(body, env, token);
+  if (quem.erro) return json({ error: quem.erro }, quem.status);
+  const f = quem.filho; // o quemFala já leu o documento
+  const ficha = {};
+  for (const { campo } of SAUDE) if (f[campo] != null) ficha[campo] = f[campo];
+  return json({ ok: true, ficha, saude_em: f.saude_em || null });
 }
 
 /**

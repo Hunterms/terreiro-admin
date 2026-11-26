@@ -326,7 +326,7 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 }
 import * as Push from "./push.js";
 import { linhasDeEntrada, somarPor } from "./entradas.js";
-import { CENSO, NAO_DIZER } from "./filhos.js";
+import { CENSO, NAO_DIZER, SAUDE, SAUDE_GRUPOS } from "./filhos.js";
 import {
   _emailAtendSubject, _buildEmailAtendHTML, _buildEmailAtendText, emailAtendEhReserva,
   _emailConfirmacaoSubject, _proximasParcelas, _buildEmailConfirmacaoHTML, _buildEmailConfirmacaoText,
@@ -2298,6 +2298,7 @@ function renderFilhos(c) {
         <div class="page-sub">${S.filhos.length} cadastrados · ${S.filhos.filter(f=>!f.status||f.status==='ativo').length} ativos</div>
       </div>
       <div class="page-actions">
+        <button class="btn" onclick="window._app.abrirFichaEmergencia()">🩺 Ficha de emergência</button>
         <button class="btn" onclick="navigator.clipboard.writeText('https://terreirodocandieiro.com.br/cadastro-filho.html').then(()=>window._app.toast('Link de cadastro copiado','ok'))">Copiar link de cadastro</button>
         <button class="btn btn-primary" onclick="window._app.openFilhoForm()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2415,6 +2416,57 @@ function recusarCadastro(cid) {
   });
 }
 
+// ── SAÚDE E EMERGÊNCIA (só leitura no admin) ───────────────────────────────
+// Quem escreve é o filho, na área dele (filhos.js › SAUDE_GRUPOS). Aqui a casa
+// só lê, pra ter na mão numa gira. Rótulo vem da mesma lista: opção nova lá
+// aparece aqui sem mexer.
+const _saudeTxt = (f, campo) => {
+  const c = SAUDE.find(x => x.campo === campo); const v = f?.[campo];
+  if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '';
+  if (c?.opcoes) { const m = Object.fromEntries(c.opcoes); return (Array.isArray(v) ? v : [v]).map(x => m[x] || x).join(', '); }
+  return String(v);
+};
+const _temAlerta = (f) => {
+  const fora = x => x && !(x.length === 1 && x[0] === 'nenhuma');
+  return fora(f.saude_alergias) || fora(f.saude_condicoes) || !!f.saude_remedios || !!f.saude_alergias_txt || !!f.saude_condicoes_txt;
+};
+function blocoSaude(f) {
+  if (!f?.saude_em) return `<div style="font-size:13.5px;color:var(--text2)">Ainda não preencheu. A ficha fica na área do filho, aba Casa.</div>`;
+  const linha = (r, v) => v ? `<div style="display:grid;grid-template-columns:130px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:13.5px"><span style="color:var(--text3)">${r}</span><span>${escapaHtml(v)}</span></div>` : '';
+  const tel = t => t ? t.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3') : '';
+  return `
+    ${linha('Emergência', [_saudeTxt(f,'saude_contato_nome'), _saudeTxt(f,'saude_contato_rel') && `(${_saudeTxt(f,'saude_contato_rel')})`, tel(f.saude_contato_tel)].filter(Boolean).join(' '))}
+    ${linha('Segundo contato', [_saudeTxt(f,'saude_contato2_nome'), tel(f.saude_contato2_tel)].filter(Boolean).join(' '))}
+    ${linha('Sangue', _saudeTxt(f,'saude_sangue'))}
+    ${linha('Alergias', [_saudeTxt(f,'saude_alergias'), _saudeTxt(f,'saude_alergias_txt')].filter(Boolean).join(' · '))}
+    ${linha('Cuidado com', [_saudeTxt(f,'saude_condicoes'), _saudeTxt(f,'saude_condicoes_txt')].filter(Boolean).join(' · '))}
+    ${linha('Remédios', _saudeTxt(f,'saude_remedios'))}
+    ${linha('Não come', [_saudeTxt(f,'saude_restricoes'), _saudeTxt(f,'saude_restricoes_txt')].filter(Boolean).join(' · '))}
+    ${linha('Plano', _saudeTxt(f,'saude_plano'))}
+    ${linha('Mais', _saudeTxt(f,'saude_obs'))}
+    <div style="font-size:11.5px;color:var(--text3);margin-top:8px">Atualizada em ${new Date(f.saude_em).toLocaleDateString('pt-BR')} · só a administração vê</div>`;
+}
+// A casa inteira numa tela: quem tem alergia, condição ou remédio, e quem chamar.
+function abrirFichaEmergencia() {
+  const ativos = S.filhos.filter(f => !f.status || f.status === 'ativo').sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  const com = ativos.filter(_temAlerta), preencheram = ativos.filter(f => f.saude_em).length;
+  const tel = t => t ? t.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3') : '';
+  openModal(`
+    <div class="modal-h"><h3>Ficha de emergência</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${preencheram} de ${ativos.length} filhos ativos preencheram. ${com.length} precisam de algum cuidado.</div>
+      ${com.length ? com.map(f => `
+        <div style="padding:12px 0;border-top:1px solid var(--border)">
+          <div style="font-weight:700;font-size:15px">${escapaHtml(f.nome)}${f.saude_sangue && f.saude_sangue!=='nao_sei' ? ` <span class="chip chip-red" style="font-size:11px">${escapaHtml(_saudeTxt(f,'saude_sangue'))}</span>`:''}</div>
+          ${[['Alergia', [_saudeTxt(f,'saude_alergias'), _saudeTxt(f,'saude_alergias_txt')].filter(x=>x && x!=='Nenhuma').join(' · ')],
+             ['Cuidado', [_saudeTxt(f,'saude_condicoes'), _saudeTxt(f,'saude_condicoes_txt')].filter(x=>x && x!=='Nada').join(' · ')],
+             ['Remédio', _saudeTxt(f,'saude_remedios')],
+             ['Chamar', [_saudeTxt(f,'saude_contato_nome'), tel(f.saude_contato_tel)].filter(Boolean).join(' · ')]]
+            .filter(([,v]) => v).map(([r,v]) => `<div style="font-size:13.5px;margin-top:4px"><span style="color:var(--text3)">${r}:</span> ${escapaHtml(v)}</div>`).join('')}
+        </div>`).join('') : '<div class="empty"><div class="empty-s">Ninguém marcou alergia, condição ou remédio ainda.</div></div>'}
+    </div>
+    <div class="modal-f"><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`, { lg: true });
+}
 function openFilhoForm(id=null, pre=null) {
   const f = id ? S.filhos.find(x=>x.id===id) : pre;
   const isEdit = !!id;
@@ -2491,6 +2543,8 @@ function openFilhoForm(id=null, pre=null) {
           <select class="fi" id="ff-prazo">${sel(f?.prazo||'10', [['10','Dia 10'],['15','Dia 15'],['20','Dia 20'],['ultimo','Último dia'],['combinado','Combinado']])}</select>
         </div>
       </div>
+
+      ${isEdit ? `<div class="ff-sec">Saúde e emergência</div>${blocoSaude(f)}` : ''}
 
       <div class="fi-group" style="margin-top:6px"><label>Observações</label><textarea class="fi" id="ff-obs" rows="2">${escapaHtml(f?.obs||'')}</textarea></div>
 
@@ -10142,7 +10196,7 @@ window._app = {
   setPedTab,
   setPedidoStatus,
   deletarPedido,
-  reenviarEmailsPendentes, cobrarPedidoPorEmail,
+  reenviarEmailsPendentes, cobrarPedidoPorEmail, abrirFichaEmergencia,
   backfillAlunosRecorrentes,
   // Debug helpers
   _checarEmailsPendentes: () => {
