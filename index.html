@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Candieiro"/>
 <!-- Google Identity Services pra OAuth com Calendar -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<link rel="stylesheet" href="css/main.css?v=20261126b"/><!-- troca o ?v= quando mudar o CSS: o navegador guarda o velho -->
+<link rel="stylesheet" href="css/main.css?v=20261126c"/><!-- troca o ?v= quando mudar o CSS: o navegador guarda o velho -->
 </head>
 <body>
 
@@ -703,8 +703,37 @@ function openModal(html, opts={}) {
   const bd = $('#modal-backdrop'), bod = $('#modal-body');
   bod.className = 'modal' + (opts.lg ? ' modal-lg' : '');
   bod.innerHTML = html;
+  msAplicar(bod);
   bd.classList.add('show');
   bd.onclick = e => { if(e.target===bd) closeModal(); };
+}
+// ── LISTA QUE ABRE (multi-seleção) ─────────────────────────────────────────
+// Nuvem de botões com 13, 40, 72 nomes vira um campo: mostra o que está
+// marcado e abre a lista com busca. Os botões continuam os mesmos (data-sel),
+// então quem lê a seleção ($$('#x [data-sel="true"]')) não muda nada.
+// Pra usar: <div class="chips" id="..." data-ms="Escolher funções">botões</div>
+function msAplicar(root) {
+  root.querySelectorAll('.chips[data-ms]').forEach(box => {
+    if (box.closest('.ms')) return;
+    const det = document.createElement('details');
+    det.className = 'ms';
+    det.innerHTML = `<summary class="fi ms-sum"></summary><div class="ms-pop"><input class="fi ms-busca" placeholder="Buscar" autocomplete="off"/></div>`;
+    box.replaceWith(det);
+    det.querySelector('.ms-pop').appendChild(box);
+    const vazio = box.dataset.ms;
+    const resumo = () => {
+      const on = [...box.querySelectorAll('[data-sel="true"]')].map(b => b.textContent.replace(/\s+/g,' ').trim());
+      det.querySelector('.ms-sum').innerHTML = on.length
+        ? `<span>${on.slice(0,3).map(escapaHtml).join(', ')}${on.length>3?` <b>+${on.length-3}</b>`:''}</span>`
+        : `<span class="ms-ph">${escapaHtml(vazio)}</span>`;
+    };
+    box.addEventListener('click', () => setTimeout(resumo, 0));
+    const busca = det.querySelector('.ms-busca');
+    busca.oninput = () => { const q = busca.value.trim().toLowerCase(); box.querySelectorAll('[data-sel]').forEach(b => { b.hidden = q && !b.textContent.toLowerCase().includes(q); }); };
+    // Só uma aberta por vez.
+    det.addEventListener('toggle', () => { if (det.open) { root.querySelectorAll('details.ms[open]').forEach(o => { if (o !== det) o.open = false; }); if (matchMedia('(min-width:641px)').matches) busca.focus(); } });
+    resumo();
+  });
 }
 function closeModal() {
   $('#modal-backdrop').classList.remove('show');
@@ -2388,7 +2417,7 @@ function openFilhoForm(id=null, pre=null) {
 
       <div class="ff-sec">Na casa</div>
       <div class="fi-group"><label>Funções</label>
-        <div class="chips" id="ff-postos">
+        <div class="chips" id="ff-postos" data-ms="Escolher funções">
           ${S.funcoes.filter(fn=>!fn.arquivada).map(fn => {
             const on = (f?.postos||[]).includes(fn.id);
             return `<button type="button" class="chip ${on?'chip-gold':''}" data-fid="${fn.id}" data-sel="${on}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${escapaHtml(fn.nome)}</button>`;
@@ -2636,7 +2665,7 @@ function openFuncaoForm(id=null) {
       </div>
       <div class="fi-group" id="fn-restritos-wrap" style="display:${f?.restrito_a_filhos && f.restrito_a_filhos.length>0?'':'none'}">
         <label>Filhos elegíveis</label>
-        <div class="chips" id="fn-restritos">
+        <div class="chips" id="fn-restritos" data-ms="Escolher quem pode">
           ${S.filhos.filter(x=>!x.status||x.status==='ativo').map(x => {
             const sel = (f?.restrito_a_filhos||[]).includes(x.id);
             return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${x.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${x.nome.split(' ')[0]}</button>`;
@@ -2943,7 +2972,7 @@ function openKanbanForm(id=null) {
       </div>
       <div class="fi-group"><label>Prazo</label><input type="date" class="fi" id="kc-prazo" value="${k?.prazo||''}"/></div>
       <div class="fi-group"><label>Responsáveis</label>
-        <div class="chips" id="kc-resps">
+        <div class="chips" id="kc-resps" data-ms="Escolher responsáveis">
           ${S.filhos.filter(f=>!f.status||f.status==='ativo').map(f => {
             const sel = (k?.responsaveis||[]).includes(f.id);
             return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${f.id}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${f.nome.split(' ')[0]}</button>`;
@@ -4645,7 +4674,7 @@ function openLojinhaEscalaForm(periodoId, inicio, fim, escId='') {
       ${dias.map(d => `
         <div class="fi-group">
           <label style="text-transform:capitalize">${d.label} (${fmt.data(d.data)})</label>
-          <div class="chips" id="lj-${d.data}">
+          <div class="chips" id="lj-${d.data}" data-ms="Escolher quem fica">
             ${grupo.map(f => {
               const sel = (alocByDia[d.data]||[]).includes(f.id);
               return `<button type="button" class="chip ${sel?'chip-gold':''}" data-fid="${f.id}" data-dia="${d.data}" data-sel="${sel}" onclick="this.dataset.sel = this.dataset.sel==='true'?'false':'true'; this.classList.toggle('chip-gold')">${f.nome.split(' ')[0]}</button>`;
@@ -4898,7 +4927,7 @@ function openEscalaForm(evId, escId='') {
         return `
         <div class="fi-group">
           <label>${fn.nome} ${restrita?`<span class="chip chip-purple" style="font-size:10px;margin-left:6px">restrita · ${elegiveis.length}</span>`:''}${dicaQtd}${dicaSp}</label>
-          <div class="chips" id="${idDispLog}">
+          <div class="chips" id="${idDispLog}" data-ms="Escolher pessoas">
             ${elegiveis.length===0 ? '<span style="color:var(--text3);font-size:12px">Nenhum filho elegível pra essa função</span>' : elegiveis.map(f => {
               const sel = (alocPreenchidas[fn.id]||[]).includes(f.id);
               const indisp = indispMap[f.id];

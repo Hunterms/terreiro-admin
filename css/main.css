@@ -279,3 +279,21 @@ select.fi option{background:#1a1a1a;color:var(--text)}
   .modal-f{position:sticky;bottom:0;background:#181412;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px))}
   .modal-f .btn{flex:1;justify-content:center;min-height:46px}
 }
+
+/* Lista que abre (msAplicar): o campo mostra o que está marcado; a lista tem
+   busca, uma linha por opção e marca de selecionado. */
+.ms{position:relative}
+.ms-sum{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
+.ms-sum::-webkit-details-marker{display:none}
+.ms-sum::after{content:"";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg) translateY(-2px);flex-shrink:0}
+.ms[open] .ms-sum::after{transform:rotate(-135deg) translateY(-2px)}
+.ms-sum span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms-ph{color:var(--text3)}
+.ms-pop{margin-top:6px;border:1px solid var(--border2);border-radius:var(--rad);background:#1d1916;padding:8px;max-height:320px;overflow-y:auto}
+.ms-pop .ms-busca{margin-bottom:6px;min-height:40px}
+.ms-pop .chips{display:flex;flex-direction:column;gap:2px}
+.ms-pop .chips .chip{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;text-align:left;border:0;border-radius:8px;padding:10px 10px;font-size:14px;font-weight:500;background:none;min-height:40px}
+.ms-pop .chips .chip::before{content:"";width:18px;height:18px;border:2px solid var(--border2);border-radius:5px;flex-shrink:0}
+.ms-pop .chips .chip[data-sel="true"]::before{background:var(--gold);border-color:var(--gold);box-shadow:inset 0 0 0 3px #1d1916}
+.ms-pop .chips .chip:hover{background:var(--glass2)}
+.ms-pop .chips .chip[hidden]{display:none}
