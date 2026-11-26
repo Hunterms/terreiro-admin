@@ -663,6 +663,18 @@ const pad = n => String(n).padStart(2,'0');
 const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
 const fmtCurto = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—';
 
+// Escalas dos últimos ~4 meses em diante, lidas uma vez por visita (a página
+// pedia duas vezes a coleção inteira: a do filho e a da lojinha).
+let _escalasRecentes = null;
+function escalasRecentes() {
+  if (!_escalasRecentes) {
+    const desde = new Date(Date.now() - 120*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+    _escalasRecentes = getDocs(query(collection(dbPvd,'adm_escalas'), where('data','>=',desde)))
+      .catch(e => { _escalasRecentes = null; throw e; });
+  }
+  return _escalasRecentes;
+}
+
 // publicadoEm chega do Worker como {seconds}/{_seconds}, ISO ou número.
 const quandoMs = p => { const s = p?.seconds ?? p?._seconds; const ms = p?.toDate ? +p.toDate() : s != null ? s*1000 : (typeof p === 'string' || typeof p === 'number') ? +new Date(p) : 0; return isNaN(ms) ? 0 : ms; };
 
@@ -781,7 +793,10 @@ function dataEfetivaAloc(es, aloc, funcoes) {
 // remover, então não achou o quarto.
 async function carregarRegasDiarias() {
   try {
-    const rSnap = await getDocs(collection(dbPvd,'adm_rega_diaria'));
+    // Só do mês atual em diante: é o que a tela mostra. Ler o ano inteiro a cada
+    // visita de cada filho foi parte do que estourou a cota grátis em 26/11.
+    const iniMes = new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,8) + '01';
+    const rSnap = await getDocs(query(collection(dbPvd,'adm_rega_diaria'), where('data','>=',iniMes)));
     APP.regasDiarias = {};
     rSnap.docs.forEach(d => { APP.regasDiarias[d.id] = { id:d.id, ...d.data() }; });
   } catch(e) { Filhos.avisarFalha('a escala de rega', e); APP.regasDiarias = {}; }
@@ -885,14 +900,14 @@ async function selecionarFilho(id) {
 
   // Carrega escalas pra essa pessoa
   try {
-    const escSnap = await getDocs(collection(dbPvd,'adm_escalas'));
+    const escSnap = await escalasRecentes();
     APP.escalas = escSnap.docs.map(d => ({ id:d.id, ...d.data() }))
       .filter(es => (es.alocacoes||[]).some(a => a.filho_id === id));
   } catch(e) { console.warn('Erro escalas', e); }
 
   // Carrega tarefas (kanban): minhas + lista de afazeres da casa
   try {
-    const tSnap = await getDocs(collection(dbPvd,'adm_kanban'));
+    const tSnap = await getDocs(query(collection(dbPvd,'adm_kanban'), where('status','in',['todo','doing','blocked'])));
     const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
     APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
     APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
@@ -918,7 +933,7 @@ async function selecionarFilho(id) {
   // Elas só vão editar as alocações cuja funcao_id == Lojinha; o resto fica intacto.
   if (filho.gerencia_lojinha) {
     try {
-      const lSnap = await getDocs(collection(dbPvd,'adm_escalas'));
+      const lSnap = await escalasRecentes();
       APP.lojinhaEscalas = lSnap.docs.map(d => ({ id:d.id, ...d.data() }))
         .filter(es => es.tipo === 'gira');
     } catch(e) { Filhos.avisarFalha('a escala da lojinha', e); APP.lojinhaEscalas = []; }
@@ -2830,7 +2845,7 @@ async function _recarregarTarefas() {
   const id = APP.filhoAtual?.id;
   if (!id) return;
   try {
-    const tSnap = await getDocs(collection(dbPvd,'adm_kanban'));
+    const tSnap = await getDocs(query(collection(dbPvd,'adm_kanban'), where('status','in',['todo','doing','blocked'])));
     const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
     APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
     APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);

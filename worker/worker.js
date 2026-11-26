@@ -1177,13 +1177,19 @@ async function rotaMural(body, env) {
     ? marcarPwa(token, quem.id, quem.filho).catch((e) => console.warn('pwa', e?.message || e))
     : null;
 
-  const [avisos, eventos, inscricoes] = await Promise.all([
-    fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
-    // Mesmo caso da /agenda: se a service account não alcançar o projeto do
-    // site, isto estoura em vez de devolver agenda vazia em silêncio.
-    fsList(PROJETO_CAND, 'eventos', token),
-    fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
-  ]);
+  // As três listas são as mesmas pra todo filho: ficam 2 minutos na memória
+  // (ver _filhosMemo). O recorte por pessoa continua sendo feito abaixo.
+  if (!_muralMemo || Date.now() - _muralMemo.em >= FILHOS_MEMO_MS) {
+    const listas = await Promise.all([
+      fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
+      // Mesmo caso da /agenda: se a service account não alcançar o projeto do
+      // site, isto estoura em vez de devolver agenda vazia em silêncio.
+      fsList(PROJETO_CAND, 'eventos', token),
+      fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
+    ]);
+    _muralMemo = { em: Date.now(), listas };
+  }
+  const [avisos, eventos, inscricoes] = _muralMemo.listas;
   await marca;   // aqui, e não solta: ver o comentário lá em cima
 
   return json({
@@ -1959,7 +1965,15 @@ export function podeAjustar(ciclo, hoje = hojeSP()) {
 // dependia dele pra mensalidade, checkout e push — agora depende pra abrir.
 const CAMPOS_PRIVADOS = ['tel', 'pin', 'pin_hash', 'pin_criado_em', 'auth_email', 'obs', 'valor'];
 
+// A lista pública muda pouco e cada pedido custava 76 leituras (uma por
+// filho). Toda visita à área do filho, à despensa e ao cadastro pede essa lista.
+// Fica 2 minutos na memória do Worker: dois filhos abrindo no mesmo minuto
+// pagam uma vez. Quem acabou de responder algo atualiza a própria tela sozinho.
+let _filhosMemo = null;
+let _muralMemo = null;
+const FILHOS_MEMO_MS = 120000;
 async function rotaFilhos(env) {
+  if (_filhosMemo && Date.now() - _filhosMemo.em < FILHOS_MEMO_MS) return json(_filhosMemo.corpo);
   const token = await tokenGoogle(env);
   const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
 
@@ -1979,6 +1993,7 @@ async function rotaFilhos(env) {
   });
 
   limpos.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  _filhosMemo = { em: Date.now(), corpo: { filhos: limpos } };
   return json({ filhos: limpos });
 }
 

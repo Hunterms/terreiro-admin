@@ -282,7 +282,7 @@ import {
   getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/auth/+esm";
 import {
-  getFirestore, collection, doc, onSnapshot as _onSnapshotOriginal, addDoc, updateDoc, deleteDoc, setDoc,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot as _onSnapshotOriginal, addDoc, updateDoc, deleteDoc, setDoc,
   query, where, orderBy, serverTimestamp, getDoc, getDocs, writeBatch
 } from "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firestore/+esm";
 
@@ -321,8 +321,69 @@ function _falhaDeLeitura(ref, e) {
     : `Não consegui carregar ${fonte}. Confere a internet e recarrega.`;
 }
 
+let _ouvindoAgora = null;
 function onSnapshot(ref, aoReceber, aoFalhar) {
-  return _onSnapshotOriginal(ref, aoReceber, aoFalhar || ((e) => _falhaDeLeitura(ref, e)));
+  const nome = _ouvindoAgora;
+  const receber = nome ? (snap) => { aoReceber(snap); _chegou(nome); } : aoReceber;
+  return _onSnapshotOriginal(ref, receber, aoFalhar || ((e) => { _falhaDeLeitura(ref, e); if (nome) _chegou(nome); }));
+}
+
+// ── CADA TELA LÊ SÓ O QUE USA ──────────────────────────────────────────────
+// Até 26/11 o admin abria as 29 coleções inteiras ao entrar, qualquer que
+// fosse a tela, e uma manhã de recargas estourou as 50 mil leituras grátis do
+// dia. Agora cada coleção se liga na primeira vez que uma tela precisa dela e
+// fica ligada até sair do admin. SEMPRE = o que o menu e o Hoje usam.
+// O mapa saiu do código (quem lê S.x em cada render), medido em 26/11. Tela
+// nova: põe aqui o que ela lê; esqueceu, a tela abre vazia e o erro é visível.
+const _ouvintes = {}, _ligados = new Set(), _chegaram = new Set(), _esperas = [];
+const SEMPRE = ['fin_filhos','adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
+  'adm_solicitacoes','vendas_pedidos','fin_gastos','fin_gastos_pagos'];
+const _HOJE = ['adm_atendimentos','adm_consulentes','adm_escalas','eventos','adm_kanban','adm_rega_diaria'];
+const POR_ROTA = {
+  dashboard: _HOJE,
+  filhos: ['adm_grupos','adm_despensa','adm_push_tokens'],
+  funcoes: [], grupos: ['adm_grupos'],
+  kanban: ['eventos','adm_kanban'],
+  'controle-disp': ['adm_disponibilidade'],
+  rega: ['adm_rega_diaria'],
+  calendario: ['eventos','vendas_produtos'],
+  escalas: ['adm_disponibilidade','adm_escalas','eventos'],
+  despensa: ['adm_despensa'],
+  contas: [],
+  agenda: ['adm_atendimentos','adm_consulentes','eventos','adm_servicos'],
+  solicitacoes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
+  consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
+  servicos: ['adm_servicos'],
+  'config-agendamento': ['adm_atendimentos','eventos','adm_servicos'],
+  produtos: ['adm_consulentes','vendas_produtos'],
+  pedidos: ['adm_consulentes','vendas_produtos'],
+  inteligencia: ['adm_atendimentos','adm_consulentes','vendas_produtos','adm_servicos'],
+  entradas: ['adm_atendimentos','evento_inscricoes','eventos','fin_mensalidade_pedidos'],
+  avisos: ['adm_avisos','adm_avisos_lidos','adm_grupos'],
+  lembretes: ['adm_escalas','eventos','adm_kanban','adm_rega_diaria'],
+  perguntas: ['adm_perguntas','adm_respostas'],
+  importar: ['eventos'],
+  acessos: [], links: [],
+  dados: '*',
+};
+function _chegou(nome) {
+  _chegaram.add(nome);
+  for (let i = _esperas.length - 1; i >= 0; i--) if (_esperas[i].faltam.every(n => _chegaram.has(n))) { _esperas[i].ok(); _esperas.splice(i, 1); }
+}
+function _ligar(nome) {
+  if (_ligados.has(nome) || !_ouvintes[nome]) return;
+  _ligados.add(nome);
+  _ouvindoAgora = nome;
+  try { S.unsubs.push(_ouvintes[nome]()); } finally { _ouvindoAgora = null; }
+}
+function _precisa(rota) { const r = POR_ROTA[rota]; return r === '*' ? Object.keys(_ouvintes) : [...SEMPRE, ...(r || [])]; }
+function ouvir(nome, abrir) { _ouvintes[nome] = abrir; if (_precisa(S.route || rotaDoHash() || 'dashboard').includes(nome)) _ligar(nome); }
+function garantirRota(rota) { _precisa(rota).forEach(_ligar); }
+/** Liga tudo e espera chegar. Pra ação que cruza a casa inteira (apagar pessoa, backup). */
+function garantirTudo(ms = 10000) {
+  const todos = Object.keys(_ouvintes); todos.forEach(_ligar);
+  if (todos.every(n => _chegaram.has(n))) return Promise.resolve();
+  return new Promise(ok => { _esperas.push({ faltam: todos, ok }); setTimeout(ok, ms); });
 }
 import * as Push from "./push.js";
 import { linhasDeEntrada, somarPor } from "./entradas.js";
@@ -362,8 +423,16 @@ const cfgCandieiro = {
 
 const appPvd = initializeApp(cfgPvd, 'pvd');
 const appCand = initializeApp(cfgCandieiro, 'candieiro');
-const dbPvd = getFirestore(appPvd);
-const dbCand = getFirestore(appCand);
+// Cache no aparelho: reabrir o admin (ou trocar de aba) dentro de ~30 min paga
+// só o que mudou, não a coleção inteira de novo. Foi a recarga em série que
+// estourou a cota gratuita em 26/11. Se o navegador não deixar (aba anônima),
+// cai no Firestore comum e funciona igual, só sem a economia.
+const _comCache = (app) => {
+  try { return initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+  catch (e) { console.warn('sem cache local:', e.message); return getFirestore(app); }
+};
+const dbPvd = _comCache(appPvd);
+const dbCand = _comCache(appCand);
 const authPvd = getAuth(appPvd);
 const authCand = getAuth(appCand);
 
@@ -944,21 +1013,22 @@ function setupNav() {
 function attachListeners() {
   S.unsubs.forEach(u=>u && u());
   S.unsubs = [];
+  _ligados.clear(); _chegaram.clear();
 
   // Filhos
-  S.unsubs.push(onSnapshot(query(collection(dbPvd,'fin_filhos'), orderBy('nome')), snap => {
+  ouvir('fin_filhos', () => onSnapshot(query(collection(dbPvd,'fin_filhos'), orderBy('nome')), snap => {
     S.filhos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route) renderRoute();
   }));
 
   // Cadastros pendentes (página pública /cadastro-filho.html, via Worker)
-  S.unsubs.push(onSnapshot(query(collection(dbPvd,'adm_cadastros_filho'), where('status','==','pendente')), snap => {
+  ouvir('adm_cadastros_filho', () => onSnapshot(query(collection(dbPvd,'adm_cadastros_filho'), where('status','==','pendente')), snap => {
     S.cadastrosFilho = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route === 'filhos') renderRoute();
   }));
 
   // Pedidos de acesso ao PDV (tela de login do PDV → Worker /pdv-cadastro, conta nasce desabilitada)
-  S.unsubs.push(onSnapshot(query(collection(dbPvd,'pdv_cadastros'), where('status','==','pendente')), snap => {
+  ouvir('pdv_cadastros', () => onSnapshot(query(collection(dbPvd,'pdv_cadastros'), where('status','==','pendente')), snap => {
     S.acessosPdv = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     const badge = $('#acessos-badge');
     if(badge) { badge.textContent = S.acessosPdv.length; badge.style.display = S.acessosPdv.length ? '' : 'none'; }
@@ -966,47 +1036,47 @@ function attachListeners() {
   }));
 
   // Funções
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_grupos'), snap => {
+  ouvir('adm_grupos', () => onSnapshot(collection(dbPvd,'adm_grupos'), snap => {
     S.grupos = snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(g => !g.arquivado);
     if(S.route === 'grupos') renderRoute();
   }));
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_funcoes'), snap => {
+  ouvir('adm_funcoes', () => onSnapshot(collection(dbPvd,'adm_funcoes'), snap => {
     S.funcoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route) renderRoute();
   }));
 
   // Kanban
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_kanban'), snap => {
+  ouvir('adm_kanban', () => onSnapshot(collection(dbPvd,'adm_kanban'), snap => {
     S.kanban = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route === 'kanban' || S.route === 'meu-dashboard' || S.route === 'dashboard') renderRoute();
   }));
 
   // Eventos (candieiro project!)
-  S.unsubs.push(onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
+  ouvir('eventos', () => onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
     S.eventos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['calendario','dashboard','meu-dashboard','escalas','agenda'].includes(S.route)) renderRoute();
   }));
 
   // Avisos
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_avisos'), snap => {
+  ouvir('adm_avisos', () => onSnapshot(collection(dbPvd,'adm_avisos'), snap => {
     S.avisos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['avisos','avisos-filho','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Disponibilidade
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => {
+  ouvir('adm_disponibilidade', () => onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => {
     S.disponibilidade = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['disponibilidade','escalas','controle-disp','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Escalas
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_escalas'), snap => {
+  ouvir('adm_escalas', () => onSnapshot(collection(dbPvd,'adm_escalas'), snap => {
     S.escalas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Inscrições em eventos (pagamentos)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'evento_inscricoes'), snap => {
+  ouvir('evento_inscricoes', () => onSnapshot(collection(dbPvd,'evento_inscricoes'), snap => {
     S.eventoInscricoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     // Re-render modal de pagamentos se aberto
     if(window._app && window._app.renderPagamentos) window._app.renderPagamentos();
@@ -1014,13 +1084,13 @@ function attachListeners() {
   }));
 
   // Rega diária (1 doc por dia coberto)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_rega_diaria'), snap => {
+  ouvir('adm_rega_diaria', () => onSnapshot(collection(dbPvd,'adm_rega_diaria'), snap => {
     S.regas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['rega','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Despensa (itens rituais do ilê — velas, ervas, defumadores)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_despensa'), snap => {
+  ouvir('adm_despensa', () => onSnapshot(collection(dbPvd,'adm_despensa'), snap => {
     S.despensa = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['despensa','dashboard'].includes(S.route)) renderRoute();
   }));
@@ -1028,43 +1098,43 @@ function attachListeners() {
   // Aparelhos registrados pra notificação. Um doc por APARELHO, e o id é o
   // token — dois celulares da mesma pessoa são dois docs. Quem conta gente
   // conta `filho_id` distinto, não docs.
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_push_tokens'), snap => {
+  ouvir('adm_push_tokens', () => onSnapshot(collection(dbPvd,'adm_push_tokens'), snap => {
     S.pushTokens = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(['filhos','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Até quando cada um leu a caixa de avisos. Um doc por pessoa, com `ate` em
   // ISO — é marca d'água, não recibo por aviso.
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_avisos_lidos'), snap => {
+  ouvir('adm_avisos_lidos', () => onSnapshot(collection(dbPvd,'adm_avisos_lidos'), snap => {
     S.avisosLidos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route === 'avisos') renderRoute();
   }));
 
   // Perguntas e respostas (sistema de quiz/alinhamento de conhecimento)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_perguntas'), snap => {
+  ouvir('adm_perguntas', () => onSnapshot(collection(dbPvd,'adm_perguntas'), snap => {
     S.perguntas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route === 'perguntas') renderRoute();
   }));
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_respostas'), snap => {
+  ouvir('adm_respostas', () => onSnapshot(collection(dbPvd,'adm_respostas'), snap => {
     S.respostas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if(S.route === 'perguntas') renderRoute();
   }));
 
   // Serviços oferecidos pelo Pai (consultas, baralho, búzios, etc.)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'adm_servicos'), snap => {
+  ouvir('adm_servicos', () => onSnapshot(collection(dbPvd,'adm_servicos'), snap => {
     S.servicos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
     if(['servicos','config-agendamento','agenda','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Produtos de vendas externas (festas, cursos, lojinha pontual…)
-  S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_produtos'), snap => {
+  ouvir('vendas_produtos', () => onSnapshot(collection(dbPvd,'vendas_produtos'), snap => {
     S.produtos = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.ordem||999)-(b.ordem||999));
     if(['produtos','pedidos','dashboard'].includes(S.route)) renderRoute();
   }));
 
   // Pedidos vindos do form público vendas.html (só admin precisa ver)
   if(S.role === 'admin') {
-    S.unsubs.push(onSnapshot(collection(dbPvd,'vendas_pedidos'), snap => {
+    ouvir('vendas_pedidos', () => onSnapshot(collection(dbPvd,'vendas_pedidos'), snap => {
       // Compra paga pelo site e que você ainda não aprovou volta pra fila de
       // pendentes. O Worker de 02/11 já grava `pendente`, mas o que está no ar
       // pode gravar `confirmado` direto (24/11: compras pulando a aprovação).
@@ -1083,7 +1153,7 @@ function attachListeners() {
   }
 
   // Config das escalas (janela histórica do balanceamento)
-  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
+  ouvir('cfg_escalas', () => onSnapshot(doc(dbPvd,'adm_config','escalas'), snap => {
     if(snap.exists()) S.cfgEscalas = { janela_semanas: 8, ...snap.data() };
     if(S.route === 'escalas') renderRoute();
   }));
@@ -1091,13 +1161,13 @@ function attachListeners() {
   // Prazo de retenção. Doc opcional: sem ele, vale RETENCAO_PADRAO_MESES.
   // Fica em config e não em constante porque o prazo é decisão da casa (e um
   // dia de advogado), não de quem escreveu o código.
-  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','lgpd'), snap => {
+  ouvir('cfg_lgpd', () => onSnapshot(doc(dbPvd,'adm_config','lgpd'), snap => {
     S.cfgLgpd = snap.exists() ? snap.data() : null;
     if(S.route === 'dados') renderRoute();
   }));
 
   // Config do agendamento (pra mensagens do WhatsApp pegarem o PIX, etc.)
-  S.unsubs.push(onSnapshot(doc(dbPvd,'adm_config','agendamento'), snap => {
+  ouvir('cfg_agendamento', () => onSnapshot(doc(dbPvd,'adm_config','agendamento'), snap => {
     if(snap.exists()) S.cfgAgendamento = snap.data();
     if(['solicitacoes','agenda'].includes(S.route)) renderRoute();
     if(S.route === 'config-agendamento' && $('#pausas-painel')) $('#pausas-painel').innerHTML = painelPausas();
@@ -1105,23 +1175,23 @@ function attachListeners() {
 
   // Atendimentos (só admin)
   if(S.role === 'admin') {
-    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
+    ouvir('adm_atendimentos', () => onSnapshot(collection(dbPvd,'adm_atendimentos'), snap => {
       S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       if(['agenda','consulentes','dashboard','entradas'].includes(S.route)) renderRoute();
     }));
 
-    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_consulentes'), snap => {
+    ouvir('adm_consulentes', () => onSnapshot(collection(dbPvd,'adm_consulentes'), snap => {
       S.consulentes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       if(['agenda','consulentes','dashboard'].includes(S.route)) renderRoute();
     }));
 
-    S.unsubs.push(onSnapshot(collection(dbPvd,'adm_solicitacoes'), snap => {
+    ouvir('adm_solicitacoes', () => onSnapshot(collection(dbPvd,'adm_solicitacoes'), snap => {
       S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       if(['solicitacoes','agenda','dashboard','entradas'].includes(S.route)) renderRoute();
     }));
 
     // Mensalidade paga pelo checkout da área do filho (o Worker escreve)
-    S.unsubs.push(onSnapshot(collection(dbPvd,'fin_mensalidade_pedidos'), snap => {
+    ouvir('fin_mensalidade_pedidos', () => onSnapshot(collection(dbPvd,'fin_mensalidade_pedidos'), snap => {
       S.mensalidades = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       if(S.route === 'entradas') renderRoute();
     }));
@@ -1129,12 +1199,12 @@ function attachListeners() {
     // Contas fixas. A collection é do financeiro (fin_gastos) — aqui o admin
     // só cuida do vencimento e da baixa do mês, que é o que o lembrete precisa
     // e o app do financeiro nunca teve.
-    S.unsubs.push(onSnapshot(collection(dbPvd,'fin_gastos'), snap => {
+    ouvir('fin_gastos', () => onSnapshot(collection(dbPvd,'fin_gastos'), snap => {
       S.gastos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       badgeContas();
       if(['contas','dashboard'].includes(S.route)) renderRoute();
     }));
-    S.unsubs.push(onSnapshot(doc(dbPvd,'fin_gastos_pagos', cicloAtual()), snap => {
+    ouvir('fin_gastos_pagos', () => onSnapshot(doc(dbPvd,'fin_gastos_pagos', cicloAtual()), snap => {
       S.gastosPagos = snap.exists() ? snap.data() : {};
       badgeContas();
       if(['contas','dashboard'].includes(S.route)) renderRoute();
@@ -1170,6 +1240,7 @@ function badgeContas() {
 // ── ROUTER ─────────────────────────────────────────────────────────────────
 function navigate(route) {
   S.route = route;
+  garantirRota(route);
   // O hash acompanha a rota pra o link da notificação ter onde chegar. O
   // listener de hashchange compara com S.route, então isto não vira laço.
   if (location.hash.replace(/^#/, '') !== route) location.hash = route;
@@ -9859,6 +9930,7 @@ function mesesAfastado(f) {
 }
 
 async function apagarPessoa(filhoId) {
+  await garantirTudo();
   const f = S.filhos.find(x => x.id === filhoId);
   if (!f) { toast('Filho não encontrado', 'err'); return; }
   const achados = rastrosDe(filhoId);
