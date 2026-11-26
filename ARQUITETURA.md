@@ -453,3 +453,65 @@ Os quatro primeiros saíram num dia e nenhum tocou em dado.
   de rodar uma vez
 - dois tokens `ghp_` pra revogar (§11)
 - `SCHEMA.md` ainda promete o Fluxo C, que não existe (§C das recomendações)
+
+---
+
+# Parte III — O Firebase aguenta o dia a dia? (26/11/2026)
+
+## 12. Os números (console do Firebase, medidos em 26/11)
+
+| | terreiro-pvd | terreiro-candieiro |
+|---|---|---|
+| Plano | Spark (grátis) | Spark (grátis) |
+| Leituras, 30 dias | 696 mil (média 23 mil/dia) | 98 mil |
+| Leituras, 7 dias | 205 mil, sendo 98 mil só em 25–26/11 | |
+| Gravações, 30 dias | 5,7 mil (~190/dia) | 7 |
+| Limite grátis por dia | 50 mil leituras · 20 mil gravações | o mesmo, separado |
+
+Leitura do quadro:
+
+- **Gravação não é problema:** usa 1% do limite.
+- **Leitura é o gargalo.** Um dia normal usa ~18 mil, 36% da cota. Mas houve dia perto de 45 mil (7/11), sem teste nenhum.
+- **O estouro de 26/11** veio de recargas em série do admin pra teste: 27 mil leituras numa janela de 2h. Na versão antiga, cada abertura do admin lia as 29 coleções inteiras, uns 1,3 mil documentos por estimativa.
+- **O corte não é exato.** Às 11h56 o site ainda lia, às 12h05 não lia mais.
+
+## 13. Veredito
+
+**Sim, o Firebase grátis serve pro uso diário da casa.** O volume real cabe com folga. Os três problemas são de desenho, não de tamanho:
+
+1. **Uma cota só pra tudo.** O admin, a área do filho e o agendar público dividem as mesmas 50 mil leituras. Uso interno, inclusive teste, derruba o agendamento dos consulentes.
+2. **Ninguém é avisado.** O primeiro sinal de que a cota acabou é alguém reclamar.
+3. **Folga curta em dia de pico.** 45 mil de 50 mil em dia normal não aguenta um descuido.
+
+## 14. O que fazer, por valor/esforço
+
+**A. Feito hoje: o agendar tem backup.** Banco fora, o site usa `agenda-reserva.json` (foto da agenda real) e manda o pedido pelo WhatsApp com serviço, dia e hora. O padrão continua sendo ler do banco. `?reserva=1` força o modo pra testar. A foto não se atualiza sozinha.
+
+**B. Separar o público do interno: o maior ganho.** Hoje cada visita ao agendar lê ~20 documentos (config, serviços e cada horário ocupado). Proposta:
+- O admin mantém um documento só, `pub_agenda`, com config, serviços públicos e ocupados. Ele já espelha `pub_slots_ocupados`, então é mudar o destino.
+- O agendar passa a ler 1 documento por visita.
+- Esse documento mora no projeto **terreiro-candieiro**, que tem cota própria e quase vazia (98 mil/mês). Assim o admin nunca mais derruba o site.
+- O pedido de consulta continua gravando no pvd. Gravação tem cota separada e sobra.
+- Esforço: uma sessão. É o item que resolve o problema 1.
+
+**C. Alarme de cota.** Um cron do Worker (grátis) lê o uso do dia na API de Monitoring do Google e avisa por email ou push quando passar de 60%. Resolve o problema 2. Esforço: meia sessão.
+
+**D. Blaze com teto de alerta, como seguro.** Preço oficial: US$ 0,03 por 100 mil leituras acima do grátis. O pior dia medido (98 mil) custaria menos de US$ 0,02. O mês atual custaria zero, porque ficou abaixo do grátis. O risco é um bug em loop ler sem parar. Por isso: alerta de orçamento em US$ 1. É decisão de vocês; tecnicamente é o que tira o muro.
+
+**E. Medir leitura por tela.** Com o admin lendo só a tela aberta (desde 26/11), falta medir quanto cada tela custa de fato. Contador local no aparelho, sem gravar no banco. Atende o "taguear o que se usa".
+
+## 15. Organização do back-end
+
+O que está bem e fica:
+- O Worker como porta única da área do filho: sessão por PIN, dado sensível que nunca sai no `/filhos`, memória de 2 a 10 minutos. Esse é o desenho certo.
+- Rules por papel e dono por coleção, das partes I e II.
+
+O que melhorar:
+- **Dois projetos Firebase por acaso viram dois por desenho.** O pvd fica com o interno, que tem dono logado. O candieiro fica com o público, lido por qualquer visitante. Cada um com sua cota. Hoje a divisão é histórica: eventos no candieiro, o resto no pvd.
+- **Leitura pública passa pelo Worker ou por um documento-resumo**, nunca por coleção inteira. O `/agenda` do Worker lê `eventos` inteiro a cada chamada. Merece a mesma memória que o `/filhos` já tem.
+- **Coleção que só cresce precisa de corte por data** em toda leitura: `site_visitas`, `adm_atendimentos`, `vendas_pedidos`. O admin já faz isso no menu e no Hoje.
+- **Sair do Firebase não compensa agora.** O Cloudflare D1 grátis dá 5 milhões de linhas lidas por dia, 100× mais. Mas exigiria reescrever o tempo real, o login e as rules. Só vale se a casa crescer muito, e aí a porta já existe: o Worker.
+
+Ordem: **B → C → E**, e D quando vocês decidirem.
+
+Fontes de preço: cloud.google.com/firestore/pricing (26/11) e developers.cloudflare.com/d1/platform/pricing (26/11).
