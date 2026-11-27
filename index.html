@@ -141,6 +141,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
         Oportunidades
       </button>
+      <button data-route="visitas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Visitas do site
+      </button>
       <div class="section-label">Ajustes</div>
       <button data-route="config-agendamento">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -363,7 +367,7 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 const _ouvintes = {}, _ligados = new Set(), _chegaram = new Set(), _esperas = [];
 const SEMPRE = ['adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
   'adm_solicitacoes_rec','vendas_pedidos_rec'];
-const _HOJE = ['adm_atendimentos_rec','eventos','cfg_numeros'];
+const _HOJE = ['adm_atendimentos_rec'];
 const POR_ROTA = {
   dashboard: _HOJE,
   filhos: ['adm_grupos','adm_despensa','adm_push_tokens'],
@@ -392,7 +396,7 @@ const POR_ROTA = {
   lembretes: ['adm_escalas','eventos','adm_kanban'],
   perguntas: ['adm_perguntas','adm_respostas'],
   importar: ['eventos'],
-  acessos: [], links: [], uso: [],
+  acessos: [], links: [], uso: [], visitas: [],
   dados: '*',
 };
 function _chegou(nome) {
@@ -406,7 +410,7 @@ function _ligar(nome) {
   try { S.unsubs.push(_ouvintes[nome]()); } finally { _ouvindoAgora = null; }
 }
 // A lista de filhos liga em toda tela que não está aqui (quase todas usam).
-const SEM_FILHOS = ['dashboard','agenda','solicitacoes','consulentes','servicos','config-agendamento'];
+const SEM_FILHOS = ['dashboard','visitas','agenda','solicitacoes','consulentes','servicos','config-agendamento'];
 function _precisa(rota) { const r = POR_ROTA[rota]; return r === '*' ? Object.keys(_ouvintes) : [...SEMPRE, ...(SEM_FILHOS.includes(rota) ? [] : ['fin_filhos']), ...(r || [])]; }
 /** Liga as coleções e espera chegar. Pra ação que precisa de algo que a tela não carrega. */
 function precisa(...nomes) {
@@ -1009,7 +1013,7 @@ async function togglePush() {
 // pra cair no default em vez de mostrar "página não encontrada".
 const ROTAS_VALIDAS = ['dashboard','filhos','funcoes','kanban','controle-disp','calendario',
   'escalas','despensa','contas','agenda','solicitacoes','consulentes','servicos','config-agendamento',
-  'produtos','pedidos','inteligencia','avisos','lembretes','perguntas',
+  'produtos','pedidos','inteligencia','visitas','avisos','lembretes','perguntas',
   'meu-dashboard','minhas-escalas','disponibilidade','avisos-filho',
   // Estas três tinham botão no menu e não estavam aqui: dava pra clicar, mas
   // não dava pra voltar. Recarregar a página caía no dashboard, e link
@@ -1362,6 +1366,7 @@ function renderRoute() {
     case 'produtos':      return renderProdutos(c);
     case 'pedidos':       return renderPedidos(c);
     case 'inteligencia':  return renderInteligencia(c);
+    case 'visitas':       return renderVisitas(c);
     case 'entradas':      return renderEntradas(c);
     case 'avisos':        return renderAvisos(c);
     case 'lembretes':     return renderLembretes(c);
@@ -2100,65 +2105,31 @@ function montarResumoDoDia() {
 // derivado do dado (ninguém cadastra pendência), tem contagem, e leva direto
 // pra onde se resolve. Zerou, some. Número da casa fica no fim, não no topo.
 // Ordem = urgência: o que tem gente esperando, depois dinheiro, depois a casa.
+// O Hoje mostra só duas coisas, decisão da casa em 27/11: pedido de consulta
+// pra aprovar e pagamento vencido. O resto mora na tela própria.
 function montarFila() {
-  const hoje = hojeISO();
   const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
   const nomes = (xs, f, n=3) => xs.slice(0,n).map(f).join(' · ') + (xs.length > n ? ` · +${xs.length-n}` : '');
   const plural = (n, um, varios) => `${n} ${n===1?um:varios}`;
-  const brl = v => 'R$ ' + (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fila = [];
-
   const sols = (S.solicitacoes||[]).filter(x => x.status === 'pendente');
   if (sols.length) fila.push({ cor:'gold', titulo: plural(sols.length,'pedido de consulta','pedidos de consulta') + ' pra aprovar',
     sub: nomes(sols, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${dm(x.data)}`), rota:'solicitacoes', acao:'Ver pedidos' });
-
-  const { consultas, atrasadas } = montarResumoDoDia();
-  if (consultas.length) fila.push({ cor:'blue', titulo: plural(consultas.length,'consulta hoje','consultas hoje'),
-    sub: nomes(consultas, a => `${a.hora||'??:??'} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`, 4), rota:'agenda', acao:'Abrir agenda' });
-
   const devendo = semPagamentoHa3Dias();
-  if (devendo.length) fila.push({ cor:'red', titulo: plural(devendo.length,'pessoa sem pagar há mais de 3 dias','pessoas sem pagar há mais de 3 dias'),
+  if (devendo.length) fila.push({ cor:'red', titulo: plural(devendo.length,'pagamento vencido','pagamentos vencidos'),
     sub: nomes(devendo, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${dm(x.data)}`), rota:'solicitacoes', acao:'Cobrar com prazo' });
-
-  // Consulta de hoje sem pagamento: quem combinou de pagar no dia, e quem ficou devendo.
-  const cobrarHoje = consultas.filter(a => !String(a.status_pagamento||'').startsWith('pago'));
-  if (cobrarHoje.length) fila.push({ cor:'gold', titulo: plural(cobrarHoje.length,'consulta pra cobrar hoje','consultas pra cobrar hoje'),
-    sub: nomes(cobrarHoje, a => `${a.hora||''} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}${a.paga_no_dia?' (paga no dia)':''} ${brl(a.valor)}`, 4), rota:'agenda', acao:'Abrir agenda' });
-
-  // Só os últimos 30 dias: o que é mais velho que isso ninguém vai fechar, e vira ruído.
-  const ha30 = new Date(Date.now() - 30*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
-  const passadas = (S.atendimentos||[]).filter(a => a.data && a.data < hoje && a.data >= ha30 && a.status_atendimento === 'agendado');
-  if (passadas.length) fila.push({ cor:'amber', titulo: plural(passadas.length,'consulta passada sem fechar','consultas passadas sem fechar'),
-    sub: 'Marque como realizada ou falta, pra entrar nas contas.', rota:'agenda', acao:'Fechar' });
-
-  const peds = (S.pedidos||[]).filter(p => p.status === 'pendente');
-  if (peds.length) fila.push({ cor:'gold', titulo: plural(peds.length,'pedido da loja pra confirmar','pedidos da loja pra confirmar'),
-    sub: nomes(peds, p => `${escapaHtml((p.nome||'').split(' ')[0])} · ${escapaHtml(p.produto_nome||'')}`), rota:'pedidos', acao:'Confirmar' });
-
-  // Contas, escalas e tarefas saíram do Hoje em 27/11: cada uma ligava uma
-  // coleção a mais em toda abertura do admin. Ficam nas telas delas.
-  const esperando = (S.pedidos||[]).filter(p => p.status === 'aguardando_pagamento');
-  if (esperando.length) fila.push({ cor:'muted', titulo: plural(esperando.length,'pedido esperando pagamento','pedidos esperando pagamento'),
-    sub: 'Foram pro pagamento e não voltaram. Dá pra cobrar por e-mail.', rota:'pedidos', acao:'Ver' });
-
   return fila;
 }
 
 function renderDashboard(c) {
-  const hoje = hojeISO();
   const fila = montarFila();
-  const COR = { red:'var(--red)', gold:'var(--gold)', amber:'var(--amber)', blue:'var(--blue)', muted:'var(--border2)' };
-  const proxGiras = (S.eventos||[]).filter(e => e.data >= hoje && !e.arquivado).slice(0,5);
-  const amanha = new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
-  const consAmanha = (S.atendimentos||[]).filter(a => a.data === amanha && !['cancelado','nao_compareceu'].includes(a.status_atendimento));
+  const COR = { red:'var(--red)', gold:'var(--gold)' };
   const dataLonga = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Sao_Paulo'}).replace(/^./, c => c.toUpperCase());
-
   const item = (x) => `
     <a href="#${x.rota}" class="fila-item" style="--fio:${COR[x.cor]}">
       <div class="fila-txt"><div class="fila-t">${x.titulo}</div>${x.sub?`<div class="fila-s">${x.sub}</div>`:''}</div>
       <span class="fila-acao">${x.acao} ›</span>
     </a>`;
-
   c.innerHTML = `
     <style>
       .fila{display:flex;flex-direction:column;gap:8px}
@@ -2168,44 +2139,19 @@ function renderDashboard(c) {
       .fila-t{font-size:15px;font-weight:650;line-height:1.35}
       .fila-s{font-size:12.5px;color:var(--text2);margin-top:3px;line-height:1.45;overflow:hidden;text-overflow:ellipsis}
       .fila-acao{font-size:12.5px;font-weight:600;color:var(--text2);white-space:nowrap}
-      .hoje-sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin:28px 0 10px}
-      .casa-num{display:flex;gap:28px;flex-wrap:wrap;font-size:13px;color:var(--text2)}
-      .casa-num b{display:block;font-size:22px;color:var(--text);font-variant-numeric:tabular-nums}
       @media(max-width:600px){.fila-item{align-items:flex-start;flex-direction:column;gap:6px}.fila-acao{color:var(--gold)}}
     </style>
-    <div class="page-head">
-      <div>
-        <div class="page-title">Hoje</div>
-        <div class="page-sub">${dataLonga}</div>
-      </div>
-    </div>
-
+    <div class="page-head"><div><div class="page-title">Hoje</div><div class="page-sub">${dataLonga}</div></div></div>
     ${fila.length ? `<div class="fila">${fila.map(item).join('')}</div>` : `
       <div class="card" style="text-align:center;padding:28px 20px">
         <div style="font-size:17px;font-weight:700">Tudo em dia</div>
-        <div style="font-size:13.5px;color:var(--text2);margin-top:6px">Nenhum pedido, conta ou gira esperando você. O que chegar aparece aqui.</div>
-      </div>`}
+        <div style="font-size:13.5px;color:var(--text2);margin-top:6px">Nenhum pedido pra aprovar e nenhum pagamento vencido.</div>
+      </div>`}`;
+}
 
-    <div class="hoje-sec">Próximos dias</div>
-    <div class="card">
-      ${consAmanha.length ? `<div class="list-item" onclick="location.hash='agenda'" style="cursor:pointer"><div class="li-avatar" style="background:var(--blue-bg);color:var(--blue)">🔮</div><div class="li-main"><div class="li-name">${consAmanha.length} consulta${consAmanha.length===1?'':'s'} amanhã</div><div class="li-meta">${consAmanha.map(a=>`${a.hora||''} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`).join(' · ')}</div></div></div>` : ''}
-      ${proxGiras.length ? proxGiras.map(e => {
-        const aberta = e.publico !== false && e.tipo !== 'gira_fechada' && !['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','festa','ensaio_curimba'].includes(e.tipo);
-        return `<div class="list-item" onclick="window._app.openEvento('${e.id}')" style="cursor:pointer">
-          <div class="li-avatar" style="background:${aberta?'var(--green-bg)':'var(--blue-bg)'};color:${aberta?'var(--green)':'var(--blue)'}">${(e.data||'').slice(8,10)}</div>
-          <div class="li-main"><div class="li-name">${escapaHtml(e.nome || e.titulo || 'Sem título')}</div>
-          <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}</div></div>
-        </div>`; }).join('') : '<div class="empty"><div class="empty-s">Nenhuma gira marcada. <a href="#calendario" style="color:var(--gold)">Abrir o calendário</a></div></div>'}
-    </div>
-
-    <div class="hoje-sec">A casa</div>
-    <div class="casa-num">
-      <span><b>${S.numeros?.filhos_ativos ?? '–'}</b>filhos ativos</span>
-      <span><b>${(S.atendimentos||[]).filter(a => (a.data||'').startsWith(hoje.slice(0,7)) && a.status_atendimento !== 'cancelado').length}</b>consultas no mês</span>
-    </div>
-
-    <div id="visitas-site" style="margin-top:28px"></div>
-  `;
+function renderVisitas(c) {
+  c.innerHTML = `<div class="page-head"><div><div class="page-title">Visitas do site</div><div class="page-sub">Resumo da semana, atualizado toda segunda às 9h</div></div></div>
+    <div id="visitas-site"></div>`;
   renderVisitasSite();
 }
 
