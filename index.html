@@ -362,8 +362,8 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 // nova: põe aqui o que ela lê; esqueceu, a tela abre vazia e o erro é visível.
 const _ouvintes = {}, _ligados = new Set(), _chegaram = new Set(), _esperas = [];
 const SEMPRE = ['fin_filhos','adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
-  'adm_solicitacoes_rec','vendas_pedidos_rec','fin_gastos','fin_gastos_pagos'];
-const _HOJE = ['adm_atendimentos_rec','adm_escalas_rec','eventos','adm_kanban'];
+  'adm_solicitacoes_rec','vendas_pedidos_rec'];
+const _HOJE = ['adm_atendimentos_rec','eventos'];
 const POR_ROTA = {
   dashboard: _HOJE,
   filhos: ['adm_grupos','adm_despensa','adm_push_tokens'],
@@ -373,7 +373,7 @@ const POR_ROTA = {
   calendario: ['eventos','vendas_produtos'],
   escalas: ['adm_disponibilidade','adm_escalas','eventos'],
   despensa: ['adm_despensa'],
-  contas: [],
+  contas: ['fin_gastos','fin_gastos_pagos'],
   agenda: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','eventos','adm_servicos'],
   solicitacoes: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','adm_servicos'],
   consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
@@ -2083,7 +2083,6 @@ function montarResumoDoDia() {
 // Ordem = urgência: o que tem gente esperando, depois dinheiro, depois a casa.
 function montarFila() {
   const hoje = hojeISO();
-  const em14 = new Date(Date.now() + 14*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
   const nomes = (xs, f, n=3) => xs.slice(0,n).map(f).join(' · ') + (xs.length > n ? ` · +${xs.length-n}` : '');
   const plural = (n, um, varios) => `${n} ${n===1?um:varios}`;
@@ -2117,17 +2116,8 @@ function montarFila() {
   if (peds.length) fila.push({ cor:'gold', titulo: plural(peds.length,'pedido da loja pra confirmar','pedidos da loja pra confirmar'),
     sub: nomes(peds, p => `${escapaHtml((p.nome||'').split(' ')[0])} · ${escapaHtml(p.produto_nome||'')}`), rota:'pedidos', acao:'Confirmar' });
 
-  const venc = contasVencidas();
-  if (venc.length) fila.push({ cor:'red', titulo: `${plural(venc.length,'conta vencida','contas vencidas')} · ${brl(venc.reduce((t,g)=>t+(Number(g.valor)||0),0))}`,
-    sub: nomes(venc, g => escapaHtml(g.nome||'')), rota:'contas', acao:'Ver contas' });
-
-  const semEscala = (S.eventos||[]).filter(e => e.data >= hoje && e.data <= em14 && !e.arquivado && !ehFesta(e) && !(S.escalas||[]).some(es => es.evento_id === e.id));
-  if (semEscala.length) fila.push({ cor:'amber', titulo: plural(semEscala.length,'gira sem escala','giras sem escala') + ' nos próximos 14 dias',
-    sub: nomes(semEscala, e => `${escapaHtml(e.nome||e.titulo||'')} ${dm(e.data)}`), rota:'escalas', acao:'Montar escalas' });
-
-  if (atrasadas.length) fila.push({ cor:'muted', titulo: plural(atrasadas.length,'tarefa atrasada','tarefas atrasadas'),
-    sub: nomes(atrasadas, k => escapaHtml(k.titulo||'sem título')), rota:'kanban', acao:'Revisar' });
-
+  // Contas, escalas e tarefas saíram do Hoje em 27/11: cada uma ligava uma
+  // coleção a mais em toda abertura do admin. Ficam nas telas delas.
   const esperando = (S.pedidos||[]).filter(p => p.status === 'aguardando_pagamento');
   if (esperando.length) fila.push({ cor:'muted', titulo: plural(esperando.length,'pedido esperando pagamento','pedidos esperando pagamento'),
     sub: 'Foram pro pagamento e não voltaram. Dá pra cobrar por e-mail.', rota:'pedidos', acao:'Ver' });
@@ -2183,11 +2173,10 @@ function renderDashboard(c) {
       ${consAmanha.length ? `<div class="list-item" onclick="location.hash='agenda'" style="cursor:pointer"><div class="li-avatar" style="background:var(--blue-bg);color:var(--blue)">🔮</div><div class="li-main"><div class="li-name">${consAmanha.length} consulta${consAmanha.length===1?'':'s'} amanhã</div><div class="li-meta">${consAmanha.map(a=>`${a.hora||''} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`).join(' · ')}</div></div></div>` : ''}
       ${proxGiras.length ? proxGiras.map(e => {
         const aberta = e.publico !== false && e.tipo !== 'gira_fechada' && !['trabalho_interno','mutirao','obrigacao_coletiva','reuniao','festa','ensaio_curimba'].includes(e.tipo);
-        const temEscala = (S.escalas||[]).some(es => es.evento_id === e.id);
         return `<div class="list-item" onclick="window._app.openEvento('${e.id}')" style="cursor:pointer">
           <div class="li-avatar" style="background:${aberta?'var(--green-bg)':'var(--blue-bg)'};color:${aberta?'var(--green)':'var(--blue)'}">${(e.data||'').slice(8,10)}</div>
           <div class="li-main"><div class="li-name">${escapaHtml(e.nome || e.titulo || 'Sem título')}</div>
-          <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}${!temEscala && !ehFesta(e)?'<span class="chip chip-amber">sem escala</span>':''}</div></div>
+          <div class="li-meta"><span>${fmt.dataLong(e.data)} · ${e.hora||'—'}</span>${aberta?'<span class="chip chip-green">pública</span>':'<span class="chip chip-blue">interna</span>'}</div></div>
         </div>`; }).join('') : '<div class="empty"><div class="empty-s">Nenhuma gira marcada. <a href="#calendario" style="color:var(--gold)">Abrir o calendário</a></div></div>'}
     </div>
 
