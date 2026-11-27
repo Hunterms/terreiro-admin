@@ -2098,6 +2098,10 @@ function montarFila() {
   if (consultas.length) fila.push({ cor:'blue', titulo: plural(consultas.length,'consulta hoje','consultas hoje'),
     sub: nomes(consultas, a => `${a.hora||'??:??'} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`, 4), rota:'agenda', acao:'Abrir agenda' });
 
+  const devendo = semPagamentoHa3Dias();
+  if (devendo.length) fila.push({ cor:'red', titulo: plural(devendo.length,'pessoa sem pagar há mais de 3 dias','pessoas sem pagar há mais de 3 dias'),
+    sub: nomes(devendo, x => `${escapaHtml((x.nome||'').split(' ')[0])} ${dm(x.data)}`), rota:'solicitacoes', acao:'Cobrar com prazo' });
+
   // Consulta de hoje sem pagamento: quem combinou de pagar no dia, e quem ficou devendo.
   const cobrarHoje = consultas.filter(a => !String(a.status_pagamento||'').startsWith('pago'));
   if (cobrarHoje.length) fila.push({ cor:'gold', titulo: plural(cobrarHoje.length,'consulta pra cobrar hoje','consultas pra cobrar hoje'),
@@ -6565,7 +6569,7 @@ function openAtendimentoForm(id=null) {
           </select>
         </div>
       </div>
-      ${a && !String(a.status_pagamento||'pendente').startsWith('pago') && a.status_pagamento !== 'isento' ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px">${botaoLinkPagamento('atd', a.id)}${a.paga_no_dia ? '<span class="chip chip-blue">paga no dia</span>' : ''}</div>` : ''}
+      ${a && !String(a.status_pagamento||'pendente').startsWith('pago') && a.status_pagamento !== 'isento' ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px">${botaoLinkPagamento('atd', a.id)}${botaoPagaNoDia(a, 'atd')}${a.paga_depois_ate ? `<span class="chip chip-blue">combinou pagar até ${a.paga_depois_ate.slice(8,10)}/${a.paga_depois_ate.slice(5,7)}</span>` : ''}</div>` : ''}
       ${a ? '' : `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:2px 0 14px">
         <input type="checkbox" id="at-cobrar" style="width:18px;height:18px"/>
         <span style="font-size:13px">Cobrar no email: o horário fica reservado por 24h, com PIX e cartão. Desmarcado (quem é da casa e paga no dia), o email só confirma.</span>
@@ -7667,14 +7671,32 @@ function novaCobranca() {
 }
 
 // ── SEM PAGAMENTO HÁ MAIS DE 3 DIAS ────────────────────────────────────────
-// Pedido que segura uma data sem pagar. A casa manda um prazo (WhatsApp ou
-// email); passou o prazo, libera a data. Quem combinou de pagar no dia leva a
-// marca "paga no dia": sai daqui e aparece no Hoje do dia da consulta.
+// Quem segura uma data sem pagar: pedido do site ainda não aprovado (sol) ou
+// consulta já aprovada com pagamento pendente (atd). A casa manda um prazo
+// (WhatsApp ou email); passou o prazo, libera a data. Duas saídas da cobrança:
+// "paga no dia" (aparece no Hoje do dia) e "avisou que paga depois" (some até
+// a data combinada e volta se passar sem pagar).
 const _naoPago = s => !s.pago_automatico && !s.comprovante_anexado && (s.status === 'pendente' || s.status === 'aguardando_pagamento');
+const _atdNaoPago = a => a.status_atendimento === 'agendado' && (a.status_pagamento || 'pendente') === 'pendente';
+const _COL = { sol: 'adm_solicitacoes', atd: 'adm_atendimentos' };
+// Normaliza pedido e consulta pro mesmo formato.
+function _cob(tipo, x) {
+  if (tipo === 'sol') return { ...x, _t: 'sol' };
+  const c = (S.consulentes||[]).find(k => k.id === x.consulente_id) || {};
+  return { ...x, _t: 'atd', nome: x.consulente_nome || c.nome || '', tel: x.consulente_tel || c.tel || '',
+    email: x.consulente_email || c.email || '', valor_proposto: x.valor || 0 };
+}
+function _acharCob(tipo, id) {
+  const x = (tipo === 'sol' ? S.solicitacoes : S.atendimentos || []).find(k => k.id === id);
+  return x ? _cob(tipo, x) : null;
+}
 function semPagamentoHa3Dias() {
   const hoje = hojeISO(), corte = Date.now() - 3*86400000;
-  return (S.solicitacoes||[]).filter(s => _naoPago(s) && !s.paga_no_dia && !(s.paga_depois_ate >= hoje) && s.data >= hoje && (s.criadoEm?.seconds||0)*1000 < corte)
-    .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  const conta = x => !x.paga_no_dia && !(x.paga_depois_ate >= hoje) && x.data >= hoje && (x.criadoEm?.seconds||0)*1000 < corte;
+  return [
+    ...(S.solicitacoes||[]).filter(s => _naoPago(s) && conta(s)).map(s => _cob('sol', s)),
+    ...(S.atendimentos||[]).filter(a => _atdNaoPago(a) && conta(a)).map(a => _cob('atd', a)),
+  ].sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
 }
 // Prazo padrão: 2 dias, mas nunca depois da véspera da consulta.
 function prazoPadrao(s) {
@@ -7683,20 +7705,22 @@ function prazoPadrao(s) {
   const p = d(2) < vespera ? d(2) : vespera;
   return p < d(0) ? d(0) : p;
 }
-function botaoPagaNoDia(s) {
+function botaoPagaNoDia(s, tipo = s._t || 'sol') {
   const dm = d => `${d.slice(8,10)}/${d.slice(5,7)}`;
+  const id = escapaJs(s.id);
   const depois = s.paga_depois_ate
-    ? `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${escapaJs(s.id)}', null)" title="Tirar o combinado: volta a contar pra cobrança">✕ Tirar "paga até ${dm(s.paga_depois_ate)}"</button>`
-    : `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${escapaJs(s.id)}')" title="Avisou que paga depois: não recebe cobrança até a data combinada">🤝 Avisou que paga depois</button>`;
-  return (s.paga_no_dia ? '' : depois) + `<button class="btn btn-sm" onclick="window._app.marcarPagaNoDia('${escapaJs(s.id)}', ${!s.paga_no_dia})" title="Combinou de pagar no dia: sai da cobrança e aparece no Hoje do dia">${s.paga_no_dia ? '✕ Tirar "paga no dia"' : '💵 Paga no dia'}</button>`;
+    ? `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${tipo}','${id}', null)" title="Tirar o combinado: volta a contar pra cobrança">✕ Tirar "paga até ${dm(s.paga_depois_ate)}"</button>`
+    : `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${tipo}','${id}')" title="Avisou que paga depois: não recebe cobrança até a data combinada">🤝 Avisou que paga depois</button>`;
+  return (s.paga_no_dia ? '' : depois) + `<button class="btn btn-sm" onclick="window._app.marcarPagaNoDia('${tipo}','${id}', ${!s.paga_no_dia})" title="Combinou de pagar no dia: sai da cobrança e aparece no Hoje do dia">${s.paga_no_dia ? '✕ Tirar "paga no dia"' : '💵 Paga no dia'}</button>`;
 }
 function cartaoSemPagamento(lista) {
   const hoje = hojeISO();
   const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
   return `<div class="card" style="margin-bottom:14px;border-color:var(--red-bd)">
     <div class="card-h"><div class="card-title">Sem pagamento há mais de 3 dias (${lista.length})</div></div>
-    <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Seguram uma data sem pagar. Mande um prazo; passou dele, libere a data. Se a pessoa combinou de pagar no dia, marque "Paga no dia".</div>
+    <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Pedidos e consultas aprovadas que seguram uma data sem pagar. Mande um prazo; passou dele, libere a data. Combinou outro jeito? "Paga no dia" ou "Avisou que paga depois" tiram daqui.</div>
     ${lista.map(s => {
+      const id = escapaJs(s.id), t = s._t;
       const dias = Math.floor((Date.now() - (s.criadoEm?.seconds||0)*1000) / 86400000);
       const vencido = s.prazo_pagamento && s.prazo_pagamento < hoje;
       const aviso = s.prazo_pagamento ? `<span class="chip ${vencido?'chip-red':'chip'}">${vencido?'prazo vencido':'prazo'} ${dm(s.prazo_pagamento)}${s.lembrete_via?` · ${s.lembrete_via}`:''}</span>` : '';
@@ -7707,20 +7731,20 @@ function cartaoSemPagamento(lista) {
           <div class="li-meta" style="margin-top:4px">
             <span>${escapaHtml(s.servico_nome||'Consulta')}</span>
             <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
-            <span>pedido há ${dias} dias</span>
+            <span class="chip">${t==='atd'?'consulta aprovada':'pedido'} há ${dias} dias</span>
             ${aviso}
           </div>
           <div class="li-meta" style="margin-top:8px;gap:8px">
             <label style="font-size:12px;color:var(--text3)">Prazo</label>
-            <input type="date" class="fi" id="prz-${escapaHtml(s.id)}" value="${s.prazo_pagamento && !vencido ? s.prazo_pagamento : prazoPadrao(s)}" min="${hoje}" max="${s.data}" style="width:auto;padding:6px 8px"/>
+            <input type="date" class="fi" id="prz-${t}-${escapaHtml(s.id)}" value="${s.prazo_pagamento && !vencido ? s.prazo_pagamento : prazoPadrao(s)}" min="${hoje}" max="${s.data}" style="width:auto;padding:6px 8px"/>
           </div>
         </div>
         <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
-          ${s.tel ? `<button class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent" onclick="window._app.cobrarComPrazo('${escapaJs(s.id)}','whatsapp')">💬 Prazo no WhatsApp</button>` : ''}
-          ${s.email ? `<button class="btn btn-sm" onclick="window._app.cobrarComPrazo('${escapaJs(s.id)}','email')">📧 Prazo por email</button>` : ''}
-          ${botaoLinkPagamento('sol', s.id)}
+          ${s.tel ? `<button class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent" onclick="window._app.cobrarComPrazo('${t}','${id}','whatsapp')">💬 Prazo no WhatsApp</button>` : ''}
+          ${s.email ? `<button class="btn btn-sm" onclick="window._app.cobrarComPrazo('${t}','${id}','email')">📧 Prazo por email</button>` : '<span style="font-size:11.5px;color:var(--text3)">sem email cadastrado</span>'}
+          ${botaoLinkPagamento(t, s.id)}
           ${botaoPagaNoDia(s)}
-          ${vencido ? `<button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Liberar a data</button>` : ''}
+          ${vencido ? `<button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.liberarData('${t}','${id}')">Liberar a data</button>` : ''}
         </div>
       </div>`;
     }).join('')}
@@ -7745,13 +7769,11 @@ function botaoLinkPagamento(tipo, id) {
   return `<button class="btn btn-sm" onclick="window._app.copiarLinkPagamento('${tipo}','${escapaJs(id)}')" title="Link do checkout (PIX ou cartão) pra mandar direto">🔗 Copiar link de pagamento</button>`;
 }
 
-// "Avisou que paga depois": a casa sabe e combinou. Sai da cobrança até a data
-// combinada; passou a data sem pagar, volta pro cartão dos 3 dias.
-function marcarPagaDepois(id, limpar) {
-  const s = S.solicitacoes.find(x => x.id === id); if (!s) return;
+function marcarPagaDepois(tipo, id, limpar) {
+  const s = _acharCob(tipo, id); if (!s) return;
   const salvar = async (ate) => {
     try {
-      await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { paga_depois_ate: ate, atualizadoEm: serverTimestamp() });
+      await updateDoc(doc(dbPvd,_COL[tipo],id), { paga_depois_ate: ate, atualizadoEm: serverTimestamp() });
       closeModal(); toast(ate ? `Combinado. Sem cobrança até ${ate.slice(8,10)}/${ate.slice(5,7)}.` : 'Combinado tirado', 'ok');
     } catch(e) { toast('Erro: '+e.message,'err'); }
   };
@@ -7760,18 +7782,32 @@ function marcarPagaDepois(id, limpar) {
   openModal(`
     <div class="modal-h"><h3>Avisou que paga depois</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <div class="modal-c">
-      <div style="font-size:13.5px;color:var(--text2);line-height:1.5;margin-bottom:12px">${escapaHtml(s.nome)} · consulta em ${fmt.dataLong(s.data)} às ${s.hora}. Até a data combinada ela não aparece na cobrança. Passou sem pagar, volta.</div>
+      <div style="font-size:13.5px;color:var(--text2);line-height:1.5;margin-bottom:12px">${escapaHtml(s.nome)} · consulta em ${fmt.dataLong(s.data)} às ${s.hora}. Até a data combinada não aparece na cobrança. Passou sem pagar, volta.</div>
       <div class="fi-group"><label>Paga até</label><input type="date" class="fi" id="pd-ate" value="${vespera >= hojeISO() ? vespera : s.data}" min="${hojeISO()}" max="${s.data}"/></div>
     </div>
     <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="pd-ok">Salvar combinado</button></div>`);
   document.getElementById('pd-ok').onclick = () => salvar(document.getElementById('pd-ate').value || s.data);
 }
 
-async function marcarPagaNoDia(id, valor) {
+async function marcarPagaNoDia(tipo, id, valor) {
   try {
-    await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { paga_no_dia: valor, atualizadoEm: serverTimestamp() });
+    await updateDoc(doc(dbPvd,_COL[tipo],id), { paga_no_dia: valor, atualizadoEm: serverTimestamp() });
     toast(valor ? 'Marcado: paga no dia. Aparece no Hoje do dia da consulta.' : 'Marca tirada', 'ok');
   } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+// Prazo vencido: pedido é rejeitado; consulta aprovada é cancelada (sai do
+// Google Agenda e o horário volta pro site).
+function liberarData(tipo, id) {
+  if (tipo === 'sol') return rejeitarSolicitacao(id);
+  const a = (S.atendimentos||[]).find(x => x.id === id); if (!a) return;
+  confirmar(`Cancelar a consulta de <strong>${escapaHtml(a.consulente_nome||'')}</strong> por falta de pagamento? O horário volta pro site.`, async () => {
+    try {
+      if (gcalIsConnected() && a.google_event_id) await gcalDeleteEvent(a.google_event_id).catch(() => {});
+      await updateDoc(doc(dbPvd,'adm_atendimentos',id), { status_atendimento: 'cancelado', cancelado_motivo: 'sem pagamento no prazo', google_event_id: null, atualizadoEm: serverTimestamp() });
+      await delSlotPub('atend_'+id);
+      toast('Consulta cancelada, horário livre', 'ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  });
 }
 function textoPrazo(s, prazo, link) {
   const dataBr = new Date(s.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
@@ -7785,9 +7821,9 @@ function textoPrazo(s, prazo, link) {
     'Se for melhor pagar no dia, é só responder que a gente deixa combinado.', '', 'Axé!'
   ].filter((l, i, a) => l || a[i-1]).join('\n');
 }
-async function cobrarComPrazo(id, via) {
-  const s = S.solicitacoes.find(x => x.id === id); if (!s) return;
-  const prazo = document.getElementById('prz-'+id)?.value || prazoPadrao(s);
+async function cobrarComPrazo(tipo, id, via) {
+  const s = _acharCob(tipo, id); if (!s) return;
+  const prazo = document.getElementById(`prz-${tipo}-${id}`)?.value || prazoPadrao(s);
   // A janela abre antes do await: o Safari bloqueia pop-up aberto depois.
   const janela = via === 'whatsapp' ? window.open('', '_blank') : null;
   let link = null;
@@ -7795,7 +7831,7 @@ async function cobrarComPrazo(id, via) {
   if (ck.checkout_ativo && ck.checkout_worker_url) {
     try {
       const r = await fetch(ck.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tipo:'sol', doc_id:id }) });
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tipo, doc_id:id }) });
       link = (await r.json().catch(() => ({}))).url || null;
     } catch (e) { console.warn('checkout falhou', e?.message); }
   }
@@ -7813,7 +7849,7 @@ async function cobrarComPrazo(id, via) {
           text: texto, html: escapaHtml(texto).replace(/(https:\/\/\S+)/g,'<a href="$1">$1</a>').replace(/\n/g,'<br>') }) });
       if (!resp.ok) throw new Error('Worker ' + resp.status);
     }
-    await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { prazo_pagamento: prazo, lembrete_via: via, lembrete_prazo_em: serverTimestamp() });
+    await updateDoc(doc(dbPvd,_COL[tipo],id), { prazo_pagamento: prazo, lembrete_via: via, lembrete_prazo_em: serverTimestamp() });
     toast(via === 'email' ? 'Email com prazo enviado' : 'Prazo registrado. Confere e envia no WhatsApp.', 'ok');
   } catch (e) { janela?.close(); toast('Não consegui: ' + e.message, 'err'); }
 }
@@ -10383,7 +10419,7 @@ window._app = {
   setAgendaFiltro,
   aprovarSolicitacao, novaCobranca,
   rejeitarSolicitacao,
-  solicitacaoPraFila, marcarPagaNoDia, marcarPagaDepois, cobrarComPrazo, copiarLinkPagamento,
+  solicitacaoPraFila, marcarPagaNoDia, marcarPagaDepois, cobrarComPrazo, copiarLinkPagamento, liberarData,
   openAvisoForm,
   arquivarAviso,
   openPerguntaForm,
