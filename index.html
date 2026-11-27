@@ -7394,6 +7394,7 @@ function renderSolicitacoes(c) {
                 ${chipPagoSuspeito(s)}
                 ${!s.pago_automatico && s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
                 ${s.paga_no_dia?'<span class="chip chip-blue">paga no dia</span>':''}
+                ${s.paga_depois_ate?`<span class="chip ${s.paga_depois_ate < hojeISO() ? 'chip-red' : 'chip-blue'}">combinou pagar até ${s.paga_depois_ate.slice(8,10)}/${s.paga_depois_ate.slice(5,7)}</span>`:''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
               </div>
               ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${escapaHtml(s.observacao)}"</div>`:''}
@@ -7672,7 +7673,7 @@ function novaCobranca() {
 const _naoPago = s => !s.pago_automatico && !s.comprovante_anexado && (s.status === 'pendente' || s.status === 'aguardando_pagamento');
 function semPagamentoHa3Dias() {
   const hoje = hojeISO(), corte = Date.now() - 3*86400000;
-  return (S.solicitacoes||[]).filter(s => _naoPago(s) && !s.paga_no_dia && s.data >= hoje && (s.criadoEm?.seconds||0)*1000 < corte)
+  return (S.solicitacoes||[]).filter(s => _naoPago(s) && !s.paga_no_dia && !(s.paga_depois_ate >= hoje) && s.data >= hoje && (s.criadoEm?.seconds||0)*1000 < corte)
     .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
 }
 // Prazo padrão: 2 dias, mas nunca depois da véspera da consulta.
@@ -7683,7 +7684,11 @@ function prazoPadrao(s) {
   return p < d(0) ? d(0) : p;
 }
 function botaoPagaNoDia(s) {
-  return `<button class="btn btn-sm" onclick="window._app.marcarPagaNoDia('${escapaJs(s.id)}', ${!s.paga_no_dia})" title="Combinou de pagar no dia: sai da cobrança e aparece no Hoje do dia">${s.paga_no_dia ? '✕ Tirar "paga no dia"' : '💵 Paga no dia'}</button>`;
+  const dm = d => `${d.slice(8,10)}/${d.slice(5,7)}`;
+  const depois = s.paga_depois_ate
+    ? `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${escapaJs(s.id)}', null)" title="Tirar o combinado: volta a contar pra cobrança">✕ Tirar "paga até ${dm(s.paga_depois_ate)}"</button>`
+    : `<button class="btn btn-sm" onclick="window._app.marcarPagaDepois('${escapaJs(s.id)}')" title="Avisou que paga depois: não recebe cobrança até a data combinada">🤝 Avisou que paga depois</button>`;
+  return (s.paga_no_dia ? '' : depois) + `<button class="btn btn-sm" onclick="window._app.marcarPagaNoDia('${escapaJs(s.id)}', ${!s.paga_no_dia})" title="Combinou de pagar no dia: sai da cobrança e aparece no Hoje do dia">${s.paga_no_dia ? '✕ Tirar "paga no dia"' : '💵 Paga no dia'}</button>`;
 }
 function cartaoSemPagamento(lista) {
   const hoje = hojeISO();
@@ -7738,6 +7743,28 @@ function copiarLinkPagamento(tipo, id) {
 }
 function botaoLinkPagamento(tipo, id) {
   return `<button class="btn btn-sm" onclick="window._app.copiarLinkPagamento('${tipo}','${escapaJs(id)}')" title="Link do checkout (PIX ou cartão) pra mandar direto">🔗 Copiar link de pagamento</button>`;
+}
+
+// "Avisou que paga depois": a casa sabe e combinou. Sai da cobrança até a data
+// combinada; passou a data sem pagar, volta pro cartão dos 3 dias.
+function marcarPagaDepois(id, limpar) {
+  const s = S.solicitacoes.find(x => x.id === id); if (!s) return;
+  const salvar = async (ate) => {
+    try {
+      await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { paga_depois_ate: ate, atualizadoEm: serverTimestamp() });
+      closeModal(); toast(ate ? `Combinado. Sem cobrança até ${ate.slice(8,10)}/${ate.slice(5,7)}.` : 'Combinado tirado', 'ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
+  if (limpar === null) return salvar(null);
+  const vespera = new Date(new Date(s.data+'T12:00:00').getTime() - 86400000).toISOString().slice(0,10);
+  openModal(`
+    <div class="modal-h"><h3>Avisou que paga depois</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="font-size:13.5px;color:var(--text2);line-height:1.5;margin-bottom:12px">${escapaHtml(s.nome)} · consulta em ${fmt.dataLong(s.data)} às ${s.hora}. Até a data combinada ela não aparece na cobrança. Passou sem pagar, volta.</div>
+      <div class="fi-group"><label>Paga até</label><input type="date" class="fi" id="pd-ate" value="${vespera >= hojeISO() ? vespera : s.data}" min="${hojeISO()}" max="${s.data}"/></div>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="pd-ok">Salvar combinado</button></div>`);
+  document.getElementById('pd-ok').onclick = () => salvar(document.getElementById('pd-ate').value || s.data);
 }
 
 async function marcarPagaNoDia(id, valor) {
@@ -10356,7 +10383,7 @@ window._app = {
   setAgendaFiltro,
   aprovarSolicitacao, novaCobranca,
   rejeitarSolicitacao,
-  solicitacaoPraFila, marcarPagaNoDia, cobrarComPrazo, copiarLinkPagamento,
+  solicitacaoPraFila, marcarPagaNoDia, marcarPagaDepois, cobrarComPrazo, copiarLinkPagamento,
   openAvisoForm,
   arquivarAviso,
   openPerguntaForm,
