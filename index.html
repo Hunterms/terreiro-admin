@@ -7437,6 +7437,7 @@ function renderSolicitacoes(c) {
               </div>
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
+              <button class="btn btn-sm btn-primary" onclick="window._app.marcarJaPagou('sol','${escapaJs(s.id)}')" title="Pagou por fora (PIX direto, dinheiro): abre a aprovação já paga">✓ Já pagou</button>
               <button class="btn btn-sm" onclick="window._app.solicitacaoPraFila('${escapaJs(s.id)}')" title="Devolve pra fila de aprovação, como se tivesse chegado agora">→ Mandar pra fila</button>
               ${botaoLinkPagamento('sol', s.id)}
               ${botaoPagaNoDia(s)}
