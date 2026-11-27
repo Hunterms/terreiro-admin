@@ -374,11 +374,14 @@ const POR_ROTA = {
   escalas: ['adm_disponibilidade','adm_escalas','eventos'],
   despensa: ['adm_despensa'],
   contas: ['fin_gastos','fin_gastos_pagos'],
-  agenda: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','eventos','adm_servicos'],
-  solicitacoes: ['adm_solicitacoes','adm_atendimentos','adm_consulentes','adm_servicos'],
+  // Agenda e Pedidos leem dos últimos 60 dias em diante (27/11, cota): o
+  // histórico inteiro, relido a cada aba parada 30 min, era o grosso do dia.
+  // Histórico completo fica em Consulentes, Entradas e Inteligência.
+  agenda: ['adm_atendimentos_rec','adm_consulentes','eventos','adm_servicos'],
+  solicitacoes: ['adm_atendimentos_rec','adm_consulentes','adm_servicos'],
   consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
   servicos: ['adm_servicos'],
-  'config-agendamento': ['adm_atendimentos','eventos','adm_servicos'],
+  'config-agendamento': ['adm_atendimentos_rec','eventos','adm_servicos'],
   produtos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
   pedidos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
   inteligencia: ['vendas_pedidos','adm_atendimentos','adm_consulentes','vendas_produtos','adm_servicos'],
@@ -1056,12 +1059,12 @@ function attachListeners() {
     if (_ligados.has('adm_solicitacoes')) return;
     S.solicitacoes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if (typeof atualizarBadgeSolicitacoes === 'function') atualizarBadgeSolicitacoes();
-    if (S.route === 'dashboard') renderRoute();
+    if (['dashboard','solicitacoes','agenda'].includes(S.route)) renderRoute();
   }));
-  ouvir('adm_atendimentos_rec', () => onSnapshot(query(collection(dbPvd,'adm_atendimentos'), where('data','>=',_isoAtras(35))), snap => {
+  ouvir('adm_atendimentos_rec', () => onSnapshot(query(collection(dbPvd,'adm_atendimentos'), where('data','>=',_isoAtras(60))), snap => {
     if (_ligados.has('adm_atendimentos')) return;
     S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if (S.route === 'dashboard') renderRoute();
+    if (['dashboard','solicitacoes','agenda','config-agendamento'].includes(S.route)) renderRoute();
   }));
   ouvir('adm_escalas_rec', () => onSnapshot(query(collection(dbPvd,'adm_escalas'), where('data','>=',_isoAtras(1))), snap => {
     if (_ligados.has('adm_escalas')) return;

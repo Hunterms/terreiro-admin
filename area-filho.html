@@ -650,6 +650,27 @@ const pad = n => String(n).padStart(2,'0');
 const fmtData = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}) : '—';
 const fmtCurto = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) : '—';
 
+// Só as tarefas da pessoa e a lista aberta da casa. Antes lia todas as
+// tarefas abertas da casa a cada visita (centenas), e a cota é de 50 mil/dia.
+async function tarefasDoFilho(id) {
+  const ABERTAS = ['todo','doing','blocked'];
+  const docs = snaps => snaps.flatMap(sn => sn.docs.map(d => ({ id:d.id, ...d.data() }))).filter(t => !t.arquivado && ABERTAS.includes(t.status));
+  const kb = (...w) => getDocs(query(collection(dbPvd,'adm_kanban'), ...w));
+  try {
+    // Igualdade + array-contains: o Firestore junta os índices simples, sem
+    // pedir índice composto. Status por status porque a tarefa feita fica.
+    const [minhas, lista] = await Promise.all([
+      Promise.all(ABERTAS.map(st => kb(where('status','==',st), where('responsaveis','array-contains',id)))),
+      Promise.all(ABERTAS.map(st => kb(where('status','==',st), where('lista_aberta','==',true)))),
+    ]);
+    return { tarefas: docs(minhas), afazeres: docs(lista).filter(t => (t.responsaveis||[]).length === 0) };
+  } catch (e) {
+    console.warn('tarefas: consulta estreita falhou, lendo todas as abertas', e);
+    const todas = docs([await kb(where('status','in',ABERTAS))]);
+    return { tarefas: todas.filter(t => (t.responsaveis||[]).includes(id)), afazeres: todas.filter(t => t.lista_aberta && !(t.responsaveis||[]).length) };
+  }
+}
+
 // Escalas dos últimos ~4 meses em diante, lidas uma vez por visita (a página
 // pedia duas vezes a coleção inteira: a do filho e a da lojinha).
 let _escalasRecentes = null;
@@ -866,10 +887,7 @@ async function selecionarFilho(id) {
 
   // Carrega tarefas (kanban): minhas + lista de afazeres da casa
   try {
-    const tSnap = await getDocs(query(collection(dbPvd,'adm_kanban'), where('status','in',['todo','doing','blocked'])));
-    const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
-    APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
-    APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
+    ({ tarefas: APP.tarefas, afazeres: APP.listaAfazeres } = await tarefasDoFilho(id));
   } catch(e) { Filhos.avisarFalha('suas tarefas', e); APP.tarefas = []; APP.listaAfazeres = []; }
 
   // Perguntas: carrega ativas + respostas desse filho pra calcular pendentes
@@ -2799,10 +2817,7 @@ async function _recarregarTarefas() {
   const id = APP.filhoAtual?.id;
   if (!id) return;
   try {
-    const tSnap = await getDocs(query(collection(dbPvd,'adm_kanban'), where('status','in',['todo','doing','blocked'])));
-    const todos = tSnap.docs.map(d => ({ id:d.id, ...d.data() })).filter(t => !t.arquivado && t.status !== 'done');
-    APP.tarefas = todos.filter(t => (t.responsaveis||[]).includes(id));
-    APP.listaAfazeres = todos.filter(t => t.lista_aberta && (t.responsaveis||[]).length === 0);
+    ({ tarefas: APP.tarefas, afazeres: APP.listaAfazeres } = await tarefasDoFilho(id));
     renderTarefas();
     renderListaAfazeres();
   } catch(e) { console.warn('Erro ao recarregar tarefas', e); }
