@@ -2098,6 +2098,11 @@ function montarFila() {
   if (consultas.length) fila.push({ cor:'blue', titulo: plural(consultas.length,'consulta hoje','consultas hoje'),
     sub: nomes(consultas, a => `${a.hora||'??:??'} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}`, 4), rota:'agenda', acao:'Abrir agenda' });
 
+  // Consulta de hoje sem pagamento: quem combinou de pagar no dia, e quem ficou devendo.
+  const cobrarHoje = consultas.filter(a => !String(a.status_pagamento||'').startsWith('pago'));
+  if (cobrarHoje.length) fila.push({ cor:'gold', titulo: plural(cobrarHoje.length,'consulta pra cobrar hoje','consultas pra cobrar hoje'),
+    sub: nomes(cobrarHoje, a => `${a.hora||''} ${escapaHtml((a.consulente_nome||'').split(' ')[0])}${a.paga_no_dia?' (paga no dia)':''} ${brl(a.valor)}`, 4), rota:'agenda', acao:'Abrir agenda' });
+
   // Só os últimos 30 dias: o que é mais velho que isso ninguém vai fechar, e vira ruído.
   const ha30 = new Date(Date.now() - 30*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const passadas = (S.atendimentos||[]).filter(a => a.data && a.data < hoje && a.data >= ha30 && a.status_atendimento === 'agendado');
@@ -7343,6 +7348,7 @@ function renderSolicitacoes(c) {
   // também não podem virar histórico: ninguém processou nada.
   const aguardando = S.solicitacoes.filter(s => s.status === 'aguardando_pagamento' && !pagoPreso(s)).sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
   const processadas = S.solicitacoes.filter(s => s.status !== 'pendente' && s.status !== 'aguardando_pagamento').sort((a,b) => (b.criadoEm?.seconds||0) - (a.criadoEm?.seconds||0));
+  const semPagar = semPagamentoHa3Dias();
 
   c.innerHTML = `
     <div class="page-head">
@@ -7355,6 +7361,8 @@ function renderSolicitacoes(c) {
         <a class="btn" href="https://terreirodocandieiro.com.br/agendar.html" target="_blank">↗ Ver página pública</a>
       </div>
     </div>
+
+    ${semPagar.length ? cartaoSemPagamento(semPagar) : ''}
 
     ${pendentes.length === 0 ? '<div class="card"><div class="empty"><div class="empty-t">Nenhuma solicitação pendente</div><div class="empty-s">Quando alguém agendar pela página pública, aparece aqui.</div></div></div>' : `
       <div class="card" style="margin-bottom:14px">
@@ -7384,6 +7392,7 @@ function renderSolicitacoes(c) {
                 ${chipPagoAuto(s)}
                 ${chipPagoSuspeito(s)}
                 ${!s.pago_automatico && s.comprovante_anexado?'<span class="chip chip-green">comprovante anexado</span>':''}
+                ${s.paga_no_dia?'<span class="chip chip-blue">paga no dia</span>':''}
                 <span style="font-size:11px;color:var(--text3);margin-left:auto">${fmt.rel(s.criadoEm)}</span>
               </div>
               ${s.observacao?`<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--gold);font-size:12.5px;color:var(--text2);font-style:italic">"${escapaHtml(s.observacao)}"</div>`:''}
@@ -7391,6 +7400,7 @@ function renderSolicitacoes(c) {
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:140px">
               ${waLink ? `<a class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent;justify-content:center" href="${waLink}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
               <button class="btn btn-sm btn-primary" onclick="window._app.aprovarSolicitacao('${escapaJs(s.id)}')">Aprovar</button>
+              ${botaoPagaNoDia(s)}
               <button class="btn btn-sm" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Rejeitar</button>
             </div>
           </div>
@@ -7421,6 +7431,7 @@ function renderSolicitacoes(c) {
             </div>
             <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
               <button class="btn btn-sm" onclick="window._app.solicitacaoPraFila('${escapaJs(s.id)}')" title="Devolve pra fila de aprovação, como se tivesse chegado agora">→ Mandar pra fila</button>
+              ${botaoPagaNoDia(s)}
               <button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Descartar</button>
             </div>
           </div>
@@ -7526,6 +7537,7 @@ async function aprovarSolicitacao(id) {
       }
       // 3. Cria atendimento agendado (com servico_nome + modalidade pra calendar)
       const atendPayload = {
+        ...(s.paga_no_dia && !jaPago ? { paga_no_dia: true } : {}),
         consulente_id: consId,
         consulente_nome: s.nome,
         consulente_tel: s.tel || '',
@@ -7648,6 +7660,112 @@ function novaCobranca() {
       btn.disabled = false; btn.textContent = 'Gerar link';
     }
   };
+}
+
+// ── SEM PAGAMENTO HÁ MAIS DE 3 DIAS ────────────────────────────────────────
+// Pedido que segura uma data sem pagar. A casa manda um prazo (WhatsApp ou
+// email); passou o prazo, libera a data. Quem combinou de pagar no dia leva a
+// marca "paga no dia": sai daqui e aparece no Hoje do dia da consulta.
+const _naoPago = s => !s.pago_automatico && !s.comprovante_anexado && (s.status === 'pendente' || s.status === 'aguardando_pagamento');
+function semPagamentoHa3Dias() {
+  const hoje = hojeISO(), corte = Date.now() - 3*86400000;
+  return (S.solicitacoes||[]).filter(s => _naoPago(s) && !s.paga_no_dia && s.data >= hoje && (s.criadoEm?.seconds||0)*1000 < corte)
+    .sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+}
+// Prazo padrão: 2 dias, mas nunca depois da véspera da consulta.
+function prazoPadrao(s) {
+  const d = n => new Date(Date.now() + n*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const vespera = new Date(new Date(s.data+'T12:00:00').getTime() - 86400000).toISOString().slice(0,10);
+  const p = d(2) < vespera ? d(2) : vespera;
+  return p < d(0) ? d(0) : p;
+}
+function botaoPagaNoDia(s) {
+  return `<button class="btn btn-sm" onclick="window._app.marcarPagaNoDia('${escapaJs(s.id)}', ${!s.paga_no_dia})" title="Combinou de pagar no dia: sai da cobrança e aparece no Hoje do dia">${s.paga_no_dia ? '✕ Tirar "paga no dia"' : '💵 Paga no dia'}</button>`;
+}
+function cartaoSemPagamento(lista) {
+  const hoje = hojeISO();
+  const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
+  return `<div class="card" style="margin-bottom:14px;border-color:var(--red-bd)">
+    <div class="card-h"><div class="card-title">Sem pagamento há mais de 3 dias (${lista.length})</div></div>
+    <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Seguram uma data sem pagar. Mande um prazo; passou dele, libere a data. Se a pessoa combinou de pagar no dia, marque "Paga no dia".</div>
+    ${lista.map(s => {
+      const dias = Math.floor((Date.now() - (s.criadoEm?.seconds||0)*1000) / 86400000);
+      const vencido = s.prazo_pagamento && s.prazo_pagamento < hoje;
+      const aviso = s.prazo_pagamento ? `<span class="chip ${vencido?'chip-red':'chip'}">${vencido?'prazo vencido':'prazo'} ${dm(s.prazo_pagamento)}${s.lembrete_via?` · ${s.lembrete_via}`:''}</span>` : '';
+      return `<div class="list-item" style="align-items:flex-start">
+        <div class="li-avatar">${escapaHtml(fmt.initials(s.nome))}</div>
+        <div class="li-main">
+          <div class="li-name">${escapaHtml(s.nome)} <span style="color:var(--text3);font-weight:400;font-size:13px">· ${fmt.dataLong(s.data)} · ${s.hora}</span></div>
+          <div class="li-meta" style="margin-top:4px">
+            <span>${escapaHtml(s.servico_nome||'Consulta')}</span>
+            <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
+            <span>pedido há ${dias} dias</span>
+            ${aviso}
+          </div>
+          <div class="li-meta" style="margin-top:8px;gap:8px">
+            <label style="font-size:12px;color:var(--text3)">Prazo</label>
+            <input type="date" class="fi" id="prz-${escapaHtml(s.id)}" value="${s.prazo_pagamento && !vencido ? s.prazo_pagamento : prazoPadrao(s)}" min="${hoje}" max="${s.data}" style="width:auto;padding:6px 8px"/>
+          </div>
+        </div>
+        <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
+          ${s.tel ? `<button class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent" onclick="window._app.cobrarComPrazo('${escapaJs(s.id)}','whatsapp')">💬 Prazo no WhatsApp</button>` : ''}
+          ${s.email ? `<button class="btn btn-sm" onclick="window._app.cobrarComPrazo('${escapaJs(s.id)}','email')">📧 Prazo por email</button>` : ''}
+          ${botaoPagaNoDia(s)}
+          ${vencido ? `<button class="btn btn-sm" style="border-color:var(--red-bd);color:var(--red)" onclick="window._app.rejeitarSolicitacao('${escapaJs(s.id)}')">Liberar a data</button>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+async function marcarPagaNoDia(id, valor) {
+  try {
+    await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { paga_no_dia: valor, atualizadoEm: serverTimestamp() });
+    toast(valor ? 'Marcado: paga no dia. Aparece no Hoje do dia da consulta.' : 'Marca tirada', 'ok');
+  } catch(e) { toast('Erro: '+e.message,'err'); }
+}
+function textoPrazo(s, prazo, link) {
+  const dataBr = new Date(s.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+  const prazoBr = new Date(prazo+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+  const pix = (S.cfgAgendamento?.pix || '').trim(), tit = (S.cfgAgendamento?.pix_titular || '').trim();
+  return [
+    `Oi ${(s.nome||'').split(' ')[0]}, é do Terreiro do Candieiro.`, '',
+    `Seu horário está guardado: ${s.servico_nome || 'consulta'}, ${dataBr} às ${s.hora}.`,
+    `Pra manter essa data, o pagamento de R$ ${s.valor_proposto||0} precisa chegar até ${prazoBr}, às 20:00. Depois disso o horário volta pra agenda.`, '',
+    link ? `Pagar por aqui (PIX ou cartão): ${link}` : (pix ? `PIX: ${pix}${tit?` (${tit})`:''}. Pode mandar o comprovante por aqui.` : ''),
+    'Se for melhor pagar no dia, é só responder que a gente deixa combinado.', '', 'Axé!'
+  ].filter((l, i, a) => l || a[i-1]).join('\n');
+}
+async function cobrarComPrazo(id, via) {
+  const s = S.solicitacoes.find(x => x.id === id); if (!s) return;
+  const prazo = document.getElementById('prz-'+id)?.value || prazoPadrao(s);
+  // A janela abre antes do await: o Safari bloqueia pop-up aberto depois.
+  const janela = via === 'whatsapp' ? window.open('', '_blank') : null;
+  let link = null;
+  const ck = S.cfgAgendamento || {};
+  if (ck.checkout_ativo && ck.checkout_worker_url) {
+    try {
+      const r = await fetch(ck.checkout_worker_url.replace(/\/+$/,'') + '/checkout', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tipo:'sol', doc_id:id }) });
+      link = (await r.json().catch(() => ({}))).url || null;
+    } catch (e) { console.warn('checkout falhou', e?.message); }
+  }
+  const texto = textoPrazo(s, prazo, link);
+  try {
+    if (via === 'whatsapp') {
+      const url = `https://wa.me/${telLimpoBR(s.tel)}?text=${encodeURIComponent(texto)}`;
+      if (janela) janela.location = url; else window.open(url, '_blank');
+    } else {
+      const cfg = await _carregarEmailCfg();
+      if (!cfg?.worker_url || !cfg?.worker_secret) throw new Error('config de email incompleta');
+      const resp = await fetch(cfg.worker_url, { method:'POST', headers:{'Content-Type':'application/json','X-Auth-Secret':cfg.worker_secret},
+        body: JSON.stringify({ to: s.email, to_name: s.nome||'', from: cfg.from||undefined, reply_to: cfg.reply_to||undefined,
+          subject: `Seu horário no Terreiro do Candieiro: pagamento até ${prazo.slice(8,10)}/${prazo.slice(5,7)}`,
+          text: texto, html: escapaHtml(texto).replace(/(https:\/\/\S+)/g,'<a href="$1">$1</a>').replace(/\n/g,'<br>') }) });
+      if (!resp.ok) throw new Error('Worker ' + resp.status);
+    }
+    await updateDoc(doc(dbPvd,'adm_solicitacoes',id), { prazo_pagamento: prazo, lembrete_via: via, lembrete_prazo_em: serverTimestamp() });
+    toast(via === 'email' ? 'Email com prazo enviado' : 'Prazo registrado. Confere e envia no WhatsApp.', 'ok');
+  } catch (e) { janela?.close(); toast('Não consegui: ' + e.message, 'err'); }
 }
 
 async function rejeitarSolicitacao(id) {
@@ -10215,7 +10333,7 @@ window._app = {
   setAgendaFiltro,
   aprovarSolicitacao, novaCobranca,
   rejeitarSolicitacao,
-  solicitacaoPraFila,
+  solicitacaoPraFila, marcarPagaNoDia, cobrarComPrazo,
   openAvisoForm,
   arquivarAviso,
   openPerguntaForm,

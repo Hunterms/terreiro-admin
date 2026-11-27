@@ -1716,6 +1716,14 @@ async function digestDoDia(env, token, hoje) {
         .slice(0, 4).join(' · '),
       url: 'index.html#agenda',
     });
+    // Quem paga no dia (ou ficou devendo): lembrar de cobrar antes de começar.
+    const cobrar = consultas.filter((a) => !String(a.status_pagamento || '').startsWith('pago'));
+    if (cobrar.length) avisos.push({
+      tag: 'cobrar-hoje',
+      titulo: `${cobrar.length} pra cobrar hoje`,
+      corpo: cobrar.map((a) => `${a.hora || ''} ${a.consulente_nome || ''}${a.valor ? ` R$ ${a.valor}` : ''}`.trim()).slice(0, 4).join(' · '),
+      url: 'index.html#agenda',
+    });
   }
 
   // A gira de ontem, se o caixa dela fechou.
