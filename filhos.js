@@ -274,7 +274,7 @@ export function explicar(erro) {
 //   - toda pergunta tem "Não sei ou não quero responder" (`NAO_DIZER`).
 export const NAO_DIZER = 'nao_dizer';
 export const CENSO = [
-  { campo: 'censo_cor', emoji: '✊🏿', titulo: 'Como você se declara racialmente?',
+  { campo: 'censo_cor', emoji: '✊🏿', titulo: 'Como você se declara?',
     porque: 'Quem diz é você, do jeito que você se vê. As opções são as do IBGE.',
     opcoes: [['branca', 'Branca'], ['preta', 'Preta'], ['amarela', 'Amarela'], ['parda', 'Parda'], ['indigena', 'Indígena']] },
   { campo: 'censo_genero', emoji: '🌗', titulo: 'Qual a sua identidade de gênero?',
