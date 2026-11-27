@@ -2210,10 +2210,14 @@ const NOME_PAGINA = { home:'Início', agendar:'Agendar', buzios:'Búzios', baral
 // redesenho pedia as visitas de novo: o Worker lê até 5 mil registros por vez.
 // Agora o resultado vale 10 minutos nesta aba.
 let _visitasMemo = null;
-async function renderVisitasSite() {
+// Só carrega no toque: cada leitura nova custa milhares de leituras do banco
+// (27/11, a cota acabou às 13h). O Worker guarda 1 hora.
+async function renderVisitasSite(pedido = false) {
   const alvo = document.getElementById('visitas-site');
   if (!alvo) return;
-  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) { alvo.innerHTML = cartaoVisitas(_visitasMemo.r); return; }
+  if (_visitasMemo && Date.now() - _visitasMemo.em < 3600000) { alvo.innerHTML = cartaoVisitas(_visitasMemo.r); return; }
+  if (!pedido) { alvo.innerHTML = `<button class="btn" onclick="window._app.renderVisitasSite(true)">Ver visitas do site</button>`; return; }
+  alvo.innerHTML = '<div class="li-meta">Carregando visitas…</div>';
   const cfg = await _carregarEmailCfg();
   if (!cfg?.worker_url || !cfg?.worker_secret) return;
   let r;
@@ -10412,7 +10416,7 @@ function renderDados(c) {
   `;
 }
 
-window._app = {
+window._app = { renderVisitasSite,
   setEntradas,
   abrirFecharAgenda, reabrirAgenda, mudarMesAgenda, abrirHorarioExtra,
   julgarAcessoPdv,

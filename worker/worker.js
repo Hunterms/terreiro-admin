@@ -1189,18 +1189,14 @@ async function rotaMural(body, env) {
     : null;
 
   // As três listas são as mesmas pra todo filho: ficam 2 minutos na memória
-  // (ver _filhosMemo). O recorte por pessoa continua sendo feito abaixo.
-  if (!_muralMemo || Date.now() - _muralMemo.em >= FILHOS_MEMO_MS) {
-    const listas = await Promise.all([
+  // (ver `guardado`). O recorte por pessoa continua sendo feito abaixo.
+  const [avisos, eventos, inscricoes] = await guardado('mural', FILHOS_MEMO_MS, () => Promise.all([
       fsList(PROJETO_PVD, 'adm_avisos', token).catch(() => []),
       // Mesmo caso da /agenda: se a service account não alcançar o projeto do
       // site, isto estoura em vez de devolver agenda vazia em silêncio.
       fsList(PROJETO_CAND, 'eventos', token),
       fsList(PROJETO_PVD, 'evento_inscricoes', token).catch(() => []),
-    ]);
-    _muralMemo = { em: Date.now(), listas };
-  }
-  const [avisos, eventos, inscricoes] = _muralMemo.listas;
+  ]));
   await marca;   // aqui, e não solta: ver o comentário lá em cima
 
   return json({
@@ -2077,11 +2073,27 @@ const CAMPOS_PRIVADOS = ['tel', 'pin', 'pin_hash', 'pin_criado_em', 'auth_email'
 // filho). Toda visita à área do filho, à despensa e ao cadastro pede essa lista.
 // Fica 2 minutos na memória do Worker: dois filhos abrindo no mesmo minuto
 // pagam uma vez. Quem acabou de responder algo atualiza a própria tela sozinho.
-let _filhosMemo = null;
-let _muralMemo = null;
-const FILHOS_MEMO_MS = 120000;
+// A memória do isolate sozinha não segurava: o Cloudflare espalha as visitas
+// por vários isolates, e cada um pagava a lista de novo. Em 27/11, dia do
+// convite do censo, a cota estourou às 13h. Agora a memória vem com o cache do
+// datacenter atrás (`caches.default`), que todos os isolates dali enxergam.
+const _memo = new Map();
+async function guardado(chave, ms, fn) {
+  const m = _memo.get(chave);
+  if (m && Date.now() - m.em < ms) return m.v;
+  const url = `https://memo.local/${chave}`;
+  const hit = await caches.default.match(url).catch(() => null);
+  if (hit) { const v = await hit.json(); _memo.set(chave, { em: Date.now(), v }); return v; }
+  const v = await fn();
+  _memo.set(chave, { em: Date.now(), v });
+  await caches.default.put(url, new Response(JSON.stringify(v), { headers: { 'Cache-Control': `max-age=${Math.round(ms / 1000)}` } })).catch(() => {});
+  return v;
+}
+const FILHOS_MEMO_MS = 600000;
 async function rotaFilhos(env) {
-  if (_filhosMemo && Date.now() - _filhosMemo.em < FILHOS_MEMO_MS) return json(_filhosMemo.corpo);
+  return json(await guardado('filhos', FILHOS_MEMO_MS, () => listaPublicaDeFilhos(env)));
+}
+async function listaPublicaDeFilhos(env) {
   const token = await tokenGoogle(env);
   const filhos = await fsList(PROJETO_PVD, 'fin_filhos', token);
 
@@ -2101,8 +2113,7 @@ async function rotaFilhos(env) {
   });
 
   limpos.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
-  _filhosMemo = { em: Date.now(), corpo: { filhos: limpos } };
-  return json({ filhos: limpos });
+  return { filhos: limpos };
 }
 
 // ── PIN, SESSÃO E LIMITE DE TENTATIVA ──────────────────────────────────────
@@ -3592,11 +3603,12 @@ export function visitaDescartada(body, origem, ua, rede) {
   return !VISITA_ORIGENS.test(origem || '') || !VISITA_TIPOS.includes(body?.tipo) || VISITA_ROBO.test(ua || '') || VISITA_DATACENTER.test(rede || '');
 }
 
-// Cada chamada lê todas as visitas da semana (milhares). Guarda 10 min.
-let _visitasMemo = null;
+// Cada chamada lê todas as visitas da semana (milhares). Guarda 1 hora, no
+// cache do datacenter, e o admin só pede quando alguém toca no cartão.
+// ponytail: ainda relê a semana crua; resumo diário gravado se o site crescer.
 async function rotaVisitas(env) { return json(await dadosVisitas(env)); }
-async function dadosVisitas(env) {
-  if (_visitasMemo && Date.now() - _visitasMemo.em < 600000) return _visitasMemo.corpo;
+function dadosVisitas(env) { return guardado('visitas', 3600000, () => _dadosVisitas(env)); }
+async function _dadosVisitas(env) {
   const token = await tokenGoogle(env);
   const hoje = hojeSP(), semana = maisDias(hoje, -6);
   const [linhas, sols] = await Promise.all([
@@ -3605,7 +3617,6 @@ async function dadosVisitas(env) {
     fsQuery(PROJETO_PVD, 'adm_solicitacoes', token, { campo: 'criadoEm', op: 'GREATER_THAN_OR_EQUAL', valor: new Date(semana + 'T03:00:00Z') }, 1000),
   ]);
   const corpo = { hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) };
-  _visitasMemo = { em: Date.now(), corpo };
   return corpo;
 }
 

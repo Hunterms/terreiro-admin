@@ -1399,12 +1399,16 @@ const PERGUNTAS_CADASTRO = [
 ];
 
 const _puladasNestaVisita = new Set();
+// A lista de filhos vem do Worker com até 10 min de atraso (cota). Quem acabou
+// de responder não pode ver a pergunta de novo: lembra aqui no aparelho.
+const _RESP = 'candieiro_respondi';
+const _jaRespondi = () => { try { return JSON.parse(localStorage.getItem(_RESP) || '[]'); } catch { return []; } };
 
 function renderCadastro(f) {
   const card = $('#cadastro-card');
   if (!card || !f) return;
 
-  const faltando = PERGUNTAS_CADASTRO.filter((p) => p.falta(f));
+  const faltando = PERGUNTAS_CADASTRO.filter((p) => p.falta(f) && !_jaRespondi().includes(`${f.id}:${p.campo}`));
   // Modal na entrada até responder (27/11). "Agora não" pula só nesta visita:
   // na próxima entrada a pergunta volta.
   const agora = faltando.find((p) => !_puladasNestaVisita.has(p.campo));
@@ -1465,6 +1469,7 @@ function renderCadastro(f) {
         ? (x.censo_ok = [...new Set([...(x.censo_ok || []), agora.campo])])
         : (x[agora.campo] = valor);
       marca(f);
+      try { localStorage.setItem(_RESP, JSON.stringify([..._jaRespondi(), `${f.id}:${agora.campo}`].slice(-60))); } catch {}
       const i = APP.filhos.findIndex((x) => x.id === f.id);
       if (i >= 0 && APP.filhos[i] !== f) marca(APP.filhos[i]);
       toast('Guardado, obrigado ✓','ok');
