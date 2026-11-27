@@ -1543,10 +1543,11 @@ async function tick(env) {
     if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
   });
 
-  // 6b) Os números grandes do admin, uma vez por hora.
-  if (estado.numeros_hora !== `${hoje}T${hora}`) {
+  // 6b) Os números grandes do admin: toda segunda às 9h (e na primeira vez).
+  const segunda = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/Sao_Paulo' }) === 'Mon';
+  if (!estado.numeros_dia || (segunda && hora >= 9 && estado.numeros_dia !== hoje)) {
     await passo('numeros', async () => {
-      await marcar({ numeros_hora: `${hoje}T${hora}` });
+      await marcar({ numeros_dia: hoje });
       await atualizarNumeros(token);
       feito.push('numeros');
     });
@@ -3424,7 +3425,7 @@ async function fsCount(projeto, colecao, token, filtro) {
 }
 
 // Os números grandes do admin (filhos ativos, consulentes) moram num doc só,
-// adm_config/numeros, atualizado de hora em hora por contagem (1 leitura cada).
+// adm_config/numeros, atualizado toda segunda por contagem (1 leitura cada).
 // Antes o admin lia as coleções inteiras pra contar a cada abertura.
 async function atualizarNumeros(token) {
   const c = (col, filtro) => fsCount(PROJETO_PVD, col, token, filtro);

@@ -1236,7 +1236,7 @@ function attachListeners() {
   // Prazo de retenção. Doc opcional: sem ele, vale RETENCAO_PADRAO_MESES.
   // Fica em config e não em constante porque o prazo é decisão da casa (e um
   // dia de advogado), não de quem escreveu o código.
-  // Números grandes prontos (Worker conta de hora em hora): 1 leitura.
+  // Números grandes prontos (Worker conta toda segunda): 1 leitura.
   ouvir('cfg_numeros', () => onSnapshot(doc(dbPvd,'adm_config','numeros'), snap => {
     S.numeros = snap.exists() ? snap.data() : {};
     if (['dashboard','agenda'].includes(S.route)) renderRoute();
