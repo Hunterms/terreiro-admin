@@ -1398,27 +1398,16 @@ const PERGUNTAS_CADASTRO = [
   })),
 ];
 
-const PULOU = 'candieiro_pulou';
-const UMA_SEMANA = 7 * 86400000;
-
-function pulados() {
-  try { return JSON.parse(localStorage.getItem(PULOU) || '{}'); } catch { return {}; }
-}
-function pular(campo) {
-  const p = pulados(); p[campo] = Date.now();
-  try { localStorage.setItem(PULOU, JSON.stringify(p)); } catch {}
-}
-function foiPuladoAgora(campo) {
-  const q = pulados()[campo];
-  return !!q && (Date.now() - q) < UMA_SEMANA;
-}
+const _puladasNestaVisita = new Set();
 
 function renderCadastro(f) {
   const card = $('#cadastro-card');
   if (!card || !f) return;
 
   const faltando = PERGUNTAS_CADASTRO.filter((p) => p.falta(f));
-  const agora = faltando.find((p) => !foiPuladoAgora(p.campo));
+  // Modal na entrada até responder (27/11). "Agora não" pula só nesta visita:
+  // na próxima entrada a pergunta volta.
+  const agora = faltando.find((p) => !_puladasNestaVisita.has(p.campo));
   if (!agora) { card.style.display = 'none'; return; }
 
   const quantas = faltando.length;
@@ -1433,8 +1422,9 @@ function renderCadastro(f) {
       .map(([v, r]) => `<button class="btn cad-op" data-v="${v}" style="flex:1 1 40%;padding:10px">${r}</button>`).join(''),
   }[agora.tipo];
 
-  card.style.display = '';
+  card.style.cssText = 'position:fixed;inset:0;z-index:1400;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:14px;overflow-y:auto';
   card.innerHTML = `
+    <div style="width:100%;max-width:460px;background:#161616;border-radius:12px">
     <div style="padding:14px 16px;background:linear-gradient(135deg,rgba(212,168,67,.11),rgba(212,168,67,.02));border:1px solid rgba(212,168,67,.28);border-radius:12px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:11px">
         <div style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:conic-gradient(var(--gold) 0deg ${volta}deg,rgba(255,255,255,.08) ${volta}deg 360deg);display:flex;align-items:center;justify-content:center">
@@ -1457,9 +1447,11 @@ function renderCadastro(f) {
         <div id="cad-err" class="erro-campo"></div>
         <div style="display:flex;gap:8px;margin-top:9px">
           ${agora.tipo === 'sim_nao' || agora.tipo === 'opcoes' ? '' : '<button class="btn btn-primary" id="cad-save" style="flex:1;padding:10px">Salvar</button>'}
-          <button class="btn" id="cad-pular" style="padding:10px 14px;${agora.tipo === 'sim_nao' || agora.tipo === 'opcoes' ? 'flex:1' : ''}">Pular</button>
+          <button class="btn" id="cad-pular" style="padding:10px 14px;${agora.tipo === 'sim_nao' || agora.tipo === 'opcoes' ? 'flex:1' : ''}">Agora não</button>
         </div>
+        <div style="font-size:11.5px;color:var(--text2);margin-top:10px;text-align:center">Prefere responder por áudio? <a href="https://wa.me/5519992494267" target="_blank" rel="noopener" style="color:var(--gold)">Manda no WhatsApp do terreiro</a></div>
       </div>
+    </div>
     </div>`;
 
   const erro = (m) => { const e = $('#cad-err'); e.textContent = m; e.style.display = 'block'; };
@@ -1483,7 +1475,7 @@ function renderCadastro(f) {
     }
   };
 
-  $('#cad-pular').onclick = () => { pular(agora.campo); renderCadastro(f); };
+  $('#cad-pular').onclick = () => { _puladasNestaVisita.add(agora.campo); renderCadastro(f); };
   $('#cad-sim')?.addEventListener('click', () => salvar(true));
   $('#cad-nao')?.addEventListener('click', () => salvar(false));
   card.querySelectorAll('.cad-op').forEach((b) => { b.onclick = () => salvar(b.dataset.v); });
