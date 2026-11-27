@@ -1548,6 +1548,7 @@ async function tick(env) {
   if (diaSemana === 'Mon' && hora >= 9 && estado.conversao_em !== hoje) {
     await passo('conversao', async () => {
       await marcar({ conversao_em: hoje });
+      await atualizarVisitas(env);
       await emailDaConversao(env);
       feito.push('conversao');
     });
@@ -3603,26 +3604,27 @@ export function visitaDescartada(body, origem, ua, rede) {
   return !VISITA_ORIGENS.test(origem || '') || !VISITA_TIPOS.includes(body?.tipo) || VISITA_ROBO.test(ua || '') || VISITA_DATACENTER.test(rede || '');
 }
 
-// Cada chamada lê todas as visitas da semana (milhares). Guarda 1 hora, no
-// cache do datacenter, e o admin só pede quando alguém toca no cartão.
-// ponytail: ainda relê a semana crua; resumo diário gravado se o site crescer.
+// Visitas: uma foto por semana, tirada segunda às 9h pelo cron (antes do email
+// da conversão) e guardada em adm_config/visitas_semana. Abrir o cartão custa
+// 1 leitura. Em 27/11 a versão que relia a semana a cada abertura gastou
+// 20.791 das 47 mil leituras do dia; a casa disse que semanal basta.
 async function rotaVisitas(env) { return json(await dadosVisitas(env)); }
-function dadosVisitas(env) { return guardado('visitas', 3600000, () => _dadosVisitas(env)); }
-async function _dadosVisitas(env) {
+async function dadosVisitas(env) {
+  const token = await tokenGoogle(env);
+  const foto = await fsGet(PROJETO_PVD, 'adm_config', 'visitas_semana', { token });
+  if (foto?.json) return JSON.parse(foto.json);
+  return atualizarVisitas(env); // primeira vez: tira a foto agora
+}
+async function atualizarVisitas(env) {
   const token = await tokenGoogle(env);
   const hoje = hojeSP(), semana = maisDias(hoje, -6);
-  // Os 6 dias passados não mudam: lidos uma vez por dia. Só o de hoje é relido
-  // (a cada hora, no máximo). Em 27/11 esta consulta, relendo a semana inteira
-  // a cada abertura do admin, gastou 20.791 das 47 mil leituras do dia.
-  // ponytail: teto de 5000 páginas por semana; paginar se o site passar disso.
-  const [passado, deHoje, sols] = await Promise.all([
-    guardado(`visitas-passado-${hoje}`, 86400000, async () =>
-      (await fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000)).filter((l) => l.dia < hoje)),
-    fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', valor: hoje }, 5000),
+  const [linhas, sols] = await Promise.all([
+    // ponytail: teto de 5000 páginas por semana; paginar se o site passar disso.
+    fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000),
     fsQuery(PROJETO_PVD, 'adm_solicitacoes', token, { campo: 'criadoEm', op: 'GREATER_THAN_OR_EQUAL', valor: new Date(semana + 'T03:00:00Z') }, 1000),
   ]);
-  const linhas = [...passado, ...deHoje];
-  const corpo = { hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) };
+  const corpo = { de: semana, ate: hoje, semana: resumoDeVisitas(linhas, sols, semana) };
+  await fsPatch(PROJETO_PVD, 'adm_config', 'visitas_semana', token, { json: JSON.stringify(corpo), em: new Date().toISOString() });
   return corpo;
 }
 

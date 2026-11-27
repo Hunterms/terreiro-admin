@@ -2199,13 +2199,11 @@ const NOME_PAGINA = { home:'Início', agendar:'Agendar', buzios:'Búzios', baral
 // redesenho pedia as visitas de novo: o Worker lê até 5 mil registros por vez.
 // Agora o resultado vale 10 minutos nesta aba.
 let _visitasMemo = null;
-// Só carrega no toque: cada leitura nova custa milhares de leituras do banco
-// (27/11, a cota acabou às 13h). O Worker guarda 1 hora.
-async function renderVisitasSite(pedido = false) {
+// Foto semanal (segunda 9h) guardada pelo Worker: abrir custa 1 leitura.
+async function renderVisitasSite() {
   const alvo = document.getElementById('visitas-site');
   if (!alvo) return;
   if (_visitasMemo && Date.now() - _visitasMemo.em < 3600000) { alvo.innerHTML = cartaoVisitas(_visitasMemo.r); return; }
-  if (!pedido) { alvo.innerHTML = `<button class="btn" onclick="window._app.renderVisitasSite(true)">Ver visitas do site</button>`; return; }
   alvo.innerHTML = '<div class="li-meta">Carregando visitas…</div>';
   const cfg = await _carregarEmailCfg();
   if (!cfg?.worker_url || !cfg?.worker_secret) return;
@@ -2221,12 +2219,13 @@ async function renderVisitasSite(pedido = false) {
   alvo.innerHTML = cartaoVisitas(r);
 }
 
-function cartaoVisitas({ hoje: h, semana: s }) {
+function cartaoVisitas({ semana: s, de, ate }) {
+  const dm = d => d ? `${d.slice(8,10)}/${d.slice(5,7)}` : '';
   const num = (rotulo, v) => `<div style="flex:1;background:var(--glass2);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
     <div class="ml" style="font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">${rotulo}</div>
     <div style="font-size:30px;font-weight:700;line-height:1.15">${v}</div><div style="font-size:11px;color:var(--text3)">pessoas</div></div>`;
   const equipe = `<a href="https://terreirodocandieiro.com.br/?equipe=1" target="_blank" rel="noopener" style="color:var(--gold)">tirar este aparelho da conta</a>`;
-  const topo = `<div style="display:flex;gap:10px;margin-top:12px">${num('Hoje', h.pessoas)}${num('7 dias', s.pessoas)}</div>`;
+  const topo = `<div style="display:flex;gap:10px;margin-top:12px">${num(de ? `${dm(de)} a ${dm(ate)}` : '7 dias', s.pessoas)}</div>`;
   const cab = `<div class="card-h" style="margin-bottom:0"><div class="card-title">Visitas no site</div></div>`;
   if (!s.pessoas) return `<div class="card">${cab}${topo}
     <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-top:12px">A contagem começa quando o site novo sobe. Os números aparecem com a primeira visita.</div>
@@ -2238,9 +2237,8 @@ function cartaoVisitas({ hoje: h, semana: s }) {
   const det = [['De onde vêm', lista(s.fontes)], ['Páginas', lista(s.paginas, n => NOME_PAGINA[n] || n)], ['Mais procurado', lista(s.procurados)],
     ['Pedidos por serviço', lista(s.servicos)], ['Cidades', lista(s.cidades)], ['Aparelho', lista(s.aparelhos)], ['Pico', s.pico ? s.pico.nome + 'h' : '']].filter(([,v]) => v);
   return `<div class="card">${cab}${topo}
-    <div style="display:grid;grid-template-columns:1fr 52px 52px;margin-top:14px;font-size:13.5px">
-      <span></span><span style="text-align:right;font-size:11px;color:var(--text3)">hoje</span><span style="text-align:right;font-size:11px;color:var(--text3)">7 dias</span>
-      ${funil.map(([t,k]) => `<span style="padding:8px 0;border-top:1px solid var(--border)">${t}</span><b style="padding:8px 0;border-top:1px solid var(--border);text-align:right">${h[k]}</b><b style="padding:8px 0;border-top:1px solid var(--border);text-align:right">${s[k]}</b>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 52px;margin-top:14px;font-size:13.5px">
+      ${funil.map(([t,k]) => `<span style="padding:8px 0;border-top:1px solid var(--border)">${t}</span><b style="padding:8px 0;border-top:1px solid var(--border);text-align:right">${s[k]}</b>`).join('')}
     </div>
     ${degraus[0]?.perde ? `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--glass2);border:1px solid var(--border);font-size:13px;line-height:1.45">Maior perda na semana: entre ${nomes[degraus[0].a]} e ${nomes[degraus[0].b]}. ${degraus[0].perde} de ${s[degraus[0].a]} pararam ali.</div>` : ''}
     <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:14px;font-size:12.5px">
@@ -2248,7 +2246,7 @@ function cartaoVisitas({ hoje: h, semana: s }) {
     </div>
     ${tabelaOrigens(s.origens)}
     ${geradorDeLink()}
-    <div style="font-size:11.5px;color:var(--text3);margin-top:12px">Sem robôs. Quem é da casa: ${equipe}. Toda segunda às 9h o resumo da semana vai por email.</div></div>`;
+    <div style="font-size:11.5px;color:var(--text3);margin-top:12px">Sem robôs. Quem é da casa: ${equipe}. Atualiza toda segunda às 9h, junto do email.</div></div>`;
 }
 
 // Funil por origem (o post do link ?c=, senão a fonte). Pago = pago no
@@ -10405,7 +10403,7 @@ function renderDados(c) {
   `;
 }
 
-window._app = { renderVisitasSite,
+window._app = {
   setEntradas,
   abrirFecharAgenda, reabrirAgenda, mudarMesAgenda, abrirHorarioExtra,
   julgarAcessoPdv,
