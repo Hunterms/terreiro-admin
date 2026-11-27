@@ -308,7 +308,7 @@ export const respostaCensoValida = (campo, valor) => {
 // Lista montada pelo que fichas médicas de comunidade pedem (escoteiros:
 // contato de emergência, tipo sanguíneo, alergias por categoria, remédio de
 // uso contínuo, condição atual, plano) mais o que é de terreiro (defumação,
-// ervas, perfume/álcool, quizila).
+// ervas, perfume/álcool). Gravidez e quizila saíram em 27/11, decisão da casa.
 //
 // Saúde é dado sensível (LGPD art. 5º, II e art. 11). Mesmas travas do censo:
 //   - só o filho escreve, pelo /meu-cadastro, e só ele relê, pelo /minha-saude;
@@ -331,14 +331,14 @@ export const SAUDE_GRUPOS = [
       opcoes: [['nenhuma','Nenhuma'],['alimento','Algum alimento'],['remedio','Algum remédio'],['fumaca','Fumaça ou defumação'],['ervas','Erva ou planta'],['perfume','Perfume ou álcool'],['inseto','Picada de inseto'],['latex','Látex'],['outra','Outra']] },
     { campo: 'saude_alergias_txt', tipo: 'texto', rotulo: 'Quais? E o que acontece?', dica: 'amendoim, dipirona, arruda… fica com falta de ar', max: 300, longo: true },
     { campo: 'saude_condicoes', tipo: 'varias', rotulo: 'Precisa de cuidado com…',
-      opcoes: [['nenhuma','Nada'],['diabetes','Diabetes'],['pressao_alta','Pressão alta'],['pressao_baixa','Pressão baixa ou desmaio'],['asma','Asma ou problema de respiração'],['epilepsia','Epilepsia ou convulsão'],['coracao','Coração'],['gravidez','Gravidez'],['locomocao','Dificuldade pra andar ou ficar em pé'],['outra','Outra']] },
+      opcoes: [['nenhuma','Nada'],['diabetes','Diabetes'],['pressao_alta','Pressão alta'],['pressao_baixa','Pressão baixa ou desmaio'],['asma','Asma ou problema de respiração'],['epilepsia','Epilepsia ou convulsão'],['coracao','Coração'],['locomocao','Dificuldade pra andar ou ficar em pé'],['outra','Outra']] },
     { campo: 'saude_condicoes_txt', tipo: 'texto', rotulo: 'Conta um pouco, se quiser', max: 300, longo: true },
     { campo: 'saude_remedios', tipo: 'texto', rotulo: 'Remédio que toma todo dia ou de uso contínuo', dica: 'nome e horário', max: 400, longo: true },
     { campo: 'saude_plano', tipo: 'texto', rotulo: 'Plano de saúde (se tiver)', max: 80 },
   ]},
   { titulo: 'Comida', campos: [
     { campo: 'saude_restricoes', tipo: 'varias', rotulo: 'Não come…',
-      opcoes: [['nenhuma','Come de tudo'],['vegetariana','Carne (vegetariana)'],['vegana','Nada de origem animal'],['sem_gluten','Glúten'],['sem_lactose','Lactose'],['quizila','Quizila ou preceito'],['outra','Outra']] },
+      opcoes: [['nenhuma','Come de tudo'],['vegetariana','Carne (vegetariana)'],['vegana','Nada de origem animal'],['sem_gluten','Glúten'],['sem_lactose','Lactose'],['outra','Outra']] },
     { campo: 'saude_restricoes_txt', tipo: 'texto', rotulo: 'Detalhe, se precisar', max: 200 },
   ]},
   { titulo: 'Mais alguma coisa', campos: [
