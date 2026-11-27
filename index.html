@@ -6569,7 +6569,7 @@ function openAtendimentoForm(id=null) {
           </select>
         </div>
       </div>
-      ${a && !String(a.status_pagamento||'pendente').startsWith('pago') && a.status_pagamento !== 'isento' ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px">${botaoLinkPagamento('atd', a.id)}${botaoPagaNoDia(a, 'atd')}${a.paga_depois_ate ? `<span class="chip chip-blue">combinou pagar até ${a.paga_depois_ate.slice(8,10)}/${a.paga_depois_ate.slice(5,7)}</span>` : ''}</div>` : ''}
+      ${a && !String(a.status_pagamento||'pendente').startsWith('pago') && a.status_pagamento !== 'isento' ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px"><button class="btn btn-sm btn-primary" onclick="window._app.marcarJaPagou('atd','${escapaJs(a.id)}')" title="Pagou por fora (PIX na chave, dinheiro): só confirmar">✓ Já pagou</button>${botaoLinkPagamento('atd', a.id)}${botaoPagaNoDia(a, 'atd')}${a.paga_depois_ate ? `<span class="chip chip-blue">combinou pagar até ${a.paga_depois_ate.slice(8,10)}/${a.paga_depois_ate.slice(5,7)}</span>` : ''}</div>` : ''}
       ${a ? '' : `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:2px 0 14px">
         <input type="checkbox" id="at-cobrar" style="width:18px;height:18px"/>
         <span style="font-size:13px">Cobrar no email: o horário fica reservado por 24h, com PIX e cartão. Desmarcado (quem é da casa e paga no dia), o email só confirma.</span>
