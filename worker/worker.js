@@ -3611,11 +3611,17 @@ function dadosVisitas(env) { return guardado('visitas', 3600000, () => _dadosVis
 async function _dadosVisitas(env) {
   const token = await tokenGoogle(env);
   const hoje = hojeSP(), semana = maisDias(hoje, -6);
-  const [linhas, sols] = await Promise.all([
-    // ponytail: teto de 5000 páginas por semana; paginar se o site passar disso.
-    fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000),
+  // Os 6 dias passados não mudam: lidos uma vez por dia. Só o de hoje é relido
+  // (a cada hora, no máximo). Em 27/11 esta consulta, relendo a semana inteira
+  // a cada abertura do admin, gastou 20.791 das 47 mil leituras do dia.
+  // ponytail: teto de 5000 páginas por semana; paginar se o site passar disso.
+  const [passado, deHoje, sols] = await Promise.all([
+    guardado(`visitas-passado-${hoje}`, 86400000, async () =>
+      (await fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', op: 'GREATER_THAN_OR_EQUAL', valor: semana }, 5000)).filter((l) => l.dia < hoje)),
+    fsQuery(PROJETO_PVD, 'site_visitas', token, { campo: 'dia', valor: hoje }, 5000),
     fsQuery(PROJETO_PVD, 'adm_solicitacoes', token, { campo: 'criadoEm', op: 'GREATER_THAN_OR_EQUAL', valor: new Date(semana + 'T03:00:00Z') }, 1000),
   ]);
+  const linhas = [...passado, ...deHoje];
   const corpo = { hoje: resumoDeVisitas(linhas.filter((l) => l.dia === hoje), sols, hoje), semana: resumoDeVisitas(linhas, sols, semana) };
   return corpo;
 }
