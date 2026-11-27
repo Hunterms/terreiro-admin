@@ -7749,6 +7749,7 @@ function cartaoSemPagamento(lista) {
           </div>
         </div>
         <div class="li-actions" style="flex-direction:column;align-items:stretch;gap:6px;min-width:150px">
+          <button class="btn btn-sm btn-primary" onclick="window._app.marcarJaPagou('${t}','${id}')" title="Pagou por fora (PIX direto, dinheiro): confirma e sai da cobrança">✓ Já pagou</button>
           ${s.tel ? `<button class="btn btn-sm" style="background:#25d366;color:#fff;border-color:transparent" onclick="window._app.cobrarComPrazo('${t}','${id}','whatsapp')">💬 Prazo no WhatsApp</button>` : ''}
           ${s.email ? `<button class="btn btn-sm" onclick="window._app.cobrarComPrazo('${t}','${id}','email')">📧 Prazo por email</button>` : '<span style="font-size:11.5px;color:var(--text3)">sem email cadastrado</span>'}
           ${botaoLinkPagamento(t, s.id)}
@@ -7796,6 +7797,32 @@ function marcarPagaDepois(tipo, id, limpar) {
     </div>
     <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="pd-ok">Salvar combinado</button></div>`);
   document.getElementById('pd-ok').onclick = () => salvar(document.getElementById('pd-ate').value || s.data);
+}
+
+// Pagou por fora (PIX direto na chave, dinheiro). Pedido: abre a aprovação já
+// com "pagamento confirmado" marcado, que cria a consulta paga. Consulta
+// aprovada: escolhe como pagou e marca paga.
+async function marcarJaPagou(tipo, id) {
+  if (tipo === 'sol') {
+    await aprovarSolicitacao(id);
+    const c = document.getElementById('ap-pago'); if (c) c.checked = true;
+    return;
+  }
+  const a = (S.atendimentos||[]).find(x => x.id === id); if (!a) return;
+  openModal(`
+    <div class="modal-h"><h3>Já pagou</h3><button class="btn-close" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-c">
+      <div style="font-size:13.5px;color:var(--text2);margin-bottom:12px">${escapaHtml(a.consulente_nome||'')} · ${fmt.dataLong(a.data)} às ${a.hora} · R$ ${a.valor||0}</div>
+      <div class="fi-group"><label>Como pagou</label><select class="fi" id="jp-met">
+        <option value="pago_pix">PIX</option><option value="pago_dinheiro">Dinheiro</option><option value="pago_cartao">Cartão</option></select></div>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="jp-ok">Confirmar pagamento</button></div>`);
+  document.getElementById('jp-ok').onclick = async () => {
+    try {
+      await updateDoc(doc(dbPvd,'adm_atendimentos',id), { status_pagamento: document.getElementById('jp-met').value, pago_em: serverTimestamp(), atualizadoEm: serverTimestamp() });
+      closeModal(); toast('Pagamento confirmado', 'ok');
+    } catch(e) { toast('Erro: '+e.message,'err'); }
+  };
 }
 
 async function marcarPagaNoDia(tipo, id, valor) {
@@ -10428,7 +10455,7 @@ window._app = {
   setAgendaFiltro,
   aprovarSolicitacao, novaCobranca,
   rejeitarSolicitacao,
-  solicitacaoPraFila, marcarPagaNoDia, marcarPagaDepois, cobrarComPrazo, copiarLinkPagamento, liberarData,
+  solicitacaoPraFila, marcarPagaNoDia, marcarPagaDepois, cobrarComPrazo, copiarLinkPagamento, liberarData, marcarJaPagou,
   openAvisoForm,
   arquivarAviso,
   openPerguntaForm,
