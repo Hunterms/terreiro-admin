@@ -1764,9 +1764,10 @@ async function digestDoDia(env, token, hoje) {
   }
 
   // Tarefas com prazo vencido e ainda em aberto.
+  // Só as abertas: a tarefa feita fica na coleção, e ler por prazo trazia 300 delas.
   const tarefas = (await fsQuery(PROJETO_PVD, 'adm_kanban', token,
-    { campo: 'prazo', op: 'LESS_THAN', valor: hoje }))
-    .filter((k) => k.status !== 'done' && !k.arquivado);
+    { campo: 'status', op: 'IN', valor: ['todo', 'doing', 'blocked'] }))
+    .filter((k) => k.prazo && k.prazo < hoje && !k.arquivado);
   if (tarefas.length) {
     avisos.push({
       tag: 'tarefas',

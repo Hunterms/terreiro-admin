@@ -388,8 +388,9 @@ const POR_ROTA = {
   consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
   servicos: ['adm_servicos'],
   'config-agendamento': ['adm_atendimentos_rec','eventos','adm_servicos'],
-  produtos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
-  pedidos: ['vendas_pedidos','adm_consulentes','vendas_produtos'],
+  // Pedidos da loja: os dos últimos 60 dias (vendas_pedidos_rec, no SEMPRE).
+  produtos: ['vendas_produtos'],
+  pedidos: ['vendas_produtos'],
   inteligencia: ['vendas_pedidos','adm_atendimentos','adm_consulentes','vendas_produtos','adm_servicos'],
   entradas: ['vendas_pedidos','adm_solicitacoes','adm_atendimentos','evento_inscricoes','eventos','fin_mensalidade_pedidos'],
   avisos: ['adm_avisos','adm_avisos_lidos','adm_grupos'],
@@ -412,6 +413,16 @@ function _ligar(nome) {
 // A lista de filhos liga em toda tela que não está aqui (quase todas usam).
 const SEM_FILHOS = ['dashboard','visitas','agenda','solicitacoes','consulentes','servicos','config-agendamento'];
 function _precisa(rota) { const r = POR_ROTA[rota]; return r === '*' ? Object.keys(_ouvintes) : [...SEMPRE, ...(SEM_FILHOS.includes(rota) ? [] : ['fin_filhos']), ...(r || [])]; }
+/** Várias consultas, um resultado: junta por id. Devolve um unsubscribe só. */
+function _juntar(consultas, aoMudar) {
+  const partes = consultas.map(() => []);
+  const us = consultas.map((q, i) => onSnapshot(q, snap => {
+    partes[i] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const m = new Map(); partes.flat().forEach(x => m.set(x.id, x));
+    aoMudar([...m.values()]);
+  }));
+  return () => us.forEach(u => u());
+}
 /** Liga as coleções e espera chegar. Pra ação que precisa de algo que a tela não carrega. */
 function precisa(...nomes) {
   nomes.forEach(_ligar);
@@ -1067,7 +1078,7 @@ function attachListeners() {
       if (p.status === 'confirmado' && p.pago_automatico && !p.confirmadoEm && (p.pagoEm||'') >= '2026-11-02') p.status = 'pendente';
       return p; });
     atualizarBadgePedidos();
-    if (S.route === 'dashboard') renderRoute();
+    if (['pedidos','produtos'].includes(S.route)) renderRoute();
   }));
   ouvir('adm_solicitacoes_rec', () => onSnapshot(query(collection(dbPvd,'adm_solicitacoes'), where('criadoEm','>=',_diasAtras(60))), snap => {
     if (_ligados.has('adm_solicitacoes')) return;
@@ -1118,11 +1129,17 @@ function attachListeners() {
     if(S.route) renderRoute();
   }));
 
-  // Kanban
-  ouvir('adm_kanban', () => onSnapshot(collection(dbPvd,'adm_kanban'), snap => {
-    S.kanban = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(S.route === 'kanban' || S.route === 'meu-dashboard' || S.route === 'dashboard') renderRoute();
-  }));
+  // ── JANELAS (27/11, cota) ───────────────────────────────────────────
+  // Coleção que só cresce é lida pela janela que as telas mostram. A versão
+  // `_tudo` existe pro backup e pro apagar pessoa (rota 'dados' e garantirTudo
+  // ligam tudo); quando ela está ligada, manda.
+  const _aoMudarKanban = docs => { S.kanban = docs; if(['kanban','meu-dashboard','lembretes'].includes(S.route)) renderRoute(); };
+  // Tarefa aberta + feita nos últimos 40 dias (a coluna Feito e o "no mês").
+  ouvir('adm_kanban', () => _juntar([
+    query(collection(dbPvd,'adm_kanban'), where('status','in',['todo','doing','blocked'])),
+    query(collection(dbPvd,'adm_kanban'), where('movido_done_em','>=',new Date(Date.now()-40*86400000))),
+  ], docs => { if (!_ligados.has('adm_kanban_tudo')) _aoMudarKanban(docs); }));
+  ouvir('adm_kanban_tudo', () => onSnapshot(collection(dbPvd,'adm_kanban'), snap => _aoMudarKanban(snap.docs.map(d => ({ id:d.id, ...d.data() })))));
 
   // Eventos (candieiro project!)
   ouvir('eventos', () => onSnapshot(query(collection(dbCand,'eventos'), orderBy('data')), snap => {
@@ -1136,17 +1153,20 @@ function attachListeners() {
     if(['avisos','avisos-filho','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
   }));
 
-  // Disponibilidade
-  ouvir('adm_disponibilidade', () => onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => {
-    S.disponibilidade = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['disponibilidade','escalas','controle-disp','dashboard'].includes(S.route)) renderRoute();
+  // Disponibilidade: do mês passado em diante.
+  const _aoMudarDisp = docs => { S.disponibilidade = docs; if(['disponibilidade','escalas','controle-disp'].includes(S.route)) renderRoute(); };
+  const _mesPassado = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7); })();
+  ouvir('adm_disponibilidade', () => onSnapshot(query(collection(dbPvd,'adm_disponibilidade'), where('mes','>=',_mesPassado)), snap => {
+    if (!_ligados.has('adm_disponibilidade_tudo')) _aoMudarDisp(snap.docs.map(d => ({ id:d.id, ...d.data() })));
   }));
+  ouvir('adm_disponibilidade_tudo', () => onSnapshot(collection(dbPvd,'adm_disponibilidade'), snap => _aoMudarDisp(snap.docs.map(d => ({ id:d.id, ...d.data() })))));
 
-  // Escalas
-  ouvir('adm_escalas', () => onSnapshot(collection(dbPvd,'adm_escalas'), snap => {
-    S.escalas = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(['escalas','minhas-escalas','meu-dashboard','dashboard'].includes(S.route)) renderRoute();
+  // Escalas: dos últimos 120 dias em diante (a análise olha uns 3 meses).
+  const _aoMudarEsc = docs => { S.escalas = docs; if(['escalas','minhas-escalas','meu-dashboard','lembretes'].includes(S.route)) renderRoute(); };
+  ouvir('adm_escalas', () => onSnapshot(query(collection(dbPvd,'adm_escalas'), where('data','>=',_isoAtras(120))), snap => {
+    if (!_ligados.has('adm_escalas_tudo')) _aoMudarEsc(snap.docs.map(d => ({ id:d.id, ...d.data() })));
   }));
+  ouvir('adm_escalas_tudo', () => onSnapshot(collection(dbPvd,'adm_escalas'), snap => _aoMudarEsc(snap.docs.map(d => ({ id:d.id, ...d.data() })))));
 
   // Inscrições em eventos (pagamentos)
   ouvir('evento_inscricoes', () => onSnapshot(collection(dbPvd,'evento_inscricoes'), snap => {
@@ -3710,6 +3730,7 @@ async function confirmarPedido(pedidoId) {
 // Cria/atualiza doc em vendas_alunos pra produtos recorrentes (pilates, ninjutsu, curso desenvolvimento).
 // Chave: produto_id__email_normalizado. Permite o vendas.html identificar alunos antigos via email.
 async function upsertAlunoRecorrente(pedidoId) {
+  await precisa('adm_consulentes');
   try {
     await new Promise(r => setTimeout(r, 250));
     const p = S.pedidos.find(x => x.id === pedidoId);
@@ -3762,6 +3783,7 @@ async function _carregarEmailCfg() {
 }
 
 async function enviarEmailConfirmacao(pedidoId) {
+  await precisa('adm_consulentes');
   try {
     // Pequeno delay pra o listener atualizar S.pedidos com o status novo
     await new Promise(r => setTimeout(r, 250));
@@ -3978,6 +4000,7 @@ async function reenviarEmailsPendentes() {
 // Backfill: popula vendas_alunos a partir de todos os pedidos confirmados de produtos recorrentes.
 // Usado uma vez, depois de marcar um produto como recorrente, pra trazer alunos antigos pro novo fluxo.
 async function backfillAlunosRecorrentes() {
+  await precisa('adm_consulentes');
   const produtosRec = (S.produtos||[]).filter(x => x.recorrente);
   if (produtosRec.length === 0) { toast('Nenhum produto marcado como recorrente','err'); return; }
   const candidatos = (S.pedidos||[]).filter(p =>
@@ -6749,6 +6772,7 @@ function renderConsulentes(c) {
 }
 
 function openConsulenteForm(id=null, fromAtendimento=false) {
+  if (!_chegaram.has('adm_consulentes')) { precisa('adm_consulentes').then(() => openConsulenteForm(id, fromAtendimento)); return; }
   const x = id ? S.consulentes.find(c=>c.id===id) : null;
   const isEdit = !!x;
   const historico = x ? S.atendimentos.filter(a => a.consulente_id === id).sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora)) : [];
