@@ -361,9 +361,9 @@ function onSnapshot(ref, aoReceber, aoFalhar) {
 // O mapa saiu do código (quem lê S.x em cada render), medido em 26/11. Tela
 // nova: põe aqui o que ela lê; esqueceu, a tela abre vazia e o erro é visível.
 const _ouvintes = {}, _ligados = new Set(), _chegaram = new Set(), _esperas = [];
-const SEMPRE = ['fin_filhos','adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
+const SEMPRE = ['adm_funcoes','cfg_agendamento','cfg_escalas','cfg_lgpd','adm_cadastros_filho','pdv_cadastros',
   'adm_solicitacoes_rec','vendas_pedidos_rec'];
-const _HOJE = ['adm_atendimentos_rec','eventos'];
+const _HOJE = ['adm_atendimentos_rec','eventos','cfg_numeros'];
 const POR_ROTA = {
   dashboard: _HOJE,
   filhos: ['adm_grupos','adm_despensa','adm_push_tokens'],
@@ -377,8 +377,10 @@ const POR_ROTA = {
   // Agenda e Pedidos leem dos últimos 60 dias em diante (27/11, cota): o
   // histórico inteiro, relido a cada aba parada 30 min, era o grosso do dia.
   // Histórico completo fica em Consulentes, Entradas e Inteligência.
-  agenda: ['adm_atendimentos_rec','adm_consulentes','eventos','adm_servicos'],
-  solicitacoes: ['adm_atendimentos_rec','adm_consulentes','adm_servicos'],
+  // Consulentes (o cadastro inteiro) só ligam ao abrir o formulário ou aprovar
+  // um pedido: ver precisa(). Mês antigo da agenda: carregarMesAgenda().
+  agenda: ['adm_atendimentos_rec','eventos','adm_servicos','cfg_numeros'],
+  solicitacoes: ['adm_atendimentos_rec','adm_servicos'],
   consulentes: ['adm_atendimentos','adm_consulentes','adm_servicos'],
   servicos: ['adm_servicos'],
   'config-agendamento': ['adm_atendimentos_rec','eventos','adm_servicos'],
@@ -403,7 +405,15 @@ function _ligar(nome) {
   _ouvindoAgora = nome;
   try { S.unsubs.push(_ouvintes[nome]()); } finally { _ouvindoAgora = null; }
 }
-function _precisa(rota) { const r = POR_ROTA[rota]; return r === '*' ? Object.keys(_ouvintes) : [...SEMPRE, ...(r || [])]; }
+// A lista de filhos liga em toda tela que não está aqui (quase todas usam).
+const SEM_FILHOS = ['dashboard','agenda','solicitacoes','consulentes','servicos','config-agendamento'];
+function _precisa(rota) { const r = POR_ROTA[rota]; return r === '*' ? Object.keys(_ouvintes) : [...SEMPRE, ...(SEM_FILHOS.includes(rota) ? [] : ['fin_filhos']), ...(r || [])]; }
+/** Liga as coleções e espera chegar. Pra ação que precisa de algo que a tela não carrega. */
+function precisa(...nomes) {
+  nomes.forEach(_ligar);
+  if (nomes.every(n => _chegaram.has(n))) return Promise.resolve();
+  return new Promise(ok => { _esperas.push({ faltam: nomes, ok }); setTimeout(ok, 8000); });
+}
 function ouvir(nome, abrir) { _ouvintes[nome] = abrir; if (_precisa(S.route || rotaDoHash() || 'dashboard').includes(nome)) _ligar(nome); }
 function garantirRota(rota) { _precisa(rota).forEach(_ligar); }
 /** Liga tudo e espera chegar. Pra ação que cruza a casa inteira (apagar pessoa, backup). */
@@ -1040,7 +1050,7 @@ function setupNav() {
 function attachListeners() {
   S.unsubs.forEach(u=>u && u());
   S.unsubs = [];
-  _ligados.clear(); _chegaram.clear();
+  _ligados.clear(); _chegaram.clear(); _atdMes = {};
 
   // ── Recortes pro menu e pro Hoje ────────────────────────────────────────
   // A coleção inteira só liga na tela dela. Fora dela, o contador do menu e a
@@ -1062,8 +1072,9 @@ function attachListeners() {
     if (['dashboard','solicitacoes','agenda'].includes(S.route)) renderRoute();
   }));
   ouvir('adm_atendimentos_rec', () => onSnapshot(query(collection(dbPvd,'adm_atendimentos'), where('data','>=',_isoAtras(60))), snap => {
+    _atdRec = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if (_ligados.has('adm_atendimentos')) return;
-    S.atendimentos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    _montarAtend();
     if (['dashboard','solicitacoes','agenda','config-agendamento'].includes(S.route)) renderRoute();
   }));
   ouvir('adm_escalas_rec', () => onSnapshot(query(collection(dbPvd,'adm_escalas'), where('data','>=',_isoAtras(1))), snap => {
@@ -1221,6 +1232,11 @@ function attachListeners() {
   // Prazo de retenção. Doc opcional: sem ele, vale RETENCAO_PADRAO_MESES.
   // Fica em config e não em constante porque o prazo é decisão da casa (e um
   // dia de advogado), não de quem escreveu o código.
+  // Números grandes prontos (Worker conta de hora em hora): 1 leitura.
+  ouvir('cfg_numeros', () => onSnapshot(doc(dbPvd,'adm_config','numeros'), snap => {
+    S.numeros = snap.exists() ? snap.data() : {};
+    if (['dashboard','agenda'].includes(S.route)) renderRoute();
+  }));
   ouvir('cfg_lgpd', () => onSnapshot(doc(dbPvd,'adm_config','lgpd'), snap => {
     S.cfgLgpd = snap.exists() ? snap.data() : null;
     if(S.route === 'dados') renderRoute();
@@ -2135,7 +2151,6 @@ function renderDashboard(c) {
   const proxGiras = (S.eventos||[]).filter(e => e.data >= hoje && !e.arquivado).slice(0,5);
   const amanha = new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const consAmanha = (S.atendimentos||[]).filter(a => a.data === amanha && !['cancelado','nao_compareceu'].includes(a.status_atendimento));
-  const ativos = (S.filhos||[]).filter(f => !f.status || f.status === 'ativo').length;
   const dataLonga = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Sao_Paulo'}).replace(/^./, c => c.toUpperCase());
 
   const item = (x) => `
@@ -2185,7 +2200,7 @@ function renderDashboard(c) {
 
     <div class="hoje-sec">A casa</div>
     <div class="casa-num">
-      <span><b>${ativos}</b>filhos ativos</span>
+      <span><b>${S.numeros?.filhos_ativos ?? '–'}</b>filhos ativos</span>
       <span><b>${(S.atendimentos||[]).filter(a => (a.data||'').startsWith(hoje.slice(0,7)) && a.status_atendimento !== 'cancelado').length}</b>consultas no mês</span>
     </div>
 
@@ -3923,6 +3938,7 @@ async function enviarEmailBoasVindas(f) {
 }
 
 async function enviarEmailAtendimento(atendimentoId, dadosOverride = null) {
+  await precisa('adm_consulentes');
   try {
     await new Promise(r => setTimeout(r, 250));
     // dados podem vir do listener OU passados direto pelo aprovarSolicitacao
@@ -6244,7 +6260,7 @@ function renderAgenda(c) {
       <div class="metric" style="--clr:var(--green)"><div class="ml">Receita do mês</div><div class="mv">R$ ${receitaMes.toFixed(0)}</div><div class="mh">de ${realizadosMes.length} jogo${realizadosMes.length===1?'':'s'}</div></div>
       <div class="metric" style="--clr:var(--amber)"><div class="ml">Pendente receber</div><div class="mv">R$ ${pendentes.toFixed(0)}</div></div>
       <div class="metric" style="--clr:var(--blue)"><div class="ml">Esta semana</div><div class="mv">${S.atendimentos.filter(a => a.data >= hoje && a.data <= fimSemanaStr).length}</div></div>
-      <div class="metric" style="--clr:var(--gold)"><div class="ml">Consulentes únicos</div><div class="mv">${S.consulentes.filter(c=>!c.arquivado).length}</div></div>
+      <div class="metric" style="--clr:var(--gold)"><div class="ml">Consulentes únicos</div><div class="mv">${S.numeros?.consulentes ?? '–'}</div></div>
     </div>
 
     <div class="tabs">
@@ -6361,7 +6377,26 @@ async function painelVagasSite() {
 function setAgendaFiltro(f) { agendaFiltro = f; renderRoute(); }
 function mudarMesAgenda(n) {
   const [y,m] = (agendaMes || _iso(new Date()).slice(0,7)).split('-').map(Number);
-  agendaMes = _iso(new Date(y, m-1+n, 1, 12)).slice(0,7); renderRoute();
+  agendaMes = _iso(new Date(y, m-1+n, 1, 12)).slice(0,7);
+  carregarMesAgenda(agendaMes); renderRoute();
+}
+// Os últimos 60 dias e o futuro já estão carregados. Mês mais velho que isso
+// só é lido quando alguém navega até ele, e fica ligado até sair do admin.
+let _atdRec = [], _atdMes = {};
+function _montarAtend() {
+  const m = new Map();
+  [..._atdRec, ...Object.values(_atdMes).flat()].forEach(a => m.set(a.id, a));
+  S.atendimentos = [...m.values()];
+}
+function carregarMesAgenda(mes) {
+  const corte = new Date(Date.now() - 60*86400000).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).slice(0,7);
+  if (mes > corte || _atdMes[mes] || _ligados.has('adm_atendimentos')) return;
+  _atdMes[mes] = [];
+  S.unsubs.push(onSnapshot(query(collection(dbPvd,'adm_atendimentos'), where('data','>=',mes+'-01'), where('data','<=',mes+'-31')), snap => {
+    _atdMes[mes] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    _montarAtend();
+    if (S.route === 'agenda') renderRoute();
+  }));
 }
 
 // Mês da Agenda do Pai: cada dia mostra o que o fecha (pausa, desenvolvimento),
@@ -6519,6 +6554,7 @@ function _servicosDoForm(a) {
 }
 
 function openAtendimentoForm(id=null) {
+  if (!_chegaram.has('adm_consulentes')) { precisa('adm_consulentes').then(() => openAtendimentoForm(id)); return; }
   const a = id ? S.atendimentos.find(x=>x.id===id) : null;
   const isEdit = !!a;
   const consulentesAtivos = S.consulentes.filter(c=>!c.arquivado).sort((a,b)=>a.nome.localeCompare(b.nome));
@@ -7465,6 +7501,7 @@ function renderSolicitacoes(c) {
 }
 
 async function aprovarSolicitacao(id) {
+  await precisa('adm_consulentes');
   const s = S.solicitacoes.find(x => x.id === id);
   if(!s) return;
   const metPag = METODO_PAG_LABEL[s.metodo_pagamento] || s.metodo_pagamento || '—';

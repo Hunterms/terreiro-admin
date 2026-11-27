@@ -1543,6 +1543,15 @@ async function tick(env) {
     if (fila) feito.push(`aviso:${fila.enviados}${fila.restam ? `+${fila.restam}` : ''}`);
   });
 
+  // 6b) Os números grandes do admin, uma vez por hora.
+  if (estado.numeros_hora !== `${hoje}T${hora}`) {
+    await passo('numeros', async () => {
+      await marcar({ numeros_hora: `${hoje}T${hora}` });
+      await atualizarNumeros(token);
+      feito.push('numeros');
+    });
+  }
+
   // 7) Segunda, 9h: o email da conversão da semana.
   const diaSemana = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/Sao_Paulo' });
   if (diaSemana === 'Mon' && hora >= 9 && estado.conversao_em !== hoje) {
@@ -3397,6 +3406,35 @@ async function fsQuery(projeto, colecao, token, filtros, limite = 300) {
       id: l.document.name.split('/').pop(),
       ...desembrulha({ mapValue: { fields: l.document.fields || {} } }),
     }));
+}
+
+/** Conta sem ler os documentos: o Firestore cobra 1 leitura a cada 1000 contados. */
+async function fsCount(projeto, colecao, token, filtro) {
+  const url = `https://firestore.googleapis.com/v1/projects/${projeto}/databases/(default)/documents:runAggregationQuery`;
+  const structuredQuery = { from: [{ collectionId: colecao }] };
+  if (filtro) structuredQuery.where = { fieldFilter: { field: { fieldPath: filtro.campo }, op: filtro.op || 'EQUAL', value: embrulha(filtro.valor) } };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ structuredAggregationQuery: { structuredQuery, aggregations: [{ alias: 'n', count: {} }] } }),
+  });
+  if (!resp.ok) throw new Error(`Firestore COUNT ${colecao}: ${resp.status} ${await resp.text()}`);
+  const [r] = await resp.json();
+  return Number(r?.result?.aggregateFields?.n?.integerValue || 0);
+}
+
+// Os números grandes do admin (filhos ativos, consulentes) moram num doc só,
+// adm_config/numeros, atualizado de hora em hora por contagem (1 leitura cada).
+// Antes o admin lia as coleções inteiras pra contar a cada abertura.
+async function atualizarNumeros(token) {
+  const c = (col, filtro) => fsCount(PROJETO_PVD, col, token, filtro);
+  const [filhos, afastados, inativos, consulentes, arquivados] = await Promise.all([
+    c('fin_filhos'), c('fin_filhos', { campo: 'status', valor: 'afastado' }), c('fin_filhos', { campo: 'status', valor: 'inativo' }),
+    c('adm_consulentes'), c('adm_consulentes', { campo: 'arquivado', valor: true }),
+  ]);
+  const numeros = { filhos_ativos: filhos - afastados - inativos, consulentes: consulentes - arquivados, em: new Date().toISOString() };
+  await fsPatch(PROJETO_PVD, 'adm_config', 'numeros', token, numeros);
+  return numeros;
 }
 
 /** Apaga um doc. Usado só pra tirar token de push morto. 404 não é erro. */
