@@ -7690,9 +7690,18 @@ function _acharCob(tipo, id) {
   const x = (tipo === 'sol' ? S.solicitacoes : S.atendimentos || []).find(k => k.id === id);
   return x ? _cob(tipo, x) : null;
 }
+// Dias de calendário (Brasília) desde o PEDIDO. Consulta aprovada conta do
+// pedido que a originou, não da aprovação: a data está presa desde o pedido.
+const _isoSP = ms => new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+function diasSemPagar(x) {
+  const orig = x.origem_solicitacao_id && (S.solicitacoes||[]).find(s => s.id === x.origem_solicitacao_id);
+  const seg = (orig || x).criadoEm?.seconds || x.criadoEm?.seconds;
+  if (!seg) return 0; // acabou de nascer, o servidor ainda não carimbou
+  return Math.round((Date.parse(hojeISO()) - Date.parse(_isoSP(seg*1000))) / 86400000);
+}
 function semPagamentoHa3Dias() {
-  const hoje = hojeISO(), corte = Date.now() - 3*86400000;
-  const conta = x => !x.paga_no_dia && !(x.paga_depois_ate >= hoje) && x.data >= hoje && (x.criadoEm?.seconds||0)*1000 < corte;
+  const hoje = hojeISO();
+  const conta = x => !x.paga_no_dia && !(x.paga_depois_ate >= hoje) && x.data >= hoje && diasSemPagar(x) >= 3;
   return [
     ...(S.solicitacoes||[]).filter(s => _naoPago(s) && conta(s)).map(s => _cob('sol', s)),
     ...(S.atendimentos||[]).filter(a => _atdNaoPago(a) && conta(a)).map(a => _cob('atd', a)),
@@ -7721,7 +7730,7 @@ function cartaoSemPagamento(lista) {
     <div style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Pedidos e consultas aprovadas que seguram uma data sem pagar. Mande um prazo; passou dele, libere a data. Combinou outro jeito? "Paga no dia" ou "Avisou que paga depois" tiram daqui.</div>
     ${lista.map(s => {
       const id = escapaJs(s.id), t = s._t;
-      const dias = Math.floor((Date.now() - (s.criadoEm?.seconds||0)*1000) / 86400000);
+      const dias = diasSemPagar(s);
       const vencido = s.prazo_pagamento && s.prazo_pagamento < hoje;
       const aviso = s.prazo_pagamento ? `<span class="chip ${vencido?'chip-red':'chip'}">${vencido?'prazo vencido':'prazo'} ${dm(s.prazo_pagamento)}${s.lembrete_via?` · ${s.lembrete_via}`:''}</span>` : '';
       return `<div class="list-item" style="align-items:flex-start">
@@ -7731,7 +7740,7 @@ function cartaoSemPagamento(lista) {
           <div class="li-meta" style="margin-top:4px">
             <span>${escapaHtml(s.servico_nome||'Consulta')}</span>
             <span><strong style="color:var(--gold)">R$ ${s.valor_proposto||0}</strong></span>
-            <span class="chip">${t==='atd'?'consulta aprovada':'pedido'} há ${dias} dias</span>
+            <span class="chip">${t==='atd'?'aprovada, ':''}pedido há ${dias} dias</span>
             ${aviso}
           </div>
           <div class="li-meta" style="margin-top:8px;gap:8px">
